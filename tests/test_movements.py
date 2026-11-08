@@ -120,3 +120,57 @@ def test_list_movements_pagination(client, item, loc_a):
         _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
     r = client.get("/movements", params={"limit": 2, "offset": 2})
     assert [m["id"] for m in r.json()] == [3, 4]
+
+
+# --- location stock ------------------------------------------------------------
+
+
+def _receive(client, item_id, location_id, qty):
+    r = _move(client, item_id=item_id, kind="receive", qty=qty, to_location_id=location_id)
+    assert r.status_code == 201, r.text
+    return r
+
+
+def test_location_stock_empty_for_new_location(client, loc_a):
+    r = client.get(f"/locations/{loc_a['id']}/stock")
+    assert r.status_code == 200
+    assert r.json() == {"location_id": loc_a["id"], "levels": []}
+
+
+def test_location_stock_unknown_location_404(client):
+    assert client.get("/locations/999/stock").status_code == 404
+
+
+def test_location_stock_lists_levels_ordered_by_item_id(client, loc_a, loc_b):
+    item_ids = []
+    for sku in ("C-SKU", "A-SKU", "B-SKU"):
+        r = client.post("/items", json={"sku": sku, "name": sku})
+        assert r.status_code == 201, r.text
+        item_ids.append(r.json()["id"])
+    # receive in a shuffled order so insertion order != item_id order
+    for item_id, qty in [(item_ids[2], 3), (item_ids[0], 7), (item_ids[1], 5)]:
+        _receive(client, item_id, loc_a["id"], qty)
+    # stock at another location should not appear
+    _receive(client, item_ids[0], loc_b["id"], 99)
+
+    r = client.get(f"/locations/{loc_a['id']}/stock")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["location_id"] == loc_a["id"]
+    assert [lvl["item_id"] for lvl in body["levels"]] == sorted(item_ids)
+    by_item = {lvl["item_id"]: lvl for lvl in body["levels"]}
+    assert by_item[item_ids[0]]["qty"] == 7
+    assert by_item[item_ids[1]]["qty"] == 5
+    assert by_item[item_ids[2]]["qty"] == 3
+    assert all(lvl["location_id"] == loc_a["id"] for lvl in body["levels"])
+
+
+def test_location_stock_omits_zero_qty_levels(client, item, loc_a):
+    _receive(client, item["id"], loc_a["id"], 4)
+    r = client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "ship", "qty": 4, "from_location_id": loc_a["id"]},
+    )
+    assert r.status_code == 201, r.text
+    body = client.get(f"/locations/{loc_a['id']}/stock").json()
+    assert body == {"location_id": loc_a["id"], "levels": []}
