@@ -115,6 +115,21 @@ def test_movement_invalid_kind_422(client, item, loc_a):
     assert r.status_code == 422
 
 
+def test_get_movement_by_id(client, item, loc_a):
+    created = _move(
+        client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"]
+    ).json()
+    r = client.get(f"/movements/{created['id']}")
+    assert r.status_code == 200
+    assert r.json() == created
+
+
+def test_get_movement_unknown_id_404(client):
+    r = client.get("/movements/42")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "movement 42 not found"
+
+
 def test_list_movements_pagination(client, item, loc_a):
     for _ in range(4):
         _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
