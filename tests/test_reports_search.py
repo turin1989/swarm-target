@@ -52,6 +52,34 @@ def test_inventory_value(client, loc_a):
     assert client.get("/reports/value").json() == {"value": 16.0}
 
 
+def test_stats_empty_database(client):
+    r = client.get("/stats")
+    assert r.status_code == 200
+    assert r.json() == {
+        "items": 0,
+        "active_items": 0,
+        "locations": 0,
+        "movements": 0,
+        "total_units": 0,
+    }
+
+
+def test_stats_counts_entities_and_sums_units(client, loc_a, loc_b):
+    _seed(client, "ST1", "One", reorder=0, qty=3, loc=loc_a)
+    _seed(client, "ST2", "Two", reorder=0, qty=5, loc=loc_b)
+    inactive = _seed(client, "ST3", "Three", reorder=0, qty=0, loc=loc_a)
+    client.put(f"/items/{inactive['id']}", json={"active": False})
+    r = client.get("/stats")
+    assert r.status_code == 200
+    assert r.json() == {
+        "items": 3,
+        "active_items": 2,
+        "locations": 2,
+        "movements": 2,
+        "total_units": 8,
+    }
+
+
 def test_search_by_name_substring(client):
     client.post("/items", json={"sku": "S1", "name": "Blue Widget"})
     client.post("/items", json={"sku": "S2", "name": "Red Gadget"})
