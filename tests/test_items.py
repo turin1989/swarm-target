@@ -64,6 +64,28 @@ def test_list_items_filter_active(client, item):
     assert [i["sku"] for i in client.get("/items", params={"active": "false"}).json()] == ["INACTIVE"]
 
 
+def test_create_item_negative_unit_price_rejected(client):
+    r = client.post("/items", json={"sku": "NEG-1", "name": "Neg", "unit_price": -0.01})
+    assert r.status_code == 422
+
+
+def test_create_item_zero_unit_price_accepted(client):
+    r = client.post("/items", json={"sku": "ZERO-1", "name": "Zero", "unit_price": 0})
+    assert r.status_code == 201
+    assert r.json()["unit_price"] == 0
+
+
+def test_update_item_negative_unit_price_rejected(client, item):
+    r = client.put(f"/items/{item['id']}", json={"unit_price": -5})
+    assert r.status_code == 422
+
+
+def test_update_item_zero_unit_price_accepted(client, item):
+    r = client.put(f"/items/{item['id']}", json={"unit_price": 0})
+    assert r.status_code == 200
+    assert r.json()["unit_price"] == 0
+
+
 def test_update_item_name_and_price(client, item):
     r = client.put(f"/items/{item['id']}", json={"name": "Renamed", "unit_price": 9.99})
     assert r.status_code == 200
