@@ -23,6 +23,33 @@ def test_location_requires_code(client):
     assert client.post("/locations", json={"name": "x"}).status_code == 422
 
 
+@pytest.mark.parametrize(
+    "code",
+    ["WH-A", "A", "0", "WH-1-SOUTH", "X" * 32, "A" + "-" * 31],
+)
+def test_location_code_valid_formats(client, code):
+    r = client.post("/locations", json={"code": code, "name": "Loc"})
+    assert r.status_code == 201
+    assert r.json()["code"] == code
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "",  # empty
+        "-WH",  # cannot start with a hyphen
+        "wh-a",  # lowercase not allowed
+        "WH A",  # spaces not allowed
+        "WH_A",  # underscore not allowed
+        "WH.A",  # dot not allowed
+        "X" * 33,  # too long
+    ],
+)
+def test_location_code_invalid_formats(client, code):
+    r = client.post("/locations", json={"code": code, "name": "Loc"})
+    assert r.status_code == 422
+
+
 def test_receive_increases_stock(client, item, loc_a):
     r = _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])
     assert r.status_code == 201
