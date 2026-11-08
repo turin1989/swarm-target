@@ -120,3 +120,39 @@ def test_list_movements_pagination(client, item, loc_a):
         _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
     r = client.get("/movements", params={"limit": 2, "offset": 2})
     assert [m["id"] for m in r.json()] == [3, 4]
+
+
+def test_item_movements_only_returns_that_items_history(client, item, loc_a):
+    other = client.post(
+        "/items",
+        json={"sku": "GADGET-1", "name": "Gadget", "unit_price": 1.0, "reorder_point": 2},
+    ).json()
+    _move(client, item_id=item["id"], kind="receive", qty=3, to_location_id=loc_a["id"])
+    _move(client, item_id=other["id"], kind="receive", qty=9, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="ship", qty=1, from_location_id=loc_a["id"])
+
+    r = client.get(f"/items/{item['id']}/movements")
+    assert r.status_code == 200
+    body = r.json()
+    assert [m["id"] for m in body] == [1, 3]
+    assert all(m["item_id"] == item["id"] for m in body)
+    assert [m["kind"] for m in body] == ["receive", "ship"]
+
+
+def test_item_movements_pagination(client, item, loc_a):
+    for _ in range(5):
+        _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
+    r = client.get(f"/items/{item['id']}/movements", params={"limit": 2, "offset": 1})
+    assert r.status_code == 200
+    assert [m["id"] for m in r.json()] == [2, 3]
+
+
+def test_item_movements_empty_for_fresh_item(client, item):
+    r = client.get(f"/items/{item['id']}/movements")
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_item_movements_unknown_item_404(client):
+    r = client.get("/items/999/movements")
+    assert r.status_code == 404
