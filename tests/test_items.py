@@ -95,3 +95,59 @@ def test_delete_item_cascades_stock(client, item, loc_a):
     )
     client.delete(f"/items/{item['id']}")
     assert client.get("/movements").json() == []
+
+
+# --- barcode -------------------------------------------------------------------
+
+
+def test_create_item_barcode_defaults_to_null(client, item):
+    assert item["barcode"] is None
+    assert client.get(f"/items/{item['id']}").json()["barcode"] is None
+
+
+def test_create_item_with_barcode(client):
+    r = client.post("/items", json={"sku": "B-1", "name": "Bar", "barcode": "0123456789"})
+    assert r.status_code == 201
+    assert r.json()["barcode"] == "0123456789"
+    assert client.get(f"/items/{r.json()['id']}").json()["barcode"] == "0123456789"
+
+
+def test_create_item_duplicate_barcode_conflicts(client):
+    r1 = client.post("/items", json={"sku": "B-1", "name": "Bar", "barcode": "4711"})
+    assert r1.status_code == 201
+    r2 = client.post("/items", json={"sku": "B-2", "name": "Baz", "barcode": "4711"})
+    assert r2.status_code == 409
+    assert "barcode" in r2.json()["detail"]
+
+
+def test_multiple_items_without_barcode_allowed(client):
+    assert client.post("/items", json={"sku": "N-1", "name": "One"}).status_code == 201
+    assert client.post("/items", json={"sku": "N-2", "name": "Two"}).status_code == 201
+    assert (
+        client.post("/items", json={"sku": "N-3", "name": "Three", "barcode": None}).status_code
+        == 201
+    )
+
+
+def test_list_items_filter_by_barcode(client):
+    client.post("/items", json={"sku": "F-1", "name": "One", "barcode": "111"})
+    client.post("/items", json={"sku": "F-2", "name": "Two", "barcode": "222"})
+    client.post("/items", json={"sku": "F-3", "name": "Three"})
+    r = client.get("/items", params={"barcode": "222"})
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 1
+    assert body[0]["sku"] == "F-2"
+    assert body[0]["barcode"] == "222"
+
+
+def test_list_items_filter_by_unknown_barcode_returns_empty(client, item):
+    assert client.get("/items", params={"barcode": "no-such"}).json() == []
+
+
+def test_list_items_filter_barcode_combined_with_active(client):
+    client.post("/items", json={"sku": "C-1", "name": "One", "barcode": "999"})
+    client.put("/items/1", json={"active": False})
+    assert client.get("/items", params={"barcode": "999", "active": "true"}).json() == []
+    r = client.get("/items", params={"barcode": "999", "active": "false"})
+    assert [i["sku"] for i in r.json()] == ["C-1"]
