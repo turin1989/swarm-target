@@ -1,0 +1,405 @@
+# Backlog for the swarm benchmark. Mirrored to GitHub issues by create_issues.py.
+# kind: independent | shared-module | interface-change
+tasks:
+  - id: T001
+    title: "Search is case-sensitive; make /search case-insensitive"
+    kind: independent
+    touches: [src/inventory/services/search.py]
+    body: |
+      `GET /search?q=widget` returns nothing for an item named "Blue Widget".
+      - `GET /search?q=widget`, `?q=WIDGET` and `?q=Widget` all return the same items
+      - matching on `sku` is also case-insensitive
+      - existing ordering (by name) and `limit` are unchanged
+  - id: T002
+    title: "Low-stock report omits items exactly at their reorder point"
+    kind: independent
+    touches: [src/inventory/services/reports.py]
+    body: |
+      An item with `reorder_point=5` and total stock 5 should be flagged; it currently is not.
+      - `GET /reports/low-stock` includes active items whose total stock is <= `reorder_point`
+      - items with `reorder_point=0` and stock 0 are included
+      - items strictly above their reorder point are still excluded
+  - id: T003
+    title: "Transfer movement credits the source location instead of the destination"
+    kind: shared-module
+    touches: [src/inventory/services/stock.py]
+    body: |
+      After `POST /movements {kind: transfer, qty: 2, from: A, to: B}` location A is unchanged and B gets nothing.
+      - after a transfer of N, stock at `from_location_id` decreases by N and stock at `to_location_id` increases by N
+      - the item's total stock is unchanged by a transfer
+      - `GET /items/{id}/stock` reflects both locations
+  - id: T004
+    title: "PUT /items/{id} silently ignores reorder_point"
+    kind: independent
+    touches: [src/inventory/api.py]
+    body: |
+      - `PUT /items/{id}` with `{"reorder_point": 12}` persists the value and returns it
+      - updating `reorder_point` together with other fields works
+      - omitting `reorder_point` leaves the stored value untouched
+  - id: T005
+    title: "Shipping more than is on hand drives stock negative; reject with 409"
+    kind: shared-module
+    touches: [src/inventory/services/stock.py, src/inventory/api.py]
+    body: |
+      - `POST /movements {kind: ship}` with `qty` greater than stock at `from_location_id` returns 409
+      - the same applies to `transfer` (source stock is checked)
+      - on rejection no movement row is written and stock levels are unchanged
+      - the error `detail` contains the word "insufficient"
+  - id: T006
+    title: "DELETE /items/{id} returns 204 for unknown items"
+    kind: independent
+    touches: [src/inventory/api.py]
+    body: |
+      - `DELETE /items/{id}` returns 404 with `detail` "item {id} not found" when the item does not exist
+      - deleting an existing item still returns 204 and a second delete returns 404
+  - id: T007
+    title: "Duplicate location codes are accepted"
+    kind: independent
+    touches: [src/inventory/db.py, src/inventory/api.py]
+    body: |
+      - `POST /locations` with a `code` that already exists returns 409
+      - the `locations.code` column is UNIQUE in the schema
+      - the error `detail` mentions the duplicate code
+  - id: T008
+    title: "Reject negative unit_price on item create/update"
+    kind: independent
+    touches: [src/inventory/models.py]
+    body: |
+      - `POST /items` with `unit_price < 0` returns 422
+      - `PUT /items/{id}` with `unit_price < 0` returns 422
+      - `unit_price = 0` is still accepted
+  - id: T009
+    title: "Reject negative reorder_point on item create/update"
+    kind: independent
+    touches: [src/inventory/models.py]
+    body: |
+      - `POST /items` with `reorder_point < 0` returns 422
+      - `PUT /items/{id}` with `reorder_point < 0` returns 422
+  - id: T010
+    title: "Filter GET /items by exact sku"
+    kind: independent
+    touches: [src/inventory/api.py]
+    body: |
+      - `GET /items?sku=WIDGET-1` returns a list containing only the item with that sku (exact match)
+      - an unknown sku returns an empty list with 200
+      - combines with the existing `active` filter
+  - id: T011
+    title: "Add GET /items/by-sku/{sku}"
+    kind: independent
+    touches: [src/inventory/api.py]
+    body: |
+      - `GET /items/by-sku/{sku}` returns the item with that exact sku (200, same shape as `GET /items/{id}`)
+      - unknown sku returns 404 with `detail` "sku {sku} not found"
+      - the route must not shadow `GET /items/{item_id}`
+  - id: T012
+    title: "Add PUT /locations/{id} to rename a location"
+    kind: independent
+    touches: [src/inventory/api.py, src/inventory/models.py]
+    body: |
+      - `PUT /locations/{id}` accepts `{"name": ..., "code": ...}` (both optional) and returns the updated location
+      - unknown id returns 404
+      - add a `LocationUpdate` model in models.py
+  - id: T013
+    title: "Add DELETE /locations/{id}; refuse when the location holds stock"
+    kind: independent
+    touches: [src/inventory/api.py]
+    body: |
+      - `DELETE /locations/{id}` returns 204 and the location is gone
+      - returns 409 if any `stock_levels` row for that location has `qty != 0`
+      - unknown id returns 404
+  - id: T014
+    title: "Add GET /locations/{id}/stock listing every item held at a location"
+    kind: shared-module
+    touches: [src/inventory/api.py, src/inventory/services/stock.py]
+    body: |
+      - `GET /locations/{id}/stock` returns `{"location_id": id, "levels": [StockLevel, ...]}` ordered by `item_id`
+      - levels with qty 0 are omitted
+      - unknown location returns 404
+      - implement as `stock.get_location_levels(conn, location_id)` in services/stock.py
+  - id: T015
+    title: "Add GET /movements/{id}"
+    kind: shared-module
+    touches: [src/inventory/api.py, src/inventory/services/stock.py]
+    body: |
+      - `GET /movements/{id}` returns the movement (same shape as the POST response)
+      - unknown id returns 404 with `detail` "movement {id} not found"
+      - reuse `stock.get_movement`
+  - id: T016
+    title: "Health endpoint should verify database connectivity"
+    kind: independent
+    touches: [src/inventory/main.py]
+    body: |
+      - `GET /health` response includes `"db": "ok"` when `SELECT 1` succeeds on the configured database
+      - if the database cannot be opened the endpoint returns 503 with `"db": "error"`
+      - `status` and `version` keys are kept
+  - id: T017
+    title: "Normalise sku on create: trim whitespace and upper-case"
+    kind: independent
+    touches: [src/inventory/api.py, src/inventory/models.py]
+    body: |
+      - `POST /items` with `sku: "  abc-1 "` stores and returns `"ABC-1"`
+      - a subsequent create with `"ABC-1"` or `"abc-1"` returns 409
+      - a sku that is whitespace only returns 422
+  - id: T018
+    title: "Search should also match item description"
+    kind: independent
+    touches: [src/inventory/services/search.py]
+    body: |
+      - `GET /search?q=foo` returns items whose `description` contains "foo"
+      - no duplicates when sku, name and description all match
+      - ordering by name is preserved
+  - id: T019
+    title: "Inventory value report: optional location_id filter"
+    kind: independent
+    touches: [src/inventory/services/reports.py, src/inventory/api.py]
+    body: |
+      - `GET /reports/value?location_id=N` sums only stock held at location N
+      - unknown location returns 404
+      - without the parameter behaviour is unchanged
+  - id: T020
+    title: "Items carry a created_at timestamp"
+    kind: independent
+    touches: [src/inventory/db.py, src/inventory/models.py, src/inventory/api.py]
+    body: |
+      - `items.created_at` column (TEXT, ISO-8601 UTC, e.g. `2026-01-02T03:04:05Z`) set on insert
+      - `created_at` is returned by every endpoint that returns an `Item`
+      - `created_at` cannot be set or changed by clients (ignored on PUT)
+  - id: T021
+    title: "Sort parameter for GET /items"
+    kind: independent
+    touches: [src/inventory/api.py]
+    body: |
+      - `GET /items?sort=name` / `sort=sku` / `sort=id` orders accordingly (ascending); default stays `id`
+      - prefix with `-` for descending, e.g. `sort=-name`
+      - any other value returns 422
+  - id: T022
+    title: "Bulk item creation endpoint"
+    kind: independent
+    touches: [src/inventory/api.py]
+    body: |
+      - `POST /items/bulk` accepts a JSON list of `ItemCreate` and returns 201 with the list of created items
+      - the operation is atomic: if any sku already exists return 409 and create nothing
+      - an empty list returns 422
+  - id: T023
+    title: "Echo X-Request-ID on every response"
+    kind: independent
+    touches: [src/inventory/main.py]
+    body: |
+      - if the request carries `X-Request-ID`, the response carries the same header value
+      - otherwise a new uuid4 is generated and returned in `X-Request-ID`
+      - applies to error responses too
+  - id: T024
+    title: "Add GET /stats with entity counts"
+    kind: independent
+    touches: [src/inventory/api.py, src/inventory/services/reports.py]
+    body: |
+      - `GET /stats` returns `{"items": n, "active_items": n, "locations": n, "movements": n, "total_units": n}`
+      - `total_units` is the sum of all stock level quantities
+      - implement the query in `reports.stats(conn)`
+  - id: T025
+    title: "Optional unique barcode on items"
+    kind: independent
+    touches: [src/inventory/models.py, src/inventory/db.py, src/inventory/api.py]
+    body: |
+      - `ItemCreate`/`Item` gain optional `barcode: str | None` (default null)
+      - the column is UNIQUE when not null; a duplicate barcode returns 409
+      - `GET /items?barcode=...` returns the matching item(s)
+  - id: T026
+    title: "Locations can be deactivated"
+    kind: independent
+    touches: [src/inventory/models.py, src/inventory/db.py, src/inventory/api.py]
+    body: |
+      - `Location` gains `active: bool` (default true), stored in a new column
+      - `PUT /locations/{id}` can set `active`
+      - `GET /locations?active=true|false` filters
+  - id: T027
+    title: "Low-stock report: add shortfall"
+    kind: independent
+    touches: [src/inventory/services/reports.py, src/inventory/models.py]
+    body: |
+      - each `LowStockEntry` gains `shortfall: int` = `reorder_point - total_qty`
+      - shortfall is never negative
+  - id: T028
+    title: "Low-stock report scoped to a location"
+    kind: independent
+    touches: [src/inventory/services/reports.py, src/inventory/api.py]
+    body: |
+      - `GET /reports/low-stock?location_id=N` evaluates `total_qty` using only stock at N
+      - unknown location returns 404
+      - without the parameter behaviour is unchanged
+  - id: T029
+    title: "Trim and bound the search query"
+    kind: independent
+    touches: [src/inventory/api.py, src/inventory/services/search.py]
+    body: |
+      - leading/trailing whitespace in `q` is ignored (`q="  bolt "` behaves like `q="bolt"`)
+      - `q` longer than 100 characters returns 422
+      - a `q` that is only whitespace returns 422
+  - id: T030
+    title: "Refactor: move item persistence helpers into services/items.py"
+    kind: independent
+    touches: [src/inventory/api.py, src/inventory/services/items.py]
+    body: |
+      - new module `inventory.services.items` exposing `get_item(conn, item_id) -> Item | None`, `create_item(conn, ItemCreate) -> Item`, `update_item(conn, item_id, ItemUpdate) -> Item | None`, `delete_item(conn, item_id) -> bool`
+      - `api.py` uses these instead of inline SQL
+      - all existing tests pass unchanged
+  - id: T031
+    title: "Schema versioning in db.py"
+    kind: independent
+    touches: [src/inventory/db.py]
+    body: |
+      - add a `schema_version` table with a single row; `init_db` records version 1 on a fresh database
+      - add `db.get_schema_version(path) -> int`
+      - `init_db` stays idempotent (calling it twice does not fail or change the version)
+  - id: T032
+    title: "Movement history per item"
+    kind: shared-module
+    touches: [src/inventory/api.py, src/inventory/services/stock.py]
+    body: |
+      - `GET /items/{id}/movements` returns the item's movements ordered by id, supporting `limit`/`offset`
+      - unknown item returns 404
+      - implemented via `stock.list_movements(conn, item_id=...)`
+  - id: T033
+    title: "Item description length limit"
+    kind: independent
+    touches: [src/inventory/models.py]
+    body: |
+      - `description` longer than 2000 characters returns 422 on create and update
+  - id: T034
+    title: "Validate location code format"
+    kind: independent
+    touches: [src/inventory/models.py]
+    body: |
+      - `code` must match `^[A-Z0-9][A-Z0-9-]{0,31}$`; otherwise 422
+      - existing codes like `WH-A` remain valid
+  - id: T035
+    title: "Limit movement note length"
+    kind: independent
+    touches: [src/inventory/models.py]
+    body: |
+      - `note` longer than 500 characters returns 422
+  - id: T036
+    title: "Movement summary report"
+    kind: independent
+    touches: [src/inventory/services/reports.py, src/inventory/api.py]
+    body: |
+      - `GET /reports/movements-summary` returns `{"receive": {"count": n, "qty": n}, "ship": {...}, "transfer": {...}}`
+      - kinds with no movements are present with zeros
+  - id: T037
+    title: "X-Total-Count header on GET /items"
+    kind: independent
+    touches: [src/inventory/api.py]
+    body: |
+      - `GET /items` sets `X-Total-Count` to the number of items matching the filters, ignoring `limit`/`offset`
+  - id: T038
+    title: "Refuse to delete items that still have stock"
+    kind: independent
+    touches: [src/inventory/api.py]
+    body: |
+      - `DELETE /items/{id}` returns 409 when the item's total stock is > 0
+      - the `detail` mentions the remaining quantity
+      - items with zero stock delete as before
+  - id: T039
+    title: "Add an 'adjust' movement kind"
+    kind: shared-module
+    touches: [src/inventory/models.py, src/inventory/services/stock.py]
+    body: |
+      - `kind: "adjust"` sets the stock at `to_location_id` to exactly `qty` (absolute, not a delta)
+      - `to_location_id` is required; `from_location_id` must be null
+      - the movement is recorded with `kind: "adjust"`
+  - id: T040
+    title: "Reject non-positive movement quantities"
+    kind: shared-module
+    touches: [src/inventory/models.py, src/inventory/services/stock.py]
+    body: |
+      - `POST /movements` with `qty <= 0` returns 422
+      - no movement row is written
+  - id: T041
+    title: "Reject movements for inactive items"
+    kind: shared-module
+    touches: [src/inventory/services/stock.py]
+    body: |
+      - any movement for an item with `active = false` returns 409 with `detail` containing "inactive"
+      - stock levels are unchanged
+  - id: T042
+    title: "Movements record created_at"
+    kind: shared-module
+    touches: [src/inventory/db.py, src/inventory/models.py, src/inventory/services/stock.py]
+    body: |
+      - `movements.created_at` column (ISO-8601 UTC string) set when the movement is applied
+      - `Movement` responses include `created_at`
+  - id: T043
+    title: "Optional reference on movements"
+    kind: shared-module
+    touches: [src/inventory/db.py, src/inventory/models.py, src/inventory/services/stock.py]
+    body: |
+      - `MovementCreate`/`Movement` gain `reference: str | None` (e.g. a PO number), max 64 chars
+      - stored in a new column and returned on POST/GET
+  - id: T044
+    title: "Filter GET /movements by item_id and kind"
+    kind: shared-module
+    touches: [src/inventory/api.py, src/inventory/services/stock.py]
+    body: |
+      - `GET /movements?item_id=N` returns only that item's movements
+      - `GET /movements?kind=ship` returns only that kind; invalid kind returns 422
+      - both filters combine; pagination still works
+  - id: T045
+    title: "Reverse a movement"
+    kind: shared-module
+    touches: [src/inventory/api.py, src/inventory/services/stock.py]
+    body: |
+      - `POST /movements/{id}/reverse` creates a new movement that undoes the original (receive -> ship, ship -> receive, transfer -> transfer with locations swapped) and returns it with 201
+      - the new movement's `note` is `"reversal of {id}"`
+      - unknown id returns 404
+      - implemented as `stock.reverse_movement(conn, movement_id)`
+  - id: T046
+    title: "Reject transfers where source equals destination"
+    kind: shared-module
+    touches: [src/inventory/services/stock.py]
+    body: |
+      - a transfer with `from_location_id == to_location_id` returns 400 with `detail` containing "same location"
+      - no movement row is written
+  - id: T047
+    title: "Rename movement/stock field qty to quantity"
+    kind: interface-change
+    touches: [src/inventory/models.py, src/inventory/services/stock.py, src/inventory/api.py, tests/]
+    body: |
+      - `MovementCreate`, `Movement` and `StockLevel` use `quantity` instead of `qty` in request and response JSON
+      - `POST /movements` with `qty` (old name) returns 422
+      - database column names may stay as they are
+      - update existing tests accordingly
+  - id: T048
+    title: "GET /items returns a paginated envelope"
+    kind: interface-change
+    touches: [src/inventory/api.py, src/inventory/models.py, tests/]
+    body: |
+      - `GET /items` responds with `{"items": [...], "total": n, "limit": n, "offset": n}` where `total` ignores pagination
+      - add an `ItemPage` model
+      - update existing tests accordingly
+  - id: T049
+    title: "Rename item field reorder_point to reorder_level"
+    kind: interface-change
+    touches: [src/inventory/models.py, src/inventory/db.py, src/inventory/api.py, src/inventory/services/reports.py, tests/]
+    body: |
+      - `ItemCreate`, `ItemUpdate`, `Item` and `LowStockEntry` expose `reorder_level` instead of `reorder_point`
+      - sending `reorder_point` returns 422
+      - the column is renamed in the schema
+      - update existing tests accordingly
+  - id: T050
+    title: "Uniform error response shape"
+    kind: interface-change
+    touches: [src/inventory/main.py, src/inventory/api.py, src/inventory/services/stock.py, tests/]
+    body: |
+      - every 4xx/5xx response body is `{"error": {"code": "<snake_case>", "message": "<text>"}}`
+      - codes: `not_found` (404), `conflict` (409), `validation_error` (422), `bad_request` (400)
+      - `HTTPException` and request validation errors are both converted (exception handlers in main.py)
+      - update existing tests that read `detail`
+  - id: T051
+    title: "Split StockError into typed exceptions in services/errors.py"
+    kind: interface-change
+    touches: [src/inventory/services/errors.py, src/inventory/services/stock.py, src/inventory/api.py]
+    body: |
+      - new module `inventory.services.errors` defines `InventoryError(Exception)` with subclasses `NotFoundError` (404), `ConflictError` (409), `ValidationError` (400), each carrying `status_code`
+      - `services/stock.py` raises these instead of `StockError`; `StockError` is removed
+      - `api.py` maps `InventoryError` to `HTTPException` in one place (an exception handler or helper), not per-route try/except
+      - existing tests pass
