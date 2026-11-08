@@ -120,3 +120,42 @@ def test_list_movements_pagination(client, item, loc_a):
         _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
     r = client.get("/movements", params={"limit": 2, "offset": 2})
     assert [m["id"] for m in r.json()] == [3, 4]
+
+
+# --- delete location -----------------------------------------------------------
+
+
+def test_delete_location(client, loc_a):
+    r = client.delete(f"/locations/{loc_a['id']}")
+    assert r.status_code == 204
+    assert client.get(f"/locations/{loc_a['id']}").status_code == 404
+
+
+def test_delete_unknown_location_404(client):
+    assert client.delete("/locations/99").status_code == 404
+
+
+def test_delete_location_with_stock_409(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    r = client.delete(f"/locations/{loc_a['id']}")
+    assert r.status_code == 409
+    # location still exists
+    assert client.get(f"/locations/{loc_a['id']}").status_code == 200
+
+
+def test_delete_location_with_zero_stock_ok(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="ship", qty=5, from_location_id=loc_a["id"])
+    r = client.delete(f"/locations/{loc_a['id']}")
+    assert r.status_code == 204
+    assert client.get(f"/locations/{loc_a['id']}").status_code == 404
+    # stock levels for the location are gone
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["levels"] == []
+
+
+def test_delete_location_only_blocks_that_location(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_b["id"])
+    # loc_a has no stock, so it can be deleted even though loc_b holds stock
+    assert client.delete(f"/locations/{loc_a['id']}").status_code == 204
+    assert client.delete(f"/locations/{loc_b['id']}").status_code == 409
