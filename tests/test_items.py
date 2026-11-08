@@ -36,6 +36,25 @@ def test_get_item(client, item):
     assert r.json() == item
 
 
+def test_get_item_by_sku(client, item):
+    r = client.get(f"/items/by-sku/{item['sku']}")
+    assert r.status_code == 200
+    assert r.json() == item
+
+
+def test_get_item_by_sku_unknown_404(client):
+    r = client.get("/items/by-sku/NOPE-1")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "sku NOPE-1 not found"
+
+
+def test_get_item_by_sku_does_not_shadow_get_by_id(client, item):
+    # numeric id lookups still work alongside the by-sku route
+    r = client.get(f"/items/{item['id']}")
+    assert r.status_code == 200
+    assert r.json() == item
+
+
 def test_get_missing_item_404(client):
     r = client.get("/items/999")
     assert r.status_code == 404
