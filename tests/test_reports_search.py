@@ -76,3 +76,24 @@ def test_search_sorted_by_name_and_limited(client):
 def test_search_requires_query(client):
     assert client.get("/search").status_code == 422
     assert client.get("/search", params={"q": ""}).status_code == 422
+
+
+def test_search_trims_whitespace(client):
+    client.post("/items", json={"sku": "BOLT-M8", "name": "Bolt"})
+    r = client.get("/search", params={"q": "  Bolt "})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["BOLT-M8"]
+    assert r.json() == client.get("/search", params={"q": "Bolt"}).json()
+
+
+def test_search_rejects_whitespace_only_query(client):
+    assert client.get("/search", params={"q": "   "}).status_code == 422
+    assert client.get("/search", params={"q": "\t\n "}).status_code == 422
+
+
+def test_search_rejects_query_over_100_chars(client):
+    assert client.get("/search", params={"q": "x" * 101}).status_code == 422
+
+
+def test_search_accepts_query_of_exactly_100_chars(client):
+    assert client.get("/search", params={"q": "x" * 100}).status_code == 200
