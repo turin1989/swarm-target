@@ -38,10 +38,17 @@ class LocationCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
 
 
+class LocationUpdate(BaseModel):
+    code: Optional[str] = None
+    name: Optional[str] = None
+    active: Optional[bool] = None
+
+
 class Location(BaseModel):
     id: int
     code: str
     name: str
+    active: bool
 
 
 class MovementCreate(BaseModel):
