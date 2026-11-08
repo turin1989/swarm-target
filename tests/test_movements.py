@@ -110,6 +110,17 @@ def test_movement_unknown_item_404(client, loc_a):
     assert r.status_code == 404
 
 
+@pytest.mark.parametrize("qty", [0, -1, -10])
+def test_movement_non_positive_qty_422(client, item, loc_a, qty):
+    r = _move(client, item_id=item["id"], kind="receive", qty=qty, to_location_id=loc_a["id"])
+    assert r.status_code == 422
+    # no movement row was written and stock is untouched
+    assert client.get("/movements").json() == []
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 0
+    assert s["levels"] == []
+
+
 def test_movement_invalid_kind_422(client, item, loc_a):
     r = _move(client, item_id=item["id"], kind="explode", qty=1, to_location_id=loc_a["id"])
     assert r.status_code == 422

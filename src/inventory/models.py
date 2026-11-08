@@ -47,7 +47,7 @@ class Location(BaseModel):
 class MovementCreate(BaseModel):
     item_id: int
     kind: MovementKind
-    qty: int
+    qty: int = Field(..., gt=0)
     from_location_id: Optional[int] = None
     to_location_id: Optional[int] = None
     note: str = ""
