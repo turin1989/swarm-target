@@ -1,0 +1,41 @@
+# Streams one job's result to the swarm registry the moment the job finishes.
+# No-op when REGISTRY_URL is not configured, so the workflow is self-contained.
+name: report
+inputs:
+  job: { required: true }
+  outcome: { required: true }
+  junit: { required: false, default: '' }
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        REGISTRY_URL: ${{ env.REGISTRY_URL }}
+        REGISTRY_TOKEN: ${{ env.REGISTRY_TOKEN }}
+      run: |
+        set -euo pipefail
+        failures='[]'
+        if [ -n "${{ inputs.junit }}" ] && [ -f "${{ inputs.junit }}" ]; then
+          failures=$(python3 - "${{ inputs.junit }}" <<'PY'
+        import sys, json, xml.etree.ElementTree as ET
+        root = ET.parse(sys.argv[1]).getroot()
+        out = []
+        for tc in root.iter("testcase"):
+            for tag in ("failure", "error"):
+                f = tc.find(tag)
+                if f is not None:
+                    out.append({"test": f"{tc.get('classname')}::{tc.get('name')}",
+                                "type": tag, "message": (f.get("message") or "")[:300]})
+        print(json.dumps(out))
+        PY
+        )
+        fi
+        payload=$(jq -cn --arg job "${{ inputs.job }}" --arg outcome "${{ inputs.outcome }}" \
+          --arg sha "$GITHUB_SHA" --arg ref "$GITHUB_REF_NAME" --arg run "$GITHUB_RUN_ID" \
+          --argjson failures "$failures" \
+          '{kind:"ci.result", run_id:(env.RUN_ID // "dev"), subject:$sha,
+            payload:{job:$job, outcome:$outcome, ref:$ref, gh_run_id:$run, failures:$failures}}')
+        echo "$payload" | jq .
+        if [ -z "${REGISTRY_URL:-}" ]; then echo "REGISTRY_URL unset; not streaming"; exit 0; fi
+        curl -fsS -m 10 -X POST "$REGISTRY_URL/events" -H 'content-type: application/json' \
+          ${REGISTRY_TOKEN:+-H "authorization: Bearer $REGISTRY_TOKEN"} -d "$payload" || echo "stream failed (non-fatal)"
