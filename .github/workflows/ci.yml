@@ -11,24 +11,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: '3.12' }
+        with:
+          python-version: '3.12'
       - run: pip install -q ruff
       - run: ruff check src tests
       - if: always()
         uses: ./.github/actions/report
-        with: { job: lint, outcome: ${{ job.status }} }
+        with:
+          job: lint
+          outcome: ${{ job.status }}
 
   typecheck:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: '3.12' }
+        with:
+          python-version: '3.12'
       - run: pip install -q -e ".[dev]" pyright
       - run: pyright src || true   # advisory for now; flipped to required once the baseline is clean
       - if: always()
         uses: ./.github/actions/report
-        with: { job: typecheck, outcome: ${{ job.status }} }
+        with:
+          job: typecheck
+          outcome: ${{ job.status }}
 
   test:
     runs-on: ubuntu-latest
@@ -39,16 +45,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: '3.12' }
+        with:
+          python-version: '3.12'
       - run: pip install -q -e ".[dev]"
       # -p no:cacheprovider + no -x: collect every failure in the shard, not just the first.
       - run: python -m pytest -q tests -k "${{ matrix.shard }}" --junitxml=junit-${{ matrix.shard }}.xml -p no:cacheprovider
       - if: always()
         uses: actions/upload-artifact@v4
-        with: { name: junit-${{ matrix.shard }}, path: junit-${{ matrix.shard }}.xml }
+        with:
+          name: junit-${{ matrix.shard }}
+          path: junit-${{ matrix.shard }}.xml
       - if: always()
         uses: ./.github/actions/report
-        with: { job: test-${{ matrix.shard }}, outcome: ${{ job.status }}, junit: junit-${{ matrix.shard }}.xml }
+        with:
+          job: test-${{ matrix.shard }}
+          outcome: ${{ job.status }}
+          junit: junit-${{ matrix.shard }}.xml
 
   aggregate:
     needs: [lint, typecheck, test]
