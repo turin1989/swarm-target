@@ -23,6 +23,36 @@ def test_location_requires_code(client):
     assert client.post("/locations", json={"name": "x"}).status_code == 422
 
 
+def test_update_location_name_and_code(client, loc_a):
+    r = client.put(
+        f"/locations/{loc_a['id']}", json={"name": "Main Warehouse", "code": "WH-MAIN"}
+    )
+    assert r.status_code == 200
+    assert r.json() == {"id": loc_a["id"], "code": "WH-MAIN", "name": "Main Warehouse"}
+    # persisted
+    assert client.get(f"/locations/{loc_a['id']}").json() == r.json()
+
+
+def test_update_location_partial(client, loc_a):
+    r = client.put(f"/locations/{loc_a['id']}", json={"name": "Renamed"})
+    assert r.status_code == 200
+    assert r.json() == {"id": loc_a["id"], "code": "WH-A", "name": "Renamed"}
+
+    r = client.put(f"/locations/{loc_a['id']}", json={"code": "WH-X"})
+    assert r.status_code == 200
+    assert r.json() == {"id": loc_a["id"], "code": "WH-X", "name": "Renamed"}
+
+
+def test_update_location_empty_payload_is_noop(client, loc_a):
+    r = client.put(f"/locations/{loc_a['id']}", json={})
+    assert r.status_code == 200
+    assert r.json() == loc_a
+
+
+def test_update_location_unknown_id_404(client):
+    assert client.put("/locations/999", json={"name": "nope"}).status_code == 404
+
+
 def test_receive_increases_stock(client, item, loc_a):
     r = _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])
     assert r.status_code == 201
