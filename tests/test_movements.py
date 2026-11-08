@@ -77,6 +77,26 @@ def test_transfer_is_recorded(client, item, loc_a, loc_b):
     assert movements[1]["kind"] == "transfer"
 
 
+def test_transfer_moves_stock_between_locations(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=2,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    assert r.status_code == 201
+
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 5  # total is unchanged by a transfer
+    assert s["levels"] == [
+        {"item_id": item["id"], "location_id": loc_a["id"], "qty": 3},
+        {"item_id": item["id"], "location_id": loc_b["id"], "qty": 2},
+    ]
+
+
 def test_stock_for_missing_item_404(client):
     assert client.get("/items/77/stock").status_code == 404
 
