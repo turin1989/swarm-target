@@ -78,6 +78,37 @@ def test_update_item_deactivate(client, item):
     assert r.json()["active"] is False
 
 
+def test_update_item_reorder_point(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": 12})
+    assert r.status_code == 200
+    assert r.json()["reorder_point"] == 12
+    # value is persisted
+    assert client.get(f"/items/{item['id']}").json()["reorder_point"] == 12
+
+
+def test_update_item_reorder_point_with_other_fields(client, item):
+    r = client.put(
+        f"/items/{item['id']}",
+        json={"reorder_point": 7, "name": "Renamed", "unit_price": 3.75},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["reorder_point"] == 7
+    assert body["name"] == "Renamed"
+    assert body["unit_price"] == 3.75
+    stored = client.get(f"/items/{item['id']}").json()
+    assert stored["reorder_point"] == 7
+    assert stored["name"] == "Renamed"
+
+
+def test_update_item_omitting_reorder_point_preserves_value(client, item):
+    assert item["reorder_point"] == 5
+    r = client.put(f"/items/{item['id']}", json={"name": "StillWidget"})
+    assert r.status_code == 200
+    assert r.json()["reorder_point"] == 5
+    assert client.get(f"/items/{item['id']}").json()["reorder_point"] == 5
+
+
 def test_update_missing_item_404(client):
     assert client.put("/items/42", json={"name": "x"}).status_code == 404
 
