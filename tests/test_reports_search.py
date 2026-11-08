@@ -3,7 +3,7 @@
 
 def _seed(client, sku, name, reorder, qty, loc, price=1.0):
     item = client.post(
-        "/items", json={"sku": sku, "name": name, "reorder_point": reorder, "unit_price": price}
+        "/items", json={"sku": sku, "name": name, "reorder_level": reorder, "unit_price": price}
     ).json()
     if qty:
         client.post(
@@ -25,7 +25,7 @@ def test_low_stock_lists_items_below_reorder_point(client, loc_a):
         "sku": "LOW",
         "name": "Low",
         "total_qty": 2,
-        "reorder_point": 5,
+        "reorder_level": 5,
     }
 
 

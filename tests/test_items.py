@@ -15,8 +15,26 @@ def test_create_item_returns_201_and_fields(client):
     assert body["sku"] == "A-1"
     assert body["name"] == "Alpha"
     assert body["unit_price"] == 1.25
-    assert body["reorder_point"] == 0
+    assert body["reorder_level"] == 0
     assert body["active"] is True
+
+
+def test_create_item_rejects_reorder_point(client):
+    r = client.post(
+        "/items", json={"sku": "A-2", "name": "Alpha", "reorder_point": 3}
+    )
+    assert r.status_code == 422
+
+
+def test_update_item_rejects_reorder_point(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": 3})
+    assert r.status_code == 422
+
+
+def test_create_item_accepts_reorder_level(client):
+    r = client.post("/items", json={"sku": "A-3", "name": "Alpha", "reorder_level": 7})
+    assert r.status_code == 201
+    assert r.json()["reorder_level"] == 7
 
 
 def test_create_item_duplicate_sku_conflicts(client, item):
