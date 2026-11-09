@@ -498,6 +498,73 @@ def test_list_movements_pagination(client, item, loc_a):
     assert [m["id"] for m in r.json()] == [3, 4]
 
 
+# --- movement filters ------------------------------------------------------------
+
+
+@pytest.fixture()
+def item2(client):
+    r = client.post("/items", json={"sku": "GADGET-1", "name": "Gadget"})
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def test_filter_movements_by_item_id(client, item, item2, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    _move(client, item_id=item2["id"], kind="receive", qty=3, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="ship", qty=1, from_location_id=loc_a["id"])
+
+    r = client.get("/movements", params={"item_id": item["id"]})
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 2
+    assert all(m["item_id"] == item["id"] for m in body)
+
+    r = client.get("/movements", params={"item_id": item2["id"]})
+    assert [m["item_id"] for m in r.json()] == [item2["id"]]
+
+
+def test_filter_movements_by_kind(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="ship", qty=1, from_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", qty=2, to_location_id=loc_a["id"])
+
+    r = client.get("/movements", params={"kind": "ship"})
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 1
+    assert body[0]["kind"] == "ship"
+
+    r = client.get("/movements", params={"kind": "receive"})
+    assert [m["kind"] for m in r.json()] == ["receive", "receive"]
+
+
+def test_filter_movements_invalid_kind_422(client):
+    assert client.get("/movements", params={"kind": "explode"}).status_code == 422
+
+
+def test_filter_movements_combined_with_pagination(client, item, item2, loc_a):
+    for _ in range(3):
+        _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="ship", qty=1, from_location_id=loc_a["id"])
+    _move(client, item_id=item2["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
+
+    r = client.get("/movements", params={"item_id": item["id"], "kind": "receive"})
+    body = r.json()
+    assert len(body) == 3
+    assert all(m["item_id"] == item["id"] and m["kind"] == "receive" for m in body)
+
+    r = client.get(
+        "/movements",
+        params={"item_id": item["id"], "kind": "receive", "limit": 2, "offset": 1},
+    )
+    assert [m["id"] for m in r.json()] == [2, 3]
+
+
+def test_filter_movements_unknown_item_returns_empty(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
+    assert client.get("/movements", params={"item_id": 999}).json() == []
+
+
 # --- delete location -----------------------------------------------------------
 
 
