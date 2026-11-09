@@ -159,6 +159,18 @@ def test_list_items_offset(client):
     assert body["offset"] == 3
 
 
+def test_list_items_offset_beyond_total(client):
+    for n in range(3):
+        client.post("/items", json={"sku": f"S{n}", "name": f"N{n}"})
+    r = client.get("/items", params={"limit": 2, "offset": 10})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["items"] == []
+    assert body["total"] == 3  # total still ignores pagination
+    assert body["limit"] == 2
+    assert body["offset"] == 10
+
+
 def test_list_items_sort_by_name_ascending(client):
     for sku, name in [("S1", "Charlie"), ("S2", "Alpha"), ("S3", "Bravo")]:
         client.post("/items", json={"sku": sku, "name": name})
