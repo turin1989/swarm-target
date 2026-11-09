@@ -10,7 +10,7 @@ MovementKind = Literal["receive", "ship", "transfer", "adjust"]
 class ItemCreate(BaseModel):
     sku: str = Field(..., min_length=1, max_length=64)
     name: str = Field(..., min_length=1, max_length=200)
-    description: str = ""
+    description: str = Field("", max_length=2000)
     unit_price: float = Field(default=0.0, ge=0)
     reorder_point: int = Field(default=0, ge=0)
 
@@ -25,7 +25,7 @@ class ItemCreate(BaseModel):
 
 class ItemUpdate(BaseModel):
     name: Optional[str] = None
-    description: Optional[str] = None
+    description: Optional[str] = Field(None, max_length=2000)
     unit_price: Optional[float] = Field(default=None, ge=0)
     reorder_point: Optional[int] = Field(default=None, ge=0)
     active: Optional[bool] = None
