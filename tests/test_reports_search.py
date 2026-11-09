@@ -48,7 +48,12 @@ def test_low_stock_at_reorder_point_sums_stock_across_locations(client, loc_a, l
     item = _seed(client, "SPLIT", "Split", reorder=5, quantity=3, loc=loc_a)
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "quantity": 2, "to_location_id": loc_b["id"]},
+        json={
+            "item_id": item["id"],
+            "kind": "receive",
+            "quantity": 2,
+            "to_location_id": loc_b["id"],
+        },
     )
     entries = client.get("/reports/low-stock").json()
     assert [e["sku"] for e in entries] == ["SPLIT"]
@@ -125,6 +130,7 @@ def test_low_stock_scoped_excludes_inactive(client, loc_a):
     item = _seed(client, "INACT", "Inactive", reorder=5, quantity=0, loc=loc_a)
     client.put(f"/items/{item['id']}", json={"active": False})
     assert client.get("/reports/low-stock", params={"location_id": loc_a["id"]}).json() == []
+
 
 
 def test_low_stock_unknown_location_returns_404(client, loc_a):
@@ -355,6 +361,43 @@ def test_search_description_matches_respect_limit_and_ordering(client):
     client.post("/items", json={"sku": "L3-foo", "name": "Bravo", "description": "plain"})
     names = [i["name"] for i in client.get("/search", params={"q": "foo", "limit": 2}).json()]
     assert names == ["Alpha", "Bravo"]
+
+
+def test_search_matches_description_only_among_decoys(client):
+    # "foo" appears only in the description; sku and name do not contain it.
+    client.post("/items", json={"sku": "DD1", "name": "Drill", "description": "foo bit included"})
+    client.post("/items", json={"sku": "DD2", "name": "Driver", "description": "torx bits"})
+    client.post("/items", json={"sku": "DD3", "name": "Sander", "description": ""})
+    r = client.get("/search", params={"q": "foo"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["DD1"]
+
+
+def test_search_no_duplicates_with_mixed_case_matches_across_fields(client):
+    client.post(
+        "/items",
+        json={"sku": "foo-9", "name": "FOO Deluxe", "description": "the Foo of foos"},
+    )
+    results = client.get("/search", params={"q": "fOo"}).json()
+    assert len(results) == 1
+    assert results[0]["sku"] == "FOO-9"
+
+
+def test_search_description_matches_interleave_in_name_order(client):
+    # Matches come from different fields; results must still be sorted by name.
+    client.post("/items", json={"sku": "M1", "name": "Delta", "description": "foo finish"})
+    client.post("/items", json={"sku": "foo-M2", "name": "Alpha", "description": ""})
+    client.post("/items", json={"sku": "M3", "name": "Charlie foo", "description": ""})
+    client.post("/items", json={"sku": "M4", "name": "Bravo", "description": "grade foo"})
+    names = [i["name"] for i in client.get("/search", params={"q": "foo"}).json()]
+    assert names == ["Alpha", "Bravo", "Charlie foo", "Delta"]
+
+
+def test_search_items_with_empty_description_do_not_match_or_error(client):
+    client.post("/items", json={"sku": "E1", "name": "Empty desc"})
+    r = client.get("/search", params={"q": "foo"})
+    assert r.status_code == 200
+    assert r.json() == []
 
 
 def test_search_requires_query(client):
