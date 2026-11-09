@@ -2,6 +2,7 @@
 
 import sqlite3
 from collections.abc import Iterator
+from datetime import datetime, timezone
 
 from fastapi import Request
 
@@ -13,7 +14,8 @@ CREATE TABLE IF NOT EXISTS items (
     description TEXT NOT NULL DEFAULT '',
     unit_price REAL NOT NULL DEFAULT 0,
     reorder_point INTEGER NOT NULL DEFAULT 0,
-    active INTEGER NOT NULL DEFAULT 1
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS locations (
@@ -45,6 +47,11 @@ CREATE TABLE IF NOT EXISTS schema_version (
 """
 
 SCHEMA_VERSION = 1
+
+
+def utc_now_iso() -> str:
+    """Current UTC time as an ISO-8601 string, e.g. '2026-01-02T03:04:05Z'."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def connect(path: str) -> sqlite3.Connection:
