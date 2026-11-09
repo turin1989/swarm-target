@@ -41,7 +41,8 @@ CREATE TABLE IF NOT EXISTS movements (
     from_location_id INTEGER REFERENCES locations(id),
     to_location_id INTEGER REFERENCES locations(id),
     note TEXT NOT NULL DEFAULT '',
-    reference TEXT
+    reference TEXT,
+    created_at TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -83,6 +84,17 @@ def init_db(path: str) -> None:
             )
         conn.execute(
             "UPDATE items SET created_at = ? WHERE created_at IS NULL OR created_at = ''",
+            (utc_now_iso(),),
+        )
+        # Older databases may predate the movements.created_at column; add it if
+        # missing and backfill existing rows so the column is always a valid timestamp.
+        movement_columns = {r["name"] for r in conn.execute("PRAGMA table_info(movements)")}
+        if "created_at" not in movement_columns:
+            conn.execute(
+                "ALTER TABLE movements ADD COLUMN created_at TEXT NOT NULL DEFAULT ''"
+            )
+        conn.execute(
+            "UPDATE movements SET created_at = ? WHERE created_at IS NULL OR created_at = ''",
             (utc_now_iso(),),
         )
         # Older databases may predate the locations.active column; add it if missing.

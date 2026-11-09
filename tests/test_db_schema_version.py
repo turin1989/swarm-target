@@ -59,6 +59,48 @@ def test_init_db_adds_created_at_to_legacy_items_table(tmp_path):
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", created_at)
 
 
+def test_init_db_adds_created_at_to_legacy_movements_table(tmp_path):
+    """Databases predating movements.created_at get the column added and backfilled."""
+    path = str(tmp_path / "legacy_movements.db")
+    conn = sqlite3.connect(path)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE movements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                item_id INTEGER NOT NULL,
+                kind TEXT NOT NULL,
+                qty INTEGER NOT NULL,
+                from_location_id INTEGER,
+                to_location_id INTEGER,
+                note TEXT NOT NULL DEFAULT '',
+                reference TEXT
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO movements (item_id, kind, qty, to_location_id) VALUES (1, 'receive', 5, 1)"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    db.init_db(path)
+
+    conn = sqlite3.connect(path)
+    try:
+        columns = {r[1] for r in conn.execute("PRAGMA table_info(movements)")}
+        assert "created_at" in columns
+        (created_at,) = conn.execute(
+            "SELECT created_at FROM movements WHERE id = 1"
+        ).fetchone()
+    finally:
+        conn.close()
+    import re
+
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", created_at)
+
+
 def test_init_db_is_idempotent(tmp_path):
     path = str(tmp_path / "twice.db")
     db.init_db(path)

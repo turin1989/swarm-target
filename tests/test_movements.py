@@ -1,6 +1,10 @@
 """Locations, movements, stock levels."""
 
+import re
+
 import pytest
+
+ISO_UTC_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 
 def _move(client, **kw):
@@ -243,6 +247,28 @@ def test_get_movement_unknown_id_404(client):
     r = client.get("/movements/999")
     assert r.status_code == 404
     assert r.json()["detail"] == "movement 999 not found"
+
+
+# --- created_at ---------------------------------------------------------------
+
+
+def test_movement_sets_created_at(client, item, loc_a):
+    r = _move(client, item_id=item["id"], kind="receive", qty=3, to_location_id=loc_a["id"])
+    assert r.status_code == 201
+    body = r.json()
+    assert "created_at" in body
+    assert ISO_UTC_RE.match(body["created_at"]), body["created_at"]
+
+
+def test_movement_created_at_returned_by_all_movement_endpoints(client, item, loc_a):
+    created = _move(
+        client, item_id=item["id"], kind="receive", qty=3, to_location_id=loc_a["id"]
+    ).json()
+    created_at = created["created_at"]
+    assert ISO_UTC_RE.match(created_at)
+
+    assert client.get(f"/movements/{created['id']}").json()["created_at"] == created_at
+    assert client.get("/movements").json()[0]["created_at"] == created_at
 
 
 def test_list_movements_filter_no_matches(client, item, loc_a):
