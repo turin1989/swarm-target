@@ -51,6 +51,7 @@ _SORTABLE_COLUMNS = items_service.SORTABLE_COLUMNS
 def list_items(
     response: Response,
     active: Optional[bool] = None,
+    sku: Optional[str] = None,
     sort: str = Query("id"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -61,9 +62,15 @@ def list_items(
     if column not in _SORTABLE_COLUMNS:
         raise HTTPException(status_code=422, detail=f"invalid sort field {sort!r}")
     items = items_service.list_items(
-        conn, active=active, sort=column, descending=descending, limit=limit, offset=offset
+        conn,
+        active=active,
+        sku=sku,
+        sort=column,
+        descending=descending,
+        limit=limit,
+        offset=offset,
     )
-    total = items_service.count_items(conn, active=active)
+    total = items_service.count_items(conn, active=active, sku=sku)
     response.headers["X-Total-Count"] = str(total)
     return ItemPage(items=items, total=total, limit=limit, offset=offset)
 
