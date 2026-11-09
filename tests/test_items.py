@@ -502,6 +502,22 @@ def test_update_item_description_at_limit_ok(client, item):
     assert len(r.json()["description"]) == 2000
 
 
+def test_bulk_create_item_description_too_long_422(client):
+    r = client.post(
+        "/items/bulk",
+        json=[{"sku": "BULKDESC", "name": "X", "description": "d" * 2001}],
+    )
+    assert r.status_code == 422
+
+
+def test_update_item_description_too_long_does_not_change_item(client, item):
+    r = client.put(f"/items/{item['id']}", json={"description": "d" * 2001})
+    assert r.status_code == 422
+    r = client.get(f"/items/{item['id']}")
+    assert r.status_code == 200
+    assert r.json()["description"] == item["description"]
+
+
 def test_delete_missing_item_404(client):
     r = client.delete("/items/999")
     assert r.status_code == 404
