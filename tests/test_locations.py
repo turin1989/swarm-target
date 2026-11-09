@@ -194,6 +194,86 @@ def test_distinct_location_codes_allowed(client, loc_a):
     assert r.json()["code"] == "WH-C"
 
 
+class TestDeleteLocation:
+    def test_delete_returns_204_and_location_is_gone(self, client, loc_a):
+        r = client.delete(f"/locations/{loc_a['id']}")
+        assert r.status_code == 204, r.text
+        assert r.content == b""
+
+        r = client.get(f"/locations/{loc_a['id']}")
+        assert r.status_code == 404
+
+        r = client.get("/locations")
+        assert r.status_code == 200
+        assert loc_a["id"] not in [loc["id"] for loc in r.json()]
+
+    def test_delete_unknown_id_returns_404(self, client):
+        r = client.delete("/locations/9999")
+        assert r.status_code == 404
+        body = r.json()
+        assert body["error"]["code"] == "not_found"
+        assert "9999" in body["error"]["message"]
+
+    def test_delete_refused_when_location_holds_stock(self, client, item, loc_a):
+        r = client.post(
+            "/movements",
+            json={
+                "item_id": item["id"],
+                "kind": "receive",
+                "quantity": 5,
+                "to_location_id": loc_a["id"],
+            },
+        )
+        assert r.status_code == 201, r.text
+
+        r = client.delete(f"/locations/{loc_a['id']}")
+        assert r.status_code == 409, r.text
+        assert r.json()["error"]["code"] == "conflict"
+
+        # location is still there
+        r = client.get(f"/locations/{loc_a['id']}")
+        assert r.status_code == 200
+
+    def test_delete_allowed_when_stock_level_is_zero(self, client, item, loc_a):
+        # receive then ship everything so a stock_levels row exists with qty == 0
+        r = client.post(
+            "/movements",
+            json={
+                "item_id": item["id"],
+                "kind": "receive",
+                "quantity": 5,
+                "to_location_id": loc_a["id"],
+            },
+        )
+        assert r.status_code == 201, r.text
+        r = client.post(
+            "/movements",
+            json={
+                "item_id": item["id"],
+                "kind": "ship",
+                "quantity": 5,
+                "from_location_id": loc_a["id"],
+            },
+        )
+        assert r.status_code == 201, r.text
+
+        r = client.delete(f"/locations/{loc_a['id']}")
+        assert r.status_code == 204, r.text
+
+        r = client.get(f"/locations/{loc_a['id']}")
+        assert r.status_code == 404
+
+    def test_delete_twice_returns_404_second_time(self, client, loc_a):
+        assert client.delete(f"/locations/{loc_a['id']}").status_code == 204
+        assert client.delete(f"/locations/{loc_a['id']}").status_code == 404
+
+    def test_delete_does_not_affect_other_locations(self, client, loc_a, loc_b):
+        assert client.delete(f"/locations/{loc_a['id']}").status_code == 204
+        r = client.get(f"/locations/{loc_b['id']}")
+        assert r.status_code == 200
+        assert r.json() == loc_b
+
+
 def test_locations_code_column_is_unique_in_schema():
     import sqlite3
 
