@@ -30,6 +30,18 @@ def get_item_levels(conn: sqlite3.Connection, item_id: int) -> list[StockLevel]:
     return [StockLevel(**dict(r)) for r in rows]
 
 
+def get_location_levels(conn: sqlite3.Connection, location_id: int) -> list[StockLevel]:
+    rows = conn.execute(
+        """
+        SELECT item_id, location_id, qty FROM stock_levels
+        WHERE location_id = ? AND qty != 0
+        ORDER BY item_id
+        """,
+        (location_id,),
+    ).fetchall()
+    return [StockLevel(**dict(r)) for r in rows]
+
+
 def total_stock(conn: sqlite3.Connection, item_id: int) -> int:
     row = conn.execute(
         "SELECT COALESCE(SUM(qty), 0) AS total FROM stock_levels WHERE item_id = ?",
@@ -103,6 +115,39 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
         (m.item_id, m.kind, m.qty, m.from_location_id, m.to_location_id, m.note, created_at),
     )
     return get_movement(conn, cur.lastrowid)
+
+
+def reverse_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
+    """Create and apply a new movement that undoes the given movement."""
+    original = get_movement(conn, movement_id)
+
+    if original.kind == "receive":
+        reversal = MovementCreate(
+            item_id=original.item_id,
+            kind="ship",
+            qty=original.qty,
+            from_location_id=original.to_location_id,
+            note=f"reversal of {movement_id}",
+        )
+    elif original.kind == "ship":
+        reversal = MovementCreate(
+            item_id=original.item_id,
+            kind="receive",
+            qty=original.qty,
+            to_location_id=original.from_location_id,
+            note=f"reversal of {movement_id}",
+        )
+    else:  # transfer
+        reversal = MovementCreate(
+            item_id=original.item_id,
+            kind="transfer",
+            qty=original.qty,
+            from_location_id=original.to_location_id,
+            to_location_id=original.from_location_id,
+            note=f"reversal of {movement_id}",
+        )
+
+    return apply_movement(conn, reversal)
 
 
 def get_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
