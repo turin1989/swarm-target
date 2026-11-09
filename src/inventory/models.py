@@ -36,6 +36,13 @@ class Item(BaseModel):
     barcode: Optional[str] = None
 
 
+class ItemPage(BaseModel):
+    items: list[Item]
+    total: int
+    limit: int
+    offset: int
+
+
 class LocationCreate(BaseModel):
     code: str = Field(..., min_length=1, max_length=32)
     name: str = Field(..., min_length=1, max_length=200)
