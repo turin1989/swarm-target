@@ -146,3 +146,40 @@ def test_created_at_cannot_be_changed_on_put(client, item):
     assert r.json()["created_at"] == item["created_at"]
     # persisted value unchanged too
     assert client.get(f"/items/{item['id']}").json()["created_at"] == item["created_at"]
+
+
+def test_list_items_x_total_count_header(client):
+    for i in range(5):
+        client.post("/items", json={"sku": f"TC-{i}", "name": f"Item {i}"})
+    r = client.get("/items")
+    assert r.status_code == 200
+    assert r.headers["X-Total-Count"] == "5"
+
+
+def test_list_items_x_total_count_ignores_limit_and_offset(client):
+    for i in range(5):
+        client.post("/items", json={"sku": f"TC-{i}", "name": f"Item {i}"})
+    r = client.get("/items", params={"limit": 2, "offset": 1})
+    assert r.status_code == 200
+    assert len(r.json()) == 2
+    assert r.headers["X-Total-Count"] == "5"
+
+
+def test_list_items_x_total_count_respects_filters(client):
+    for i in range(4):
+        client.post("/items", json={"sku": f"TC-{i}", "name": f"Item {i}"})
+    # deactivate one item
+    r = client.put("/items/1", json={"active": False})
+    assert r.status_code == 200
+
+    r = client.get("/items", params={"active": "true", "limit": 1})
+    assert r.headers["X-Total-Count"] == "3"
+    assert len(r.json()) == 1
+
+    r = client.get("/items", params={"active": "false"})
+    assert r.headers["X-Total-Count"] == "1"
+
+
+def test_list_items_x_total_count_empty(client):
+    r = client.get("/items")
+    assert r.headers["X-Total-Count"] == "0"
