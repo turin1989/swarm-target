@@ -57,7 +57,9 @@ def test_get_item(client, item):
 def test_get_missing_item_404(client):
     r = client.get("/items/999")
     assert r.status_code == 404
-    assert "not found" in r.json()["detail"]
+    body = r.json()
+    assert body["error"]["code"] == "not_found"
+    assert "not found" in body["error"]["message"]
 
 
 def test_list_items_ordered_by_id(client):
