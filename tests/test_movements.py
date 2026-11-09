@@ -830,6 +830,30 @@ def test_movement_response_uses_quantity_not_qty(client, item, loc_a):
     assert all("qty" not in lvl for lvl in levels)
 
 
+def test_movement_read_endpoints_use_quantity_not_qty(client, item, loc_a):
+    created = _move(
+        client, item_id=item["id"], kind="receive", quantity=3, to_location_id=loc_a["id"]
+    ).json()
+
+    single = client.get(f"/movements/{created['id']}").json()
+    assert single["quantity"] == 3
+    assert "qty" not in single
+
+    listed = client.get("/movements").json()
+    assert [m["quantity"] for m in listed] == [3]
+    assert all("qty" not in m for m in listed)
+
+    item_movements = client.get(f"/items/{item['id']}/movements").json()
+    assert [m["quantity"] for m in item_movements] == [3]
+    assert all("qty" not in m for m in item_movements)
+
+    location_levels = client.get(f"/locations/{loc_a['id']}/stock").json()["levels"]
+    assert location_levels == [
+        {"item_id": item["id"], "location_id": loc_a["id"], "quantity": 3}
+    ]
+    assert all("qty" not in lvl for lvl in location_levels)
+
+
 def test_movement_with_reference_is_stored_and_returned(client, item, loc_a):
     r = _move(
         client,
