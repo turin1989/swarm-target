@@ -107,6 +107,21 @@ def test_transfer_is_recorded(client, item, loc_a, loc_b):
     assert movements[1]["kind"] == "transfer"
 
 
+def test_adjust_sets_stock_absolutely(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])
+    r = _move(client, item_id=item["id"], kind="adjust", qty=3, to_location_id=loc_a["id"])
+    assert r.status_code == 201
+    body = r.json()
+    assert body["kind"] == "adjust"
+    assert body["qty"] == 3
+    assert body["to_location_id"] == loc_a["id"]
+    assert body["from_location_id"] is None
+
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 3
+    assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "qty": 3}]
+
+
 def test_transfer_moves_stock_between_locations(client, item, loc_a, loc_b):
     _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
     r = _move(
@@ -179,6 +194,58 @@ def test_transfer_more_than_source_stock_rejected_409(client, item, loc_a, loc_b
     s = client.get(f"/items/{item['id']}/stock").json()
     assert s["total"] == 3
     assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "qty": 3}]
+
+
+def test_adjust_sets_stock_at_empty_location(client, item, loc_a):
+    r = _move(client, item_id=item["id"], kind="adjust", qty=7, to_location_id=loc_a["id"])
+    assert r.status_code == 201
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 7
+    assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "qty": 7}]
+
+
+def test_adjust_only_affects_target_location(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", qty=9, to_location_id=loc_b["id"])
+    _move(client, item_id=item["id"], kind="adjust", qty=2, to_location_id=loc_b["id"])
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 7
+    assert [lvl["qty"] for lvl in s["levels"]] == [5, 2]
+
+
+def test_adjust_requires_to_location(client, item, loc_a):
+    r = _move(client, item_id=item["id"], kind="adjust", qty=1)
+    assert r.status_code == 400
+    body = r.json()
+    assert body["error"]["code"] == "bad_request"
+    assert "required" in body["error"]["message"]
+
+
+def test_adjust_rejects_from_location(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="adjust",
+        qty=1,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_a["id"],
+    )
+    assert r.status_code == 400
+    body = r.json()
+    assert body["error"]["code"] == "bad_request"
+    assert "from_location_id" in body["error"]["message"]
+
+
+def test_adjust_is_recorded_in_movement_list(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="adjust", qty=4, to_location_id=loc_a["id"])
+    movements = client.get("/movements").json()
+    assert len(movements) == 1
+    assert movements[0]["kind"] == "adjust"
+
+
+def test_adjust_unknown_location_404(client, item):
+    r = _move(client, item_id=item["id"], kind="adjust", qty=1, to_location_id=123)
+    assert r.status_code == 404
 
 
 def test_transfer_checks_source_not_destination(client, item, loc_a, loc_b):
