@@ -17,7 +17,8 @@ def get_stock_level(conn: sqlite3.Connection, item_id: int, location_id: int) ->
 
 def get_item_levels(conn: sqlite3.Connection, item_id: int) -> list[StockLevel]:
     rows = conn.execute(
-        "SELECT item_id, location_id, qty AS quantity FROM stock_levels WHERE item_id = ? ORDER BY location_id",
+        "SELECT item_id, location_id, qty AS quantity FROM stock_levels"
+        " WHERE item_id = ? ORDER BY location_id",
         (item_id,),
     ).fetchall()
     return [StockLevel(**dict(r)) for r in rows]
@@ -146,7 +147,11 @@ def reverse_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
 
 
 def get_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
-    row = conn.execute("SELECT id, item_id, kind, qty AS quantity, from_location_id, to_location_id, note, reference, created_at FROM movements WHERE id = ?", (movement_id,)).fetchone()
+    row = conn.execute(
+        "SELECT id, item_id, kind, qty AS quantity, from_location_id, to_location_id,"
+        " note, reference, created_at FROM movements WHERE id = ?",
+        (movement_id,),
+    ).fetchone()
     if row is None:
         raise NotFoundError(f"movement {movement_id} not found")
     return Movement(**dict(row))
@@ -159,7 +164,10 @@ def list_movements(
     item_id: int | None = None,
     kind: str | None = None,
 ) -> list[Movement]:
-    sql = "SELECT id, item_id, kind, qty AS quantity, from_location_id, to_location_id, note, reference, created_at FROM movements"
+    sql = (
+        "SELECT id, item_id, kind, qty AS quantity, from_location_id, to_location_id,"
+        " note, reference, created_at FROM movements"
+    )
     conditions: list[str] = []
     params: list = []
     if item_id is not None:
