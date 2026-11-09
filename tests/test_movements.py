@@ -225,6 +225,26 @@ def test_list_movements_filters_combine_with_pagination(client, item, item2, loc
     assert [m["id"] for m in paged] == [m["id"] for m in body[1:3]]
 
 
+def test_get_movement_by_id(client, item, loc_a):
+    created = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=5,
+        to_location_id=loc_a["id"],
+        reference="PO-1",
+    ).json()
+    r = client.get(f"/movements/{created['id']}")
+    assert r.status_code == 200
+    assert r.json() == created
+
+
+def test_get_movement_unknown_id_404(client):
+    r = client.get("/movements/999")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "movement 999 not found"
+
+
 def test_list_movements_filter_no_matches(client, item, loc_a):
     _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
     assert client.get("/movements", params={"kind": "transfer"}).json() == []
