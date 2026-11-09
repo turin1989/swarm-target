@@ -91,9 +91,13 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
     if m.quantity <= 0:  # pragma: no cover - guarded by the model's gt=0 constraint
         raise ValidationError("quantity must be a positive integer")
 
-    item = conn.execute("SELECT id FROM items WHERE id = ?", (m.item_id,)).fetchone()
+    item = conn.execute(
+        "SELECT id, active FROM items WHERE id = ?", (m.item_id,)
+    ).fetchone()
     if item is None:
         raise NotFoundError(f"item {m.item_id} not found")
+    if not item["active"]:
+        raise ConflictError(f"item {m.item_id} is inactive")
 
     if m.kind == "receive":
         to_id = _require_location(conn, m.to_location_id, "to_location_id")
@@ -178,14 +182,21 @@ def get_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
 def list_movements(
     conn: sqlite3.Connection,
     item_id: int | None = None,
+    kind: str | None = None,
     limit: int = 100,
     offset: int = 0,
 ) -> list[Movement]:
     sql = "SELECT * FROM movements"
+    conditions: list[str] = []
     params: list = []
     if item_id is not None:
-        sql += " WHERE item_id = ?"
+        conditions.append("item_id = ?")
         params.append(item_id)
+    if kind is not None:
+        conditions.append("kind = ?")
+        params.append(kind)
+    if conditions:
+        sql += " WHERE " + " AND ".join(conditions)
     sql += " ORDER BY id LIMIT ? OFFSET ?"
     params += [limit, offset]
     rows = conn.execute(sql, params).fetchall()
