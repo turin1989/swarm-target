@@ -63,7 +63,11 @@ def _fetch_item(conn: sqlite3.Connection, item_id: int) -> Item:
 def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db)) -> Item:
     try:
         return items_service.create_item(conn, payload)
-    except sqlite3.IntegrityError:
+    except sqlite3.IntegrityError as exc:
+        if "barcode" in str(exc):
+            raise HTTPException(
+                status_code=409, detail=f"barcode {payload.barcode!r} already exists"
+            )
         raise HTTPException(status_code=409, detail=f"sku {payload.sku!r} already exists")
 
 
@@ -76,8 +80,12 @@ def create_items_bulk(
     for entry in payload:
         try:
             created.append(items_service.create_item(conn, entry))
-        except sqlite3.IntegrityError:
+        except sqlite3.IntegrityError as exc:
             conn.rollback()
+            if "barcode" in str(exc):
+                raise HTTPException(
+                    status_code=409, detail=f"barcode {entry.barcode!r} already exists"
+                )
             raise HTTPException(status_code=409, detail=f"sku {entry.sku!r} already exists")
     return created
 
@@ -90,6 +98,7 @@ def list_items(
     response: Response,
     active: Optional[bool] = None,
     sku: Optional[str] = None,
+    barcode: Optional[str] = None,
     sort: str = Query("id"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -103,12 +112,13 @@ def list_items(
         conn,
         active=active,
         sku=sku,
+        barcode=barcode,
         sort=column,
         descending=descending,
         limit=limit,
         offset=offset,
     )
-    total = items_service.count_items(conn, active=active, sku=sku)
+    total = items_service.count_items(conn, active=active, sku=sku, barcode=barcode)
     response.headers["X-Total-Count"] = str(total)
     return ItemPage(items=items, total=total, limit=limit, offset=offset)
 
