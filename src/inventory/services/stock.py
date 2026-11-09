@@ -63,6 +63,16 @@ def _adjust(conn: sqlite3.Connection, item_id: int, location_id: int, delta: int
     )
 
 
+def _set_level(conn: sqlite3.Connection, item_id: int, location_id: int, qty: int) -> None:
+    conn.execute(
+        """
+        INSERT INTO stock_levels (item_id, location_id, qty) VALUES (?, ?, ?)
+        ON CONFLICT(item_id, location_id) DO UPDATE SET qty = excluded.qty
+        """,
+        (item_id, location_id, qty),
+    )
+
+
 def _require_stock(
     conn: sqlite3.Connection, item_id: int, location_id: int, qty: int
 ) -> None:
@@ -106,6 +116,11 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
         _require_stock(conn, m.item_id, from_id, m.quantity)
         _adjust(conn, m.item_id, from_id, -m.quantity)
         _adjust(conn, m.item_id, to_id, m.quantity)
+    elif m.kind == "adjust":
+        if m.from_location_id is not None:
+            raise StockError("from_location_id must be null for adjust movements")
+        to_id = _require_location(conn, m.to_location_id, "to_location_id")
+        _set_level(conn, m.item_id, to_id, m.quantity)
     else:  # pragma: no cover - guarded by the Literal type
         raise StockError(f"unknown movement kind {m.kind!r}")
 
