@@ -107,6 +107,24 @@ def test_transfer_is_recorded(client, item, loc_a, loc_b):
     assert movements[1]["kind"] == "transfer"
 
 
+def test_transfer_moves_stock_between_locations(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=2,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 5
+    assert s["levels"] == [
+        {"item_id": item["id"], "location_id": loc_a["id"], "qty": 3},
+        {"item_id": item["id"], "location_id": loc_b["id"], "qty": 2},
+    ]
+
+
 def test_ship_more_than_on_hand_rejected_409(client, item, loc_a):
     _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
     r = _move(client, item_id=item["id"], kind="ship", qty=6, from_location_id=loc_a["id"])
@@ -225,6 +243,72 @@ def test_movement_non_positive_qty_422(client, item, loc_a, qty):
 def test_movement_invalid_kind_422(client, item, loc_a):
     r = _move(client, item_id=item["id"], kind="explode", qty=1, to_location_id=loc_a["id"])
     assert r.status_code == 422
+
+
+def test_reverse_receive_creates_ship(client, item, loc_a):
+    original = _move(
+        client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"]
+    ).json()
+    r = client.post(f"/movements/{original['id']}/reverse")
+    assert r.status_code == 201
+    body = r.json()
+    assert body["id"] != original["id"]
+    assert body["kind"] == "ship"
+    assert body["qty"] == 10
+    assert body["from_location_id"] == loc_a["id"]
+    assert body["to_location_id"] is None
+    assert body["note"] == f"reversal of {original['id']}"
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 0
+
+
+def test_reverse_ship_creates_receive(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])
+    original = _move(
+        client, item_id=item["id"], kind="ship", qty=3, from_location_id=loc_a["id"]
+    ).json()
+    r = client.post(f"/movements/{original['id']}/reverse")
+    assert r.status_code == 201
+    body = r.json()
+    assert body["kind"] == "receive"
+    assert body["qty"] == 3
+    assert body["to_location_id"] == loc_a["id"]
+    assert body["from_location_id"] is None
+    assert body["note"] == f"reversal of {original['id']}"
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 10
+
+
+def test_reverse_transfer_swaps_locations(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    original = _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=2,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    ).json()
+    r = client.post(f"/movements/{original['id']}/reverse")
+    assert r.status_code == 201
+    body = r.json()
+    assert body["kind"] == "transfer"
+    assert body["qty"] == 2
+    assert body["from_location_id"] == loc_b["id"]
+    assert body["to_location_id"] == loc_a["id"]
+    assert body["note"] == f"reversal of {original['id']}"
+
+
+def test_reverse_is_recorded_in_movement_list(client, item, loc_a):
+    original = _move(
+        client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"]
+    ).json()
+    reversal = client.post(f"/movements/{original['id']}/reverse").json()
+    movements = client.get("/movements").json()
+    assert [m["id"] for m in movements] == [original["id"], reversal["id"]]
+
+
+def test_reverse_unknown_movement_404(client):
+    r = client.post("/movements/999/reverse")
+    assert r.status_code == 404
 
 
 def test_movement_has_created_at(client, item, loc_a):
