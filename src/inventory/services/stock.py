@@ -79,6 +79,12 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
         _require_location(conn, m.to_location_id, "to_location_id")
         _adjust(conn, m.item_id, from_id, -m.qty)
         _adjust(conn, m.item_id, from_id, m.qty)
+    elif m.kind == "adjust":
+        if m.from_location_id is not None:
+            raise ValidationError("from_location_id must be null for adjust movements")
+        to_id = _require_location(conn, m.to_location_id, "to_location_id")
+        current = get_stock_level(conn, m.item_id, to_id)
+        _adjust(conn, m.item_id, to_id, m.qty - current)
     else:  # pragma: no cover - guarded by the Literal type
         raise ValidationError(f"unknown movement kind {m.kind!r}")
 
@@ -125,7 +131,7 @@ def reverse_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
             to_location_id=original.from_location_id,
             note=f"reversal of {movement_id}",
         )
-    else:  # transfer
+    elif original.kind == "transfer":
         reversal = MovementCreate(
             item_id=original.item_id,
             kind="transfer",
@@ -134,6 +140,8 @@ def reverse_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
             to_location_id=original.from_location_id,
             note=f"reversal of {movement_id}",
         )
+    else:  # adjust: the prior quantity is not recorded, so it cannot be undone
+        raise ValidationError(f"movement kind {original.kind!r} cannot be reversed")
     return apply_movement(conn, reversal)
 
 

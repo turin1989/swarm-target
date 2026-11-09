@@ -249,6 +249,96 @@ def test_get_movement_unknown_id_404(client):
     assert r.json()["detail"] == "movement 999 not found"
 
 
+# --- adjust -------------------------------------------------------------------
+
+
+def test_adjust_sets_stock_to_absolute_qty(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])
+    r = _move(client, item_id=item["id"], kind="adjust", qty=4, to_location_id=loc_a["id"])
+    assert r.status_code == 201
+    body = r.json()
+    assert body["kind"] == "adjust"
+    assert body["qty"] == 4
+    assert body["to_location_id"] == loc_a["id"]
+    assert body["from_location_id"] is None
+
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 4
+    assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "qty": 4}]
+
+
+def test_adjust_can_increase_stock(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=3, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="adjust", qty=9, to_location_id=loc_a["id"])
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 9
+
+
+def test_adjust_sets_stock_from_zero(client, item, loc_a):
+    r = _move(client, item_id=item["id"], kind="adjust", qty=7, to_location_id=loc_a["id"])
+    assert r.status_code == 201
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 7
+    assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "qty": 7}]
+
+
+def test_adjust_only_affects_target_location(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", qty=8, to_location_id=loc_b["id"])
+    _move(client, item_id=item["id"], kind="adjust", qty=2, to_location_id=loc_b["id"])
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 7
+    assert [lvl["qty"] for lvl in s["levels"]] == [5, 2]
+
+
+def test_adjust_requires_to_location(client, item, loc_a):
+    r = _move(client, item_id=item["id"], kind="adjust", qty=5)
+    assert r.status_code == 400
+    assert "required" in r.json()["detail"]
+
+
+def test_adjust_rejects_from_location(client, item, loc_a, loc_b):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="adjust",
+        qty=5,
+        to_location_id=loc_b["id"],
+        from_location_id=loc_a["id"],
+    )
+    assert r.status_code == 400
+    assert "from_location_id" in r.json()["detail"]
+
+
+def test_adjust_unknown_location_404(client, item):
+    r = _move(client, item_id=item["id"], kind="adjust", qty=5, to_location_id=123)
+    assert r.status_code == 404
+
+
+def test_adjust_is_recorded_and_listable_by_kind(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    created = _move(
+        client, item_id=item["id"], kind="adjust", qty=2, to_location_id=loc_a["id"]
+    ).json()
+    assert client.get(f"/movements/{created['id']}").json() == created
+
+    r = client.get("/movements", params={"kind": "adjust"})
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 1
+    assert body[0]["kind"] == "adjust"
+    assert body[0]["qty"] == 2
+
+
+def test_adjust_cannot_be_reversed(client, item, loc_a):
+    created = _move(
+        client, item_id=item["id"], kind="adjust", qty=5, to_location_id=loc_a["id"]
+    ).json()
+    r = client.post(f"/movements/{created['id']}/reverse")
+    assert r.status_code == 400
+    # stock is untouched by the failed reversal
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 5
+
+
 # --- created_at ---------------------------------------------------------------
 
 
