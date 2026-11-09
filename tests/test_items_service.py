@@ -21,7 +21,7 @@ def conn(tmp_path):
 
 
 def _create(conn, **overrides):
-    payload = {"sku": "SKU-1", "name": "Thing", "unit_price": 1.5, "reorder_point": 2}
+    payload = {"sku": "SKU-1", "name": "Thing", "unit_price": 1.5, "reorder_level": 2}
     payload.update(overrides)
     return items_service.create_item(conn, ItemCreate(**payload))
 
@@ -32,7 +32,7 @@ def test_create_item_returns_item(conn):
     assert item.sku == "SKU-1"
     assert item.name == "Thing"
     assert item.unit_price == 1.5
-    assert item.reorder_point == 2
+    assert item.reorder_level == 2
     assert item.active is True
 
 
@@ -62,7 +62,7 @@ def test_update_item_partial_fields(conn):
     assert updated.unit_price == 9.99
     # untouched fields preserved
     assert updated.sku == created.sku
-    assert updated.reorder_point == created.reorder_point
+    assert updated.reorder_level == created.reorder_level
 
 
 def test_update_item_deactivate(conn):
@@ -168,11 +168,11 @@ def test_get_item_by_sku(conn):
     assert items_service.get_item_by_sku(conn, "NOPE-1") is None
 
 
-def test_update_item_reorder_point(conn):
+def test_update_item_reorder_level(conn):
     created = _create(conn)
-    updated = items_service.update_item(conn, created.id, ItemUpdate(reorder_point=12))
+    updated = items_service.update_item(conn, created.id, ItemUpdate(reorder_level=12))
     assert updated is not None
-    assert updated.reorder_point == 12
+    assert updated.reorder_level == 12
     fetched = items_service.get_item(conn, created.id)
     assert fetched is not None
-    assert fetched.reorder_point == 12
+    assert fetched.reorder_level == 12

@@ -709,7 +709,7 @@ def test_location_stock_omits_zero_qty_levels(client, item, loc_a):
 def test_item_movements_only_returns_that_items_history(client, item, loc_a):
     other = client.post(
         "/items",
-        json={"sku": "GADGET-1", "name": "Gadget", "unit_price": 1.0, "reorder_point": 2},
+        json={"sku": "GADGET-1", "name": "Gadget", "unit_price": 1.0, "reorder_level": 2},
     ).json()
     _move(client, item_id=item["id"], kind="receive", qty=3, to_location_id=loc_a["id"])
     _move(client, item_id=other["id"], kind="receive", qty=9, to_location_id=loc_a["id"])
