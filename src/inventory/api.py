@@ -3,12 +3,14 @@
 import sqlite3
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import JSONResponse
 
 from inventory.db import get_db, utc_now_iso
 from inventory.models import (
     Item,
     ItemCreate,
+    ItemPage,
     ItemStock,
     ItemUpdate,
     Location,
@@ -21,8 +23,18 @@ from inventory.models import (
     MovementKind,
 )
 from inventory.services import reports, search, stock
+from inventory.services.errors import InventoryError
 
 router = APIRouter()
+
+
+def inventory_error_handler(request: Request, exc: InventoryError) -> JSONResponse:
+    """Translate service-layer ``InventoryError`` into an HTTP error response.
+
+    Registered on the application in :func:`inventory.main.create_app` so that
+    routes do not need per-route try/except blocks.
+    """
+    return JSONResponse(status_code=exc.status_code, content={"detail": str(exc)})
 
 
 def _row_to_item(row: sqlite3.Row) -> Item:
@@ -68,7 +80,7 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
     return _fetch_item(conn, cur.lastrowid)
 
 
-@router.get("/items", response_model=list[Item])
+@router.get("/items", response_model=ItemPage)
 def list_items(
     response: Response,
     active: Optional[bool] = None,
@@ -76,7 +88,7 @@ def list_items(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     conn: sqlite3.Connection = Depends(get_db),
-) -> list[Item]:
+) -> ItemPage:
     conditions: list[str] = []
     params: list = []
     if active is not None:
@@ -90,7 +102,12 @@ def list_items(
     response.headers["X-Total-Count"] = str(total)
     sql = f"SELECT * FROM items{where} ORDER BY id LIMIT ? OFFSET ?"
     rows = conn.execute(sql, [*params, limit, offset]).fetchall()
-    return [_row_to_item(r) for r in rows]
+    return ItemPage(
+        items=[_row_to_item(r) for r in rows],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/items/{item_id}", response_model=Item)
@@ -198,10 +215,7 @@ def location_stock(
 def create_movement(
     payload: MovementCreate, conn: sqlite3.Connection = Depends(get_db)
 ) -> Movement:
-    try:
-        return stock.apply_movement(conn, payload)
-    except stock.StockError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    return stock.apply_movement(conn, payload)
 
 
 @router.get("/movements", response_model=list[Movement])
@@ -217,10 +231,7 @@ def list_movements(
 
 @router.get("/movements/{movement_id}", response_model=Movement)
 def get_movement(movement_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Movement:
-    try:
-        return stock.get_movement(conn, movement_id)
-    except stock.StockError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    return stock.get_movement(conn, movement_id)
 
 
 # --- reports & search --------------------------------------------------------
