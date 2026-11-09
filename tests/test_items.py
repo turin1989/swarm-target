@@ -874,6 +874,18 @@ def test_list_items_sort_invalid_values_422(client):
         assert r.status_code == 422, bad
 
 
+def test_list_items_sort_invalid_value_error_shape(client):
+    r = client.get("/items", params={"sort": "price"})
+    assert r.status_code == 422
+    body = r.json()
+    assert set(body) == {"error"}
+    assert body["error"]["code"] == "validation_error"
+    # The message should name the offending value and the allowed columns.
+    assert "'price'" in body["error"]["message"]
+    for column in ("id", "name", "sku"):
+        assert column in body["error"]["message"]
+
+
 def test_list_items_sort_combines_with_filters_and_pagination(client):
     _seed_sortable_items(client)
     client.put("/items/1", json={"active": False})
