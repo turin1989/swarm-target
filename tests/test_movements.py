@@ -124,7 +124,7 @@ def test_adjust_sets_stock_absolutely(client, item, loc_a):
 
 def test_transfer_moves_stock_between_locations(client, item, loc_a, loc_b):
     _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
-    _move(
+    r = _move(
         client,
         item_id=item["id"],
         kind="transfer",
@@ -132,8 +132,10 @@ def test_transfer_moves_stock_between_locations(client, item, loc_a, loc_b):
         from_location_id=loc_a["id"],
         to_location_id=loc_b["id"],
     )
+    assert r.status_code == 201
+
     s = client.get(f"/items/{item['id']}/stock").json()
-    assert s["total"] == 5
+    assert s["total"] == 5  # total is unchanged by a transfer
     assert s["levels"] == [
         {"item_id": item["id"], "location_id": loc_a["id"], "qty": 3},
         {"item_id": item["id"], "location_id": loc_b["id"], "qty": 2},
