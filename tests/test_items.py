@@ -538,6 +538,34 @@ def test_list_items_filter_barcode_combined_with_active(client):
     assert [i["sku"] for i in r.json()["items"]] == ["C-1"]
 
 
+def test_update_item_preserves_barcode(client):
+    r = client.post("/items", json={"sku": "BC-KEEP", "name": "One", "barcode": "KEEP-1"})
+    assert r.status_code == 201
+    item_id = r.json()["id"]
+    r = client.put(f"/items/{item_id}", json={"name": "Renamed"})
+    assert r.status_code == 200
+    assert r.json()["name"] == "Renamed"
+    assert r.json()["barcode"] == "KEEP-1"
+
+
+def test_barcode_free_after_item_deleted(client):
+    r = client.post("/items", json={"sku": "BC-DEL", "name": "One", "barcode": "REUSE-1"})
+    assert r.status_code == 201
+    assert client.delete(f"/items/{r.json()['id']}").status_code == 204
+    r2 = client.post("/items", json={"sku": "BC-NEW", "name": "Two", "barcode": "REUSE-1"})
+    assert r2.status_code == 201
+    assert r2.json()["barcode"] == "REUSE-1"
+
+
+def test_list_items_filter_barcode_combines_with_active(client):
+    client.post("/items", json={"sku": "BC-1", "name": "One", "barcode": "111"})
+    client.put("/items/1", json={"active": False})
+    assert client.get("/items", params={"barcode": "111", "active": "true"}).json()["items"] == []
+    assert (
+        len(client.get("/items", params={"barcode": "111", "active": "false"}).json()["items"]) == 1
+    )
+
+
 def test_list_items_total_count_respects_barcode_filter(client):
     client.post("/items", json={"sku": "F-1", "name": "One", "barcode": "111"})
     client.post("/items", json={"sku": "F-2", "name": "Two"})

@@ -304,6 +304,22 @@ def test_search_by_description_substring(client):
     assert [i["sku"] for i in r.json()] == ["D1"]
 
 
+def test_search_by_description_is_case_insensitive(client):
+    client.post("/items", json={"sku": "D1", "name": "Hammer", "description": "Foo grade steel"})
+    client.post("/items", json={"sku": "D2", "name": "Wrench", "description": "chrome plated"})
+    for q in ("foo", "FOO", "Foo", "fOo"):
+        r = client.get("/search", params={"q": q})
+        assert r.status_code == 200
+        assert [i["sku"] for i in r.json()] == ["D1"], q
+
+
+def test_search_description_does_not_treat_percent_or_underscore_as_wildcards(client):
+    client.post("/items", json={"sku": "W1", "name": "Shirt", "description": "100% cotton"})
+    client.post("/items", json={"sku": "W2", "name": "Sheet", "description": "100 cotton"})
+    assert [i["sku"] for i in client.get("/search", params={"q": "100%"}).json()] == ["W1"]
+    assert client.get("/search", params={"q": "0_c"}).json() == []
+
+
 def test_search_no_duplicates_when_all_fields_match(client):
     client.post(
         "/items", json={"sku": "foo-1", "name": "foo thing", "description": "a foo item"}
