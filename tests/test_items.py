@@ -129,6 +129,14 @@ def test_delete_item_twice_second_returns_404(client, item):
     assert r.json()["detail"] == f"item {item['id']} not found"
 
 
+def test_delete_missing_item_does_not_affect_existing_items(client, item):
+    missing_id = item["id"] + 1000
+    r = client.delete(f"/items/{missing_id}")
+    assert r.status_code == 404
+    assert r.json()["detail"] == f"item {missing_id} not found"
+    assert client.get(f"/items/{item['id']}").status_code == 200
+
+
 def test_delete_item_cascades_stock(client, item, loc_a):
     client.post(
         "/movements",
