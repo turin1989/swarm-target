@@ -48,6 +48,18 @@ def _adjust(conn: sqlite3.Connection, item_id: int, location_id: int, delta: int
     )
 
 
+def _require_stock(
+    conn: sqlite3.Connection, item_id: int, location_id: int, qty: int
+) -> None:
+    available = get_stock_level(conn, item_id, location_id)
+    if qty > available:
+        raise StockError(
+            f"insufficient stock at location {location_id}: "
+            f"have {available}, requested {qty}",
+            status_code=409,
+        )
+
+
 def _require_location(conn: sqlite3.Connection, location_id: int | None, field: str) -> int:
     if location_id is None:
         raise StockError(f"{field} is required for this movement kind")
@@ -68,10 +80,12 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
         _adjust(conn, m.item_id, to_id, m.qty)
     elif m.kind == "ship":
         from_id = _require_location(conn, m.from_location_id, "from_location_id")
+        _require_stock(conn, m.item_id, from_id, m.qty)
         _adjust(conn, m.item_id, from_id, -m.qty)
     elif m.kind == "transfer":
         from_id = _require_location(conn, m.from_location_id, "from_location_id")
         _require_location(conn, m.to_location_id, "to_location_id")
+        _require_stock(conn, m.item_id, from_id, m.qty)
         _adjust(conn, m.item_id, from_id, -m.qty)
         _adjust(conn, m.item_id, from_id, m.qty)
     else:  # pragma: no cover - guarded by the Literal type
