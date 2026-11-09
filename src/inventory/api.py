@@ -119,6 +119,17 @@ def item_stock(item_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Item
     )
 
 
+@router.get("/items/{item_id}/movements", response_model=list[Movement])
+def item_movements(
+    item_id: int,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    conn: sqlite3.Connection = Depends(get_db),
+) -> list[Movement]:
+    _fetch_item(conn, item_id)
+    return stock.list_movements(conn, item_id=item_id, limit=limit, offset=offset)
+
+
 # --- locations ---------------------------------------------------------------
 
 
