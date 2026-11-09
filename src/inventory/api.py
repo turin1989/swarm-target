@@ -256,6 +256,11 @@ def get_movement(movement_id: int, conn: sqlite3.Connection = Depends(get_db)) -
     return stock.get_movement(conn, movement_id)
 
 
+@router.post("/movements/{movement_id}/reverse", response_model=Movement, status_code=201)
+def reverse_movement(movement_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Movement:
+    return stock.reverse_movement(conn, movement_id)
+
+
 # --- reports & search --------------------------------------------------------
 
 
