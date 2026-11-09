@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS items (
 
 CREATE TABLE IF NOT EXISTS locations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    code TEXT NOT NULL,
+    code TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL
 );
 
@@ -74,6 +74,11 @@ def init_db(path: str) -> None:
             conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_items_barcode ON items(barcode)"
             )
+        # Older databases may predate the UNIQUE constraint on locations.code;
+        # enforce it with a unique index.
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_locations_code ON locations(code)"
+        )
         row = conn.execute("SELECT version FROM schema_version").fetchone()
         if row is None:
             conn.execute("INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,))
