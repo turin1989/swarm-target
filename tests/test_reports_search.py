@@ -298,6 +298,22 @@ def test_search_by_description_substring(client):
     assert [i["sku"] for i in r.json()] == ["D1"]
 
 
+def test_search_by_description_is_case_insensitive(client):
+    client.post("/items", json={"sku": "D1", "name": "Hammer", "description": "Foo grade steel"})
+    client.post("/items", json={"sku": "D2", "name": "Wrench", "description": "chrome plated"})
+    for q in ("foo", "FOO", "Foo", "fOo"):
+        r = client.get("/search", params={"q": q})
+        assert r.status_code == 200
+        assert [i["sku"] for i in r.json()] == ["D1"], q
+
+
+def test_search_description_does_not_treat_percent_or_underscore_as_wildcards(client):
+    client.post("/items", json={"sku": "W1", "name": "Shirt", "description": "100% cotton"})
+    client.post("/items", json={"sku": "W2", "name": "Sheet", "description": "100 cotton"})
+    assert [i["sku"] for i in client.get("/search", params={"q": "100%"}).json()] == ["W1"]
+    assert client.get("/search", params={"q": "0_c"}).json() == []
+
+
 def test_search_no_duplicates_when_all_fields_match(client):
     client.post(
         "/items", json={"sku": "foo-1", "name": "foo thing", "description": "a foo item"}
@@ -313,6 +329,14 @@ def test_search_across_fields_sorted_by_name(client):
     client.post("/items", json={"sku": "X3", "name": "Mid bar", "description": ""})
     names = [i["name"] for i in client.get("/search", params={"q": "bar"}).json()]
     assert names == ["Alpha", "Mid bar", "Zeta"]
+
+
+def test_search_description_matches_respect_limit_and_ordering(client):
+    client.post("/items", json={"sku": "L1", "name": "Charlie", "description": "foo quality"})
+    client.post("/items", json={"sku": "L2", "name": "Alpha", "description": "best foo"})
+    client.post("/items", json={"sku": "L3-foo", "name": "Bravo", "description": "plain"})
+    names = [i["name"] for i in client.get("/search", params={"q": "foo", "limit": 2}).json()]
+    assert names == ["Alpha", "Bravo"]
 
 
 def test_search_requires_query(client):
@@ -339,3 +363,44 @@ def test_search_rejects_query_over_100_chars(client):
 
 def test_search_accepts_query_of_exactly_100_chars(client):
     assert client.get("/search", params={"q": "x" * 100}).status_code == 200
+
+
+def test_movements_summary_empty(client):
+    r = client.get("/reports/movements-summary")
+    assert r.status_code == 200
+    assert r.json() == {
+        "receive": {"count": 0, "qty": 0},
+        "ship": {"count": 0, "qty": 0},
+        "transfer": {"count": 0, "qty": 0},
+    }
+
+
+def test_movements_summary_groups_by_kind(client, item, loc_a, loc_b):
+    def move(**body):
+        r = client.post("/movements", json={"item_id": item["id"], **body})
+        assert r.status_code == 201, r.text
+
+    move(kind="receive", quantity=10, to_location_id=loc_a["id"])
+    move(kind="receive", quantity=5, to_location_id=loc_a["id"])
+    move(kind="transfer", quantity=4, from_location_id=loc_a["id"], to_location_id=loc_b["id"])
+    move(kind="ship", quantity=3, from_location_id=loc_b["id"])
+
+    r = client.get("/reports/movements-summary")
+    assert r.status_code == 200
+    assert r.json() == {
+        "receive": {"count": 2, "qty": 15},
+        "ship": {"count": 1, "qty": 3},
+        "transfer": {"count": 1, "qty": 4},
+    }
+
+
+def test_movements_summary_kinds_with_no_movements_are_zero(client, item, loc_a):
+    r = client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "quantity": 7, "to_location_id": loc_a["id"]},
+    )
+    assert r.status_code == 201, r.text
+    summary = client.get("/reports/movements-summary").json()
+    assert summary["receive"] == {"count": 1, "qty": 7}
+    assert summary["ship"] == {"count": 0, "qty": 0}
+    assert summary["transfer"] == {"count": 0, "qty": 0}
