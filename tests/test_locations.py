@@ -120,9 +120,47 @@ def test_put_location_can_update_name_and_code(client, loc_a):
     assert body["active"] is True
 
 
+def test_put_location_rename_name_only(client, loc_a):
+    r = client.put(f"/locations/{loc_a['id']}", json={"name": "Renamed Warehouse"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["name"] == "Renamed Warehouse"
+    assert body["code"] == loc_a["code"]  # code untouched
+    assert body["id"] == loc_a["id"]
+
+
+def test_put_location_code_only(client, loc_a):
+    r = client.put(f"/locations/{loc_a['id']}", json={"code": "WH-NEW"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["code"] == "WH-NEW"
+    assert body["name"] == loc_a["name"]  # name untouched
+
+
+def test_put_location_empty_body_is_noop(client, loc_a):
+    r = client.put(f"/locations/{loc_a['id']}", json={})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["code"] == loc_a["code"]
+    assert body["name"] == loc_a["name"]
+    assert body["active"] is True
+
+
+def test_put_location_duplicate_code_returns_409(client, loc_a, loc_b):
+    r = client.put(f"/locations/{loc_b['id']}", json={"code": loc_a["code"]})
+    assert r.status_code == 409, r.text
+    assert loc_a["code"] in r.json()["error"]["message"]
+
+
 def test_put_location_404_for_missing(client):
     r = client.put("/locations/9999", json={"active": False})
     assert r.status_code == 404
+
+
+def test_put_location_404_for_missing_rename(client):
+    r = client.put("/locations/9999", json={"name": "Ghost", "code": "GH-1"})
+    assert r.status_code == 404
+    assert r.json()["error"]["code"] == "not_found"
 
 
 def test_list_locations_filters_by_active(client, loc_a, loc_b):

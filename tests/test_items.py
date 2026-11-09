@@ -33,6 +33,20 @@ def test_update_item_rejects_reorder_point(client, item):
     assert r.status_code == 422
 
 
+def test_create_item_rejects_negative_reorder_point(client):
+    r = client.post(
+        "/items", json={"sku": "A-2", "name": "Alpha", "reorder_point": -1}
+    )
+    assert r.status_code == 422
+
+
+def test_update_item_rejects_negative_reorder_point(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": -1})
+    assert r.status_code == 422
+    # value unchanged
+    assert client.get(f"/items/{item['id']}").json()["reorder_level"] == 5
+
+
 def test_create_item_accepts_reorder_level(client):
     r = client.post("/items", json={"sku": "A-3", "name": "Alpha", "reorder_level": 7})
     assert r.status_code == 201
@@ -540,16 +554,6 @@ def test_list_items_filter_by_unknown_barcode_returns_empty(client, item):
     assert r.json()["total"] == 0
 
 
-def test_list_items_filter_barcode_combined_with_active(client):
-    client.post("/items", json={"sku": "C-1", "name": "One", "barcode": "999"})
-    client.put("/items/1", json={"active": False})
-    assert (
-        client.get("/items", params={"barcode": "999", "active": "true"}).json()["items"] == []
-    )
-    r = client.get("/items", params={"barcode": "999", "active": "false"})
-    assert [i["sku"] for i in r.json()["items"]] == ["C-1"]
-
-
 def test_update_item_preserves_barcode(client):
     r = client.post("/items", json={"sku": "BC-KEEP", "name": "One", "barcode": "KEEP-1"})
     assert r.status_code == 201
@@ -578,6 +582,16 @@ def test_list_items_filter_barcode_combines_with_active(client):
     )
 
 
+def test_list_items_filter_barcode_combined_with_active(client):
+    client.post("/items", json={"sku": "C-1", "name": "One", "barcode": "999"})
+    client.put("/items/1", json={"active": False})
+    assert (
+        client.get("/items", params={"barcode": "999", "active": "true"}).json()["items"] == []
+    )
+    r = client.get("/items", params={"barcode": "999", "active": "false"})
+    assert [i["sku"] for i in r.json()["items"]] == ["C-1"]
+
+
 def test_list_items_total_count_respects_barcode_filter(client):
     client.post("/items", json={"sku": "F-1", "name": "One", "barcode": "111"})
     client.post("/items", json={"sku": "F-2", "name": "Two"})
@@ -586,6 +600,7 @@ def test_list_items_total_count_respects_barcode_filter(client):
 
 
 # --- bulk creation -------------------------------------------------------------
+
 
 
 def test_bulk_create_returns_201_and_created_items(client):
