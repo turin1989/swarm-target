@@ -143,3 +143,44 @@ def test_search_description_results_ordered_by_name(client):
 def test_search_requires_query(client):
     assert client.get("/search").status_code == 422
     assert client.get("/search", params={"q": ""}).status_code == 422
+
+
+def test_movements_summary_empty(client):
+    r = client.get("/reports/movements-summary")
+    assert r.status_code == 200
+    assert r.json() == {
+        "receive": {"count": 0, "qty": 0},
+        "ship": {"count": 0, "qty": 0},
+        "transfer": {"count": 0, "qty": 0},
+    }
+
+
+def test_movements_summary_groups_by_kind(client, item, loc_a, loc_b):
+    def move(**body):
+        r = client.post("/movements", json={"item_id": item["id"], **body})
+        assert r.status_code == 201, r.text
+
+    move(kind="receive", qty=10, to_location_id=loc_a["id"])
+    move(kind="receive", qty=5, to_location_id=loc_a["id"])
+    move(kind="transfer", qty=4, from_location_id=loc_a["id"], to_location_id=loc_b["id"])
+    move(kind="ship", qty=3, from_location_id=loc_b["id"])
+
+    r = client.get("/reports/movements-summary")
+    assert r.status_code == 200
+    assert r.json() == {
+        "receive": {"count": 2, "qty": 15},
+        "ship": {"count": 1, "qty": 3},
+        "transfer": {"count": 1, "qty": 4},
+    }
+
+
+def test_movements_summary_kinds_with_no_movements_are_zero(client, item, loc_a):
+    r = client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "qty": 7, "to_location_id": loc_a["id"]},
+    )
+    assert r.status_code == 201, r.text
+    summary = client.get("/reports/movements-summary").json()
+    assert summary["receive"] == {"count": 1, "qty": 7}
+    assert summary["ship"] == {"count": 0, "qty": 0}
+    assert summary["transfer"] == {"count": 0, "qty": 0}
