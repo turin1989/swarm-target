@@ -372,3 +372,40 @@ def test_list_items_filter_barcode_combines_with_active(client):
     assert (
         len(client.get("/items", params={"barcode": "111", "active": "false"}).json()["items"]) == 1
     )
+
+
+# --- get by sku ------------------------------------------------------------------
+
+
+def test_get_item_by_sku(client, item):
+    r = client.get(f"/items/by-sku/{item['sku']}")
+    assert r.status_code == 200
+    assert r.json() == item
+
+
+def test_get_item_by_sku_unknown_404(client):
+    r = client.get("/items/by-sku/NOPE-404")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "sku NOPE-404 not found"
+
+
+def test_get_item_by_sku_exact_match_only(client, item):
+    # partial / case-different skus must not match
+    assert client.get("/items/by-sku/WIDGET").status_code == 404
+    assert client.get("/items/by-sku/widget-1").status_code == 404
+
+
+def test_get_item_by_sku_does_not_shadow_get_by_id(client, item):
+    r = client.get(f"/items/{item['id']}")
+    assert r.status_code == 200
+    assert r.json() == item
+
+
+def test_get_item_by_sku_numeric_sku(client):
+    # a purely numeric sku must still resolve via the by-sku route
+    r = client.post("/items", json={"sku": "12345", "name": "Numeric"})
+    assert r.status_code == 201
+    created = r.json()
+    r = client.get("/items/by-sku/12345")
+    assert r.status_code == 200
+    assert r.json() == created
