@@ -76,6 +76,12 @@ def test_update_missing_item_returns_none(conn):
     assert items_service.update_item(conn, 42, ItemUpdate(name="x")) is None
 
 
+def test_update_item_empty_payload_returns_unchanged_item(conn):
+    created = _create(conn)
+    updated = items_service.update_item(conn, created.id, ItemUpdate())
+    assert updated == created
+
+
 def test_delete_item_returns_true_then_false(conn):
     created = _create(conn)
     assert items_service.delete_item(conn, created.id) is True
