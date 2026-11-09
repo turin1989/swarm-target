@@ -1,3 +1,6 @@
+import sqlite3
+
+
 def _make_item(client, sku):
     r = client.post("/items", json={"sku": sku, "name": f"Item {sku}"})
     assert r.status_code == 201, r.text
@@ -7,7 +10,12 @@ def _make_item(client, sku):
 def _receive(client, item_id, location_id, quantity):
     r = client.post(
         "/movements",
-        json={"item_id": item_id, "kind": "receive", "quantity": quantity, "to_location_id": location_id},
+        json={
+            "item_id": item_id,
+            "kind": "receive",
+            "quantity": quantity,
+            "to_location_id": location_id,
+        },
     )
     assert r.status_code == 201, r.text
 
@@ -15,7 +23,12 @@ def _receive(client, item_id, location_id, quantity):
 def _ship(client, item_id, location_id, quantity):
     r = client.post(
         "/movements",
-        json={"item_id": item_id, "kind": "ship", "quantity": quantity, "from_location_id": location_id},
+        json={
+            "item_id": item_id,
+            "kind": "ship",
+            "quantity": quantity,
+            "from_location_id": location_id,
+        },
     )
     assert r.status_code == 201, r.text
 
@@ -59,10 +72,19 @@ class TestLocationStock:
         ]
 
     def test_negative_qty_levels_are_included(self, client, loc_a):
-        # only qty == 0 levels are omitted; negative levels must still be listed
+        # only quantity == 0 levels are omitted; negative levels must still be listed.
+        # The API refuses movements that would drive stock negative, so seed the
+        # negative level directly in the database.
         item = _make_item(client, "SKU-1")
-        _receive(client, item["id"], loc_a["id"], 2)
-        _ship(client, item["id"], loc_a["id"], 5)  # drives level to -3
+        conn = sqlite3.connect(client.app.state.db_path)
+        try:
+            conn.execute(
+                "INSERT INTO stock_levels (item_id, location_id, qty) VALUES (?, ?, ?)",
+                (item["id"], loc_a["id"], -3),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
         r = client.get(f"/locations/{loc_a['id']}/stock")
         assert r.status_code == 200, r.text
