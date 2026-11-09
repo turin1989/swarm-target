@@ -38,6 +38,18 @@ def test_low_stock_includes_items_exactly_at_reorder_point(client, loc_a):
     assert entries[0]["reorder_point"] == 5
 
 
+def test_low_stock_at_reorder_point_sums_stock_across_locations(client, loc_a, loc_b):
+    item = _seed(client, "SPLIT", "Split", reorder=5, qty=3, loc=loc_a)
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "qty": 2, "to_location_id": loc_b["id"]},
+    )
+    entries = client.get("/reports/low-stock").json()
+    assert [e["sku"] for e in entries] == ["SPLIT"]
+    assert entries[0]["total_qty"] == 5
+    assert entries[0]["reorder_point"] == 5
+
+
 def test_low_stock_includes_zero_reorder_point_with_zero_stock(client, loc_a):
     _seed(client, "ZERO", "Zero", reorder=0, qty=0, loc=loc_a)
     _seed(client, "STOCKED", "Stocked", reorder=0, qty=1, loc=loc_a)
