@@ -132,15 +132,30 @@ def create_items_bulk(
     return [_fetch_item(conn, item_id) for item_id in created_ids]
 
 
+_ITEM_SORT_COLUMNS = {"id", "name", "sku"}
+
+
 @router.get("/items", response_model=ItemPage)
 def list_items(
     response: Response,
     active: Optional[bool] = None,
     barcode: Optional[str] = None,
+    sort: str = Query("id"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     conn: sqlite3.Connection = Depends(get_db),
 ) -> ItemPage:
+    direction = "ASC"
+    sort_column = sort
+    if sort_column.startswith("-"):
+        direction = "DESC"
+        sort_column = sort_column[1:]
+    if sort_column not in _ITEM_SORT_COLUMNS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"invalid sort {sort!r}; must be one of "
+            f"{sorted(_ITEM_SORT_COLUMNS)} optionally prefixed with '-'",
+        )
     conditions: list[str] = []
     params: list = []
     if active is not None:
@@ -152,7 +167,7 @@ def list_items(
     where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
     total = conn.execute(f"SELECT COUNT(*) FROM items{where}", params).fetchone()[0]
     response.headers["X-Total-Count"] = str(total)
-    sql = f"SELECT * FROM items{where} ORDER BY id LIMIT ? OFFSET ?"
+    sql = f"SELECT * FROM items{where} ORDER BY {sort_column} {direction} LIMIT ? OFFSET ?"
     rows = conn.execute(sql, [*params, limit, offset]).fetchall()
     return ItemPage(
         items=[_row_to_item(r) for r in rows],
