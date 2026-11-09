@@ -11,7 +11,7 @@ def test_create_and_list_locations(client, loc_a, loc_b):
     r = client.get("/locations")
     assert r.status_code == 200
     assert [loc["code"] for loc in r.json()] == ["WH-A", "WH-B"]
-    assert loc_a == {"id": 1, "code": "WH-A", "name": "Warehouse A"}
+    assert loc_a == {"id": 1, "code": "WH-A", "name": "Warehouse A", "active": True}
 
 
 def test_get_location(client, loc_a):
@@ -55,7 +55,12 @@ def test_update_location_name_and_code(client, loc_a):
         f"/locations/{loc_a['id']}", json={"name": "Main Warehouse", "code": "WH-MAIN"}
     )
     assert r.status_code == 200
-    assert r.json() == {"id": loc_a["id"], "code": "WH-MAIN", "name": "Main Warehouse"}
+    assert r.json() == {
+        "id": loc_a["id"],
+        "code": "WH-MAIN",
+        "name": "Main Warehouse",
+        "active": True,
+    }
     # persisted
     assert client.get(f"/locations/{loc_a['id']}").json() == r.json()
 
@@ -63,11 +68,11 @@ def test_update_location_name_and_code(client, loc_a):
 def test_update_location_partial(client, loc_a):
     r = client.put(f"/locations/{loc_a['id']}", json={"name": "Renamed"})
     assert r.status_code == 200
-    assert r.json() == {"id": loc_a["id"], "code": "WH-A", "name": "Renamed"}
+    assert r.json() == {"id": loc_a["id"], "code": "WH-A", "name": "Renamed", "active": True}
 
     r = client.put(f"/locations/{loc_a['id']}", json={"code": "WH-X"})
     assert r.status_code == 200
-    assert r.json() == {"id": loc_a["id"], "code": "WH-X", "name": "Renamed"}
+    assert r.json() == {"id": loc_a["id"], "code": "WH-X", "name": "Renamed", "active": True}
 
 
 def test_update_location_empty_payload_is_noop(client, loc_a):
@@ -143,6 +148,28 @@ def test_transfer_is_recorded(client, item, loc_a, loc_b):
     movements = client.get("/movements").json()
     assert len(movements) == 2
     assert movements[1]["kind"] == "transfer"
+
+
+def test_transfer_same_location_rejected(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", quantity=5, to_location_id=loc_a["id"])
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        quantity=2,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_a["id"],
+    )
+    assert r.status_code == 400
+    body = r.json()
+    assert body["error"]["code"] == "bad_request"
+    assert "same location" in body["error"]["message"]
+    # no movement row written for the rejected transfer
+    movements = client.get("/movements").json()
+    assert len(movements) == 1
+    assert movements[0]["kind"] == "receive"
+    # stock untouched
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 5
 
 
 def test_adjust_sets_stock_absolutely(client, item, loc_a):
@@ -486,6 +513,45 @@ def test_list_movements_pagination(client, item, loc_a):
         _move(client, item_id=item["id"], kind="receive", quantity=1, to_location_id=loc_a["id"])
     r = client.get("/movements", params={"limit": 2, "offset": 2})
     assert [m["id"] for m in r.json()] == [3, 4]
+
+
+# --- delete location -----------------------------------------------------------
+
+
+def test_delete_location(client, loc_a):
+    r = client.delete(f"/locations/{loc_a['id']}")
+    assert r.status_code == 204
+    assert client.get(f"/locations/{loc_a['id']}").status_code == 404
+
+
+def test_delete_unknown_location_404(client):
+    assert client.delete("/locations/99").status_code == 404
+
+
+def test_delete_location_with_stock_409(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", quantity=5, to_location_id=loc_a["id"])
+    r = client.delete(f"/locations/{loc_a['id']}")
+    assert r.status_code == 409
+    # location still exists
+    assert client.get(f"/locations/{loc_a['id']}").status_code == 200
+
+
+def test_delete_location_with_zero_stock_ok(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", quantity=5, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="ship", quantity=5, from_location_id=loc_a["id"])
+    r = client.delete(f"/locations/{loc_a['id']}")
+    assert r.status_code == 204
+    assert client.get(f"/locations/{loc_a['id']}").status_code == 404
+    # stock levels for the location are gone
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["levels"] == []
+
+
+def test_delete_location_only_blocks_that_location(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", quantity=5, to_location_id=loc_b["id"])
+    # loc_a has no stock, so it can be deleted even though loc_b holds stock
+    assert client.delete(f"/locations/{loc_a['id']}").status_code == 204
+    assert client.delete(f"/locations/{loc_b['id']}").status_code == 409
 
 
 # --- location stock ------------------------------------------------------------

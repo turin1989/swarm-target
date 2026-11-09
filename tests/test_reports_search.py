@@ -31,8 +31,8 @@ def test_low_stock_lists_items_below_reorder_point(client, loc_a):
 
 
 def test_low_stock_includes_items_exactly_at_reorder_point(client, loc_a):
-    _seed(client, "EDGE", "Edge", reorder=5, qty=5, loc=loc_a)
-    _seed(client, "ABOVE", "Above", reorder=5, qty=6, loc=loc_a)
+    _seed(client, "EDGE", "Edge", reorder=5, quantity=5, loc=loc_a)
+    _seed(client, "ABOVE", "Above", reorder=5, quantity=6, loc=loc_a)
     entries = client.get("/reports/low-stock").json()
     assert [e["sku"] for e in entries] == ["EDGE"]
     assert entries[0]["total_qty"] == 5
@@ -40,8 +40,8 @@ def test_low_stock_includes_items_exactly_at_reorder_point(client, loc_a):
 
 
 def test_low_stock_includes_zero_reorder_point_with_zero_stock(client, loc_a):
-    _seed(client, "ZERO", "Zero", reorder=0, qty=0, loc=loc_a)
-    _seed(client, "STOCKED", "Stocked", reorder=0, qty=1, loc=loc_a)
+    _seed(client, "ZERO", "Zero", reorder=0, quantity=0, loc=loc_a)
+    _seed(client, "STOCKED", "Stocked", reorder=0, quantity=1, loc=loc_a)
     assert [e["sku"] for e in client.get("/reports/low-stock").json()] == ["ZERO"]
 
 
@@ -114,6 +114,34 @@ def test_inventory_value(client, loc_a):
     _seed(client, "P1", "p1", reorder=0, quantity=3, loc=loc_a, price=2.0)
     _seed(client, "P2", "p2", reorder=0, quantity=1, loc=loc_a, price=10.0)
     assert client.get("/reports/value").json() == {"value": 16.0}
+
+
+def test_stats_empty_database(client):
+    r = client.get("/stats")
+    assert r.status_code == 200
+    assert r.json() == {
+        "items": 0,
+        "active_items": 0,
+        "locations": 0,
+        "movements": 0,
+        "total_units": 0,
+    }
+
+
+def test_stats_counts_entities_and_sums_units(client, loc_a, loc_b):
+    _seed(client, "ST1", "One", reorder=0, quantity=3, loc=loc_a)
+    _seed(client, "ST2", "Two", reorder=0, quantity=5, loc=loc_b)
+    inactive = _seed(client, "ST3", "Three", reorder=0, quantity=0, loc=loc_a)
+    client.put(f"/items/{inactive['id']}", json={"active": False})
+    r = client.get("/stats")
+    assert r.status_code == 200
+    assert r.json() == {
+        "items": 3,
+        "active_items": 2,
+        "locations": 2,
+        "movements": 2,
+        "total_units": 8,
+    }
 
 
 def test_inventory_value_filtered_by_location(client, loc_a, loc_b):
