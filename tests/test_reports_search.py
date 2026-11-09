@@ -35,6 +35,16 @@ def test_low_stock_lists_items_below_reorder_point(client, loc_a):
     }
 
 
+def test_low_stock_entries_expose_reorder_level_not_reorder_point(client, loc_a):
+    # T049 renamed the field; report entries must use the new key only.
+    _seed(client, "LOW", "Low", reorder=5, quantity=2, loc=loc_a)
+    entries = client.get("/reports/low-stock").json()
+    assert entries
+    for entry in entries:
+        assert "reorder_point" not in entry
+        assert entry["reorder_level"] == 5
+
+
 def test_low_stock_includes_items_exactly_at_reorder_point(client, loc_a):
     _seed(client, "EDGE", "Edge", reorder=5, quantity=5, loc=loc_a)
     _seed(client, "ABOVE", "Above", reorder=5, quantity=6, loc=loc_a)
