@@ -58,6 +58,18 @@ class TestLocationStock:
             {"item_id": item_2["id"], "location_id": loc_a["id"], "qty": 3}
         ]
 
+    def test_negative_qty_levels_are_included(self, client, loc_a):
+        # only qty == 0 levels are omitted; negative levels must still be listed
+        item = _make_item(client, "SKU-1")
+        _receive(client, item["id"], loc_a["id"], 2)
+        _ship(client, item["id"], loc_a["id"], 5)  # drives level to -3
+
+        r = client.get(f"/locations/{loc_a['id']}/stock")
+        assert r.status_code == 200, r.text
+        assert r.json()["levels"] == [
+            {"item_id": item["id"], "location_id": loc_a["id"], "qty": -3}
+        ]
+
     def test_only_levels_for_this_location(self, client, loc_a, loc_b):
         item = _make_item(client, "SKU-1")
         _receive(client, item["id"], loc_a["id"], 5)
