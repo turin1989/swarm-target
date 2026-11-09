@@ -93,3 +93,54 @@ def test_list_items_order_filter_and_limit(conn):
     items_service.update_item(conn, 2, ItemUpdate(active=False))
     assert [i.sku for i in items_service.list_items(conn, active=True)] == ["C", "B"]
     assert [i.sku for i in items_service.list_items(conn, active=False)] == ["A"]
+
+
+def test_list_items_sorting(conn):
+    for sku, name in [("S1", "Charlie"), ("S2", "Alpha"), ("S3", "Bravo")]:
+        _create(conn, sku=sku, name=name)
+    assert [i.name for i in items_service.list_items(conn, sort="name")] == [
+        "Alpha",
+        "Bravo",
+        "Charlie",
+    ]
+    assert [i.name for i in items_service.list_items(conn, sort="name", descending=True)] == [
+        "Charlie",
+        "Bravo",
+        "Alpha",
+    ]
+    assert [i.sku for i in items_service.list_items(conn, sort="sku")] == ["S1", "S2", "S3"]
+    assert [i.sku for i in items_service.list_items(conn, sort="id", descending=True)] == [
+        "S3",
+        "S2",
+        "S1",
+    ]
+
+
+def test_list_items_invalid_sort_raises(conn):
+    with pytest.raises(ValueError):
+        items_service.list_items(conn, sort="unit_price")
+
+
+def test_count_items_with_active_filter(conn):
+    for sku in ["A", "B", "C"]:
+        _create(conn, sku=sku, name=sku)
+    assert items_service.count_items(conn) == 3
+    items_service.update_item(conn, 1, ItemUpdate(active=False))
+    assert items_service.count_items(conn, active=True) == 2
+    assert items_service.count_items(conn, active=False) == 1
+
+
+def test_get_item_by_sku(conn):
+    created = _create(conn)
+    assert items_service.get_item_by_sku(conn, created.sku) == created
+    assert items_service.get_item_by_sku(conn, "NOPE-1") is None
+
+
+def test_update_item_reorder_point(conn):
+    created = _create(conn)
+    updated = items_service.update_item(conn, created.id, ItemUpdate(reorder_point=12))
+    assert updated is not None
+    assert updated.reorder_point == 12
+    fetched = items_service.get_item(conn, created.id)
+    assert fetched is not None
+    assert fetched.reorder_point == 12
