@@ -1,4 +1,5 @@
-"""Typed service exceptions and their HTTP mapping."""
+"""Typed service exceptions, their HTTP mapping, and the uniform error
+response shape: {"error": {"code": ..., "message": ...}}."""
 
 import pytest
 
@@ -9,6 +10,17 @@ from inventory.services.errors import (
     NotFoundError,
     ValidationError,
 )
+
+
+def _assert_error_shape(body, code):
+    assert set(body) == {"error"}
+    assert set(body["error"]) == {"code", "message"}
+    assert body["error"]["code"] == code
+    assert isinstance(body["error"]["message"], str)
+    assert body["error"]["message"]
+
+
+# --- typed exceptions ---------------------------------------------------------
 
 
 def test_exception_hierarchy():
@@ -35,7 +47,8 @@ def test_stock_error_is_removed():
 def test_handler_maps_validation_error_to_400(client, item):
     r = client.post("/movements", json={"item_id": item["id"], "kind": "receive", "qty": 1})
     assert r.status_code == 400
-    assert "to_location_id is required" in r.json()["detail"]
+    _assert_error_shape(r.json(), "bad_request")
+    assert "to_location_id is required" in r.json()["error"]["message"]
 
 
 def test_handler_maps_not_found_error_to_404(client, loc_a):
@@ -44,4 +57,61 @@ def test_handler_maps_not_found_error_to_404(client, loc_a):
         json={"item_id": 999, "kind": "receive", "qty": 1, "to_location_id": loc_a["id"]},
     )
     assert r.status_code == 404
-    assert r.json()["detail"] == "item 999 not found"
+    _assert_error_shape(r.json(), "not_found")
+    assert r.json()["error"]["message"] == "item 999 not found"
+
+
+# --- uniform error response shape ---------------------------------------------
+
+
+def test_404_item_not_found_shape(client):
+    r = client.get("/items/999")
+    assert r.status_code == 404
+    _assert_error_shape(r.json(), "not_found")
+
+
+def test_404_location_not_found_shape(client):
+    r = client.get("/locations/999")
+    assert r.status_code == 404
+    _assert_error_shape(r.json(), "not_found")
+
+
+def test_404_unknown_route_shape(client):
+    r = client.get("/nope")
+    assert r.status_code == 404
+    _assert_error_shape(r.json(), "not_found")
+
+
+def test_409_duplicate_sku_shape(client, item):
+    r = client.post("/items", json={"sku": item["sku"], "name": "Dup"})
+    assert r.status_code == 409
+    _assert_error_shape(r.json(), "conflict")
+    assert item["sku"] in r.json()["error"]["message"]
+
+
+def test_422_request_validation_shape(client):
+    r = client.post("/items", json={"name": "missing sku"})
+    assert r.status_code == 422
+    _assert_error_shape(r.json(), "validation_error")
+    assert "sku" in r.json()["error"]["message"]
+
+
+def test_422_query_validation_shape(client):
+    r = client.get("/search")
+    assert r.status_code == 422
+    _assert_error_shape(r.json(), "validation_error")
+
+
+def test_400_bad_request_shape(client, item):
+    r = client.post("/movements", json={"item_id": item["id"], "kind": "receive", "qty": 1})
+    assert r.status_code == 400
+    _assert_error_shape(r.json(), "bad_request")
+
+
+def test_404_movement_unknown_item_shape(client, loc_a):
+    r = client.post(
+        "/movements",
+        json={"item_id": 123, "kind": "receive", "qty": 1, "to_location_id": loc_a["id"]},
+    )
+    assert r.status_code == 404
+    _assert_error_shape(r.json(), "not_found")

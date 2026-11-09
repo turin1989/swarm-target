@@ -10,10 +10,12 @@ from inventory.db import get_db
 from inventory.models import (
     Item,
     ItemCreate,
+    ItemPage,
     ItemStock,
     ItemUpdate,
     Location,
     LocationCreate,
+    LocationUpdate,
     LowStockEntry,
     Movement,
     MovementCreate,
@@ -23,10 +25,26 @@ from inventory.services.errors import InventoryError
 
 router = APIRouter()
 
+ERROR_CODES = {
+    400: "bad_request",
+    404: "not_found",
+    409: "conflict",
+    422: "validation_error",
+}
+
+
+def error_response(status_code: int, message: str) -> JSONResponse:
+    """Build the uniform error body: {"error": {"code": ..., "message": ...}}."""
+    code = ERROR_CODES.get(status_code, "error")
+    return JSONResponse(
+        status_code=status_code,
+        content={"error": {"code": code, "message": message}},
+    )
+
 
 def inventory_error_handler(request: Request, exc: InventoryError) -> JSONResponse:
     """Translate service-layer errors into HTTP responses in one place."""
-    return JSONResponse(status_code=exc.status_code, content={"detail": str(exc)})
+    return error_response(exc.status_code, str(exc))
 
 
 def _row_to_item(row: sqlite3.Row) -> Item:
@@ -60,21 +78,48 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
     return _fetch_item(conn, cur.lastrowid)
 
 
-@router.get("/items", response_model=list[Item])
+_SORTABLE_COLUMNS = {"id", "name", "sku"}
+
+
+@router.get("/items", response_model=ItemPage)
 def list_items(
     active: Optional[bool] = None,
+    sort: str = Query("id"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     conn: sqlite3.Connection = Depends(get_db),
-) -> list[Item]:
-    sql = "SELECT * FROM items"
-    params: list = []
+) -> ItemPage:
+    direction = "ASC"
+    column = sort
+    if column.startswith("-"):
+        direction = "DESC"
+        column = column[1:]
+    if column not in _SORTABLE_COLUMNS:
+        raise HTTPException(status_code=422, detail=f"invalid sort field {sort!r}")
+    where = ""
+    where_params: list = []
     if active is not None:
-        sql += " WHERE active = ?"
-        params.append(int(active))
-    sql += " ORDER BY id LIMIT ? OFFSET ?"
-    params += [limit, offset]
-    return [_row_to_item(r) for r in conn.execute(sql, params).fetchall()]
+        where = " WHERE active = ?"
+        where_params.append(int(active))
+    total = conn.execute(f"SELECT COUNT(*) FROM items{where}", where_params).fetchone()[0]
+    rows = conn.execute(
+        f"SELECT * FROM items{where} ORDER BY {column} {direction} LIMIT ? OFFSET ?",
+        [*where_params, limit, offset],
+    ).fetchall()
+    return ItemPage(
+        items=[_row_to_item(r) for r in rows],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/items/by-sku/{sku}", response_model=Item)
+def get_item_by_sku(sku: str, conn: sqlite3.Connection = Depends(get_db)) -> Item:
+    row = conn.execute("SELECT * FROM items WHERE sku = ?", (sku,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"sku {sku} not found")
+    return _row_to_item(row)
 
 
 @router.get("/items/{item_id}", response_model=Item)
@@ -88,7 +133,7 @@ def update_item(
 ) -> Item:
     _fetch_item(conn, item_id)
     updates = payload.model_dump(exclude_unset=True)
-    allowed = {"name", "description", "unit_price", "active"}
+    allowed = {"name", "description", "unit_price", "reorder_point", "active"}
     updates = {k: v for k, v in updates.items() if k in allowed and v is not None}
     if updates:
         if "active" in updates:
@@ -100,6 +145,7 @@ def update_item(
 
 @router.delete("/items/{item_id}", status_code=204)
 def delete_item(item_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Response:
+    _fetch_item(conn, item_id)
     conn.execute("DELETE FROM items WHERE id = ?", (item_id,))
     return Response(status_code=204)
 
@@ -114,6 +160,17 @@ def item_stock(item_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Item
     )
 
 
+@router.get("/items/{item_id}/movements", response_model=list[Movement])
+def item_movements(
+    item_id: int,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    conn: sqlite3.Connection = Depends(get_db),
+) -> list[Movement]:
+    _fetch_item(conn, item_id)
+    return stock.list_movements(conn, item_id=item_id, limit=limit, offset=offset)
+
+
 # --- locations ---------------------------------------------------------------
 
 
@@ -121,9 +178,12 @@ def item_stock(item_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Item
 def create_location(
     payload: LocationCreate, conn: sqlite3.Connection = Depends(get_db)
 ) -> Location:
-    cur = conn.execute(
-        "INSERT INTO locations (code, name) VALUES (?, ?)", (payload.code, payload.name)
-    )
+    try:
+        cur = conn.execute(
+            "INSERT INTO locations (code, name) VALUES (?, ?)", (payload.code, payload.name)
+        )
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=409, detail=f"location code {payload.code!r} already exists")
     row = conn.execute("SELECT * FROM locations WHERE id = ?", (cur.lastrowid,)).fetchone()
     return Location(**dict(row))
 
@@ -139,6 +199,24 @@ def get_location(location_id: int, conn: sqlite3.Connection = Depends(get_db)) -
     row = conn.execute("SELECT * FROM locations WHERE id = ?", (location_id,)).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail=f"location {location_id} not found")
+    return Location(**dict(row))
+
+
+@router.put("/locations/{location_id}", response_model=Location)
+def update_location(
+    location_id: int, payload: LocationUpdate, conn: sqlite3.Connection = Depends(get_db)
+) -> Location:
+    row = conn.execute("SELECT * FROM locations WHERE id = ?", (location_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"location {location_id} not found")
+    updates = payload.model_dump(exclude_unset=True)
+    updates = {k: v for k, v in updates.items() if k in {"name", "code"} and v is not None}
+    if updates:
+        assignments = ", ".join(f"{k} = ?" for k in updates)
+        conn.execute(
+            f"UPDATE locations SET {assignments} WHERE id = ?", [*updates.values(), location_id]
+        )
+    row = conn.execute("SELECT * FROM locations WHERE id = ?", (location_id,)).fetchone()
     return Location(**dict(row))
 
 
@@ -165,19 +243,42 @@ def list_movements(
 
 
 @router.get("/reports/low-stock", response_model=list[LowStockEntry])
-def low_stock_report(conn: sqlite3.Connection = Depends(get_db)) -> list[LowStockEntry]:
-    return reports.low_stock(conn)
+def low_stock_report(
+    location_id: Optional[int] = None,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> list[LowStockEntry]:
+    if location_id is not None:
+        row = conn.execute(
+            "SELECT id FROM locations WHERE id = ?", (location_id,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"location {location_id} not found")
+    return reports.low_stock(conn, location_id=location_id)
 
 
 @router.get("/reports/value")
-def inventory_value_report(conn: sqlite3.Connection = Depends(get_db)) -> dict:
-    return {"value": reports.inventory_value(conn)}
+def inventory_value_report(
+    location_id: Optional[int] = Query(None),
+    conn: sqlite3.Connection = Depends(get_db),
+) -> dict:
+    if location_id is not None:
+        row = conn.execute(
+            "SELECT id FROM locations WHERE id = ?", (location_id,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(
+                status_code=404, detail=f"location {location_id} not found"
+            )
+    return {"value": reports.inventory_value(conn, location_id=location_id)}
 
 
 @router.get("/search", response_model=list[Item])
 def search_items(
-    q: str = Query(..., min_length=1),
+    q: str = Query(..., min_length=1, max_length=100),
     limit: int = Query(50, ge=1, le=500),
     conn: sqlite3.Connection = Depends(get_db),
 ) -> list[Item]:
+    q = q.strip()
+    if not q:
+        raise HTTPException(status_code=422, detail="q must not be blank")
     return search.search_items(conn, q, limit=limit)
