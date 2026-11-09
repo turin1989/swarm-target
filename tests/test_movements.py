@@ -150,6 +150,28 @@ def test_transfer_is_recorded(client, item, loc_a, loc_b):
     assert movements[1]["kind"] == "transfer"
 
 
+def test_transfer_same_location_rejected(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=2,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_a["id"],
+    )
+    assert r.status_code == 400
+    body = r.json()
+    assert body["error"]["code"] == "bad_request"
+    assert "same location" in body["error"]["message"]
+    # no movement row written for the rejected transfer
+    movements = client.get("/movements").json()
+    assert len(movements) == 1
+    assert movements[0]["kind"] == "receive"
+    # stock untouched
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 5
+
+
 def test_adjust_sets_stock_absolutely(client, item, loc_a):
     _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])
     r = _move(client, item_id=item["id"], kind="adjust", qty=3, to_location_id=loc_a["id"])
