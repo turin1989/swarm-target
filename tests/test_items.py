@@ -33,6 +33,20 @@ def test_update_item_rejects_reorder_point(client, item):
     assert r.status_code == 422
 
 
+def test_create_item_rejects_negative_reorder_point(client):
+    r = client.post(
+        "/items", json={"sku": "A-2", "name": "Alpha", "reorder_point": -1}
+    )
+    assert r.status_code == 422
+
+
+def test_update_item_rejects_negative_reorder_point(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": -1})
+    assert r.status_code == 422
+    # value unchanged
+    assert client.get(f"/items/{item['id']}").json()["reorder_level"] == 5
+
+
 def test_create_item_accepts_reorder_level(client):
     r = client.post("/items", json={"sku": "A-3", "name": "Alpha", "reorder_level": 7})
     assert r.status_code == 201
