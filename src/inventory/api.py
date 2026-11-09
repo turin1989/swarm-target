@@ -47,8 +47,8 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
     try:
         cur = conn.execute(
             """
-            INSERT INTO items (sku, name, description, unit_price, reorder_point, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO items (sku, name, description, unit_price, reorder_point, created_at, barcode)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 payload.sku,
@@ -57,9 +57,14 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
                 payload.unit_price,
                 payload.reorder_point,
                 utc_now_iso(),
+                payload.barcode,
             ),
         )
-    except sqlite3.IntegrityError:
+    except sqlite3.IntegrityError as exc:
+        if "barcode" in str(exc):
+            raise HTTPException(
+                status_code=409, detail=f"barcode {payload.barcode!r} already exists"
+            )
         raise HTTPException(status_code=409, detail=f"sku {payload.sku!r} already exists")
     return _fetch_item(conn, cur.lastrowid)
 
@@ -68,15 +73,20 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
 def list_items(
     response: Response,
     active: Optional[bool] = None,
+    barcode: Optional[str] = None,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     conn: sqlite3.Connection = Depends(get_db),
 ) -> ItemPage:
-    where = ""
+    conditions: list[str] = []
     params: list = []
     if active is not None:
-        where = " WHERE active = ?"
+        conditions.append("active = ?")
         params.append(int(active))
+    if barcode is not None:
+        conditions.append("barcode = ?")
+        params.append(barcode)
+    where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
     total = conn.execute(f"SELECT COUNT(*) FROM items{where}", params).fetchone()[0]
     response.headers["X-Total-Count"] = str(total)
     sql = f"SELECT * FROM items{where} ORDER BY id LIMIT ? OFFSET ?"

@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS items (
     unit_price REAL NOT NULL DEFAULT 0,
     reorder_point INTEGER NOT NULL DEFAULT 0,
     active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL DEFAULT ''
+    created_at TEXT NOT NULL DEFAULT '',
+    barcode TEXT UNIQUE
 );
 
 CREATE TABLE IF NOT EXISTS locations (
@@ -66,6 +67,13 @@ def init_db(path: str) -> None:
     conn = connect(path)
     try:
         conn.executescript(SCHEMA)
+        # Older databases may predate the barcode column; add it if missing.
+        item_columns = {r["name"] for r in conn.execute("PRAGMA table_info(items)")}
+        if "barcode" not in item_columns:
+            conn.execute("ALTER TABLE items ADD COLUMN barcode TEXT")
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_items_barcode ON items(barcode)"
+            )
         row = conn.execute("SELECT version FROM schema_version").fetchone()
         if row is None:
             conn.execute("INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,))

@@ -13,6 +13,7 @@ class ItemCreate(BaseModel):
     description: str = ""
     unit_price: float = Field(0.0, ge=0)
     reorder_point: int = 0
+    barcode: Optional[str] = None
 
 
 class ItemUpdate(BaseModel):
@@ -32,6 +33,7 @@ class Item(BaseModel):
     reorder_point: int
     active: bool
     created_at: str
+    barcode: Optional[str] = None
 
 
 class ItemPage(BaseModel):
