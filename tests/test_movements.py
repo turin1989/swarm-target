@@ -11,7 +11,7 @@ def test_create_and_list_locations(client, loc_a, loc_b):
     r = client.get("/locations")
     assert r.status_code == 200
     assert [loc["code"] for loc in r.json()] == ["WH-A", "WH-B"]
-    assert loc_a == {"id": 1, "code": "WH-A", "name": "Warehouse A"}
+    assert loc_a == {"id": 1, "code": "WH-A", "name": "Warehouse A", "active": True}
 
 
 def test_get_location(client, loc_a):
@@ -55,7 +55,12 @@ def test_update_location_name_and_code(client, loc_a):
         f"/locations/{loc_a['id']}", json={"name": "Main Warehouse", "code": "WH-MAIN"}
     )
     assert r.status_code == 200
-    assert r.json() == {"id": loc_a["id"], "code": "WH-MAIN", "name": "Main Warehouse"}
+    assert r.json() == {
+        "id": loc_a["id"],
+        "code": "WH-MAIN",
+        "name": "Main Warehouse",
+        "active": True,
+    }
     # persisted
     assert client.get(f"/locations/{loc_a['id']}").json() == r.json()
 
@@ -63,11 +68,11 @@ def test_update_location_name_and_code(client, loc_a):
 def test_update_location_partial(client, loc_a):
     r = client.put(f"/locations/{loc_a['id']}", json={"name": "Renamed"})
     assert r.status_code == 200
-    assert r.json() == {"id": loc_a["id"], "code": "WH-A", "name": "Renamed"}
+    assert r.json() == {"id": loc_a["id"], "code": "WH-A", "name": "Renamed", "active": True}
 
     r = client.put(f"/locations/{loc_a['id']}", json={"code": "WH-X"})
     assert r.status_code == 200
-    assert r.json() == {"id": loc_a["id"], "code": "WH-X", "name": "Renamed"}
+    assert r.json() == {"id": loc_a["id"], "code": "WH-X", "name": "Renamed", "active": True}
 
 
 def test_update_location_empty_payload_is_noop(client, loc_a):

@@ -14,13 +14,15 @@ CREATE TABLE IF NOT EXISTS items (
     unit_price REAL NOT NULL DEFAULT 0,
     reorder_point INTEGER NOT NULL DEFAULT 0,
     active INTEGER NOT NULL DEFAULT 1,
+    barcode TEXT UNIQUE,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
 CREATE TABLE IF NOT EXISTS locations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     code TEXT NOT NULL UNIQUE,
-    name TEXT NOT NULL
+    name TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS stock_levels (
@@ -56,10 +58,18 @@ def connect(path: str) -> sqlite3.Connection:
     return conn
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Apply additive schema changes to databases created before a column existed."""
+    location_cols = {row["name"] for row in conn.execute("PRAGMA table_info(locations)")}
+    if "active" not in location_cols:
+        conn.execute("ALTER TABLE locations ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
+
+
 def init_db(path: str) -> None:
     conn = connect(path)
     try:
         conn.executescript(SCHEMA)
+        _migrate(conn)
         row = conn.execute("SELECT version FROM schema_version").fetchone()
         if row is None:
             conn.execute(
