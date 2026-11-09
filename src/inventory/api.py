@@ -20,6 +20,7 @@ from inventory.models import (
     LowStockEntry,
     Movement,
     MovementCreate,
+    MovementKind,
 )
 from inventory.services import items as items_service
 from inventory.services import reports, search, stock
@@ -148,6 +149,13 @@ def update_item(
 
 @router.delete("/items/{item_id}", status_code=204)
 def delete_item(item_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Response:
+    _fetch_item(conn, item_id)
+    remaining = stock.total_stock(conn, item_id)
+    if remaining > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"item {item_id} still has {remaining} units in stock",
+        )
     if not items_service.delete_item(conn, item_id):
         raise HTTPException(status_code=404, detail=f"item {item_id} not found")
     return Response(status_code=204)
@@ -310,11 +318,13 @@ def get_movement(movement_id: int, conn: sqlite3.Connection = Depends(get_db)) -
 
 @router.get("/movements", response_model=list[Movement])
 def list_movements(
+    item_id: Optional[int] = Query(None),
+    kind: Optional[MovementKind] = Query(None),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     conn: sqlite3.Connection = Depends(get_db),
 ) -> list[Movement]:
-    return stock.list_movements(conn, limit=limit, offset=offset)
+    return stock.list_movements(conn, limit=limit, offset=offset, item_id=item_id, kind=kind)
 
 
 # --- reports & search --------------------------------------------------------

@@ -88,9 +88,13 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
     if m.qty <= 0:  # pragma: no cover - guarded by the model's gt=0 constraint
         raise ValidationError("qty must be a positive integer")
 
-    item = conn.execute("SELECT id FROM items WHERE id = ?", (m.item_id,)).fetchone()
+    item = conn.execute(
+        "SELECT id, active FROM items WHERE id = ?", (m.item_id,)
+    ).fetchone()
     if item is None:
         raise NotFoundError(f"item {m.item_id} not found")
+    if not item["active"]:
+        raise ConflictError(f"item {m.item_id} is inactive")
 
     if m.kind == "receive":
         to_id = _require_location(conn, m.to_location_id, "to_location_id")
@@ -102,6 +106,8 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
     elif m.kind == "transfer":
         from_id = _require_location(conn, m.from_location_id, "from_location_id")
         to_id = _require_location(conn, m.to_location_id, "to_location_id")
+        if from_id == to_id:
+            raise ValidationError("cannot transfer to the same location")
         _require_stock(conn, m.item_id, from_id, m.qty)
         _adjust(conn, m.item_id, from_id, -m.qty)
         _adjust(conn, m.item_id, to_id, m.qty)
@@ -167,14 +173,21 @@ def get_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
 def list_movements(
     conn: sqlite3.Connection,
     item_id: int | None = None,
+    kind: str | None = None,
     limit: int = 100,
     offset: int = 0,
 ) -> list[Movement]:
     sql = "SELECT * FROM movements"
+    conditions: list[str] = []
     params: list = []
     if item_id is not None:
-        sql += " WHERE item_id = ?"
+        conditions.append("item_id = ?")
         params.append(item_id)
+    if kind is not None:
+        conditions.append("kind = ?")
+        params.append(kind)
+    if conditions:
+        sql += " WHERE " + " AND ".join(conditions)
     sql += " ORDER BY id LIMIT ? OFFSET ?"
     params += [limit, offset]
     rows = conn.execute(sql, params).fetchall()
