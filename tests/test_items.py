@@ -127,6 +127,38 @@ def test_list_items_filter_active(client, item):
     assert [i["sku"] for i in inactive] == ["INACTIVE"]
 
 
+def test_list_items_filter_sku_exact_match(client, item):
+    client.post("/items", json={"sku": "WIDGET-2", "name": "Other"})
+    r = client.get("/items", params={"sku": "WIDGET-1"})
+    assert r.status_code == 200
+    body = r.json()
+    assert [i["sku"] for i in body["items"]] == ["WIDGET-1"]
+    assert body["total"] == 1
+
+
+def test_list_items_filter_sku_is_exact_not_prefix(client, item):
+    client.post("/items", json={"sku": "WIDGET-10", "name": "Other"})
+    r = client.get("/items", params={"sku": "WIDGET-1"})
+    assert [i["sku"] for i in r.json()["items"]] == ["WIDGET-1"]
+
+
+def test_list_items_filter_sku_unknown_returns_empty_list(client, item):
+    r = client.get("/items", params={"sku": "NO-SUCH-SKU"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["items"] == []
+    assert body["total"] == 0
+
+
+def test_list_items_filter_sku_combines_with_active(client, item):
+    client.put(f"/items/{item['id']}", json={"active": False})
+    r = client.get("/items", params={"sku": "WIDGET-1", "active": "true"})
+    assert r.status_code == 200
+    assert r.json()["items"] == []
+    r = client.get("/items", params={"sku": "WIDGET-1", "active": "false"})
+    assert [i["sku"] for i in r.json()["items"]] == ["WIDGET-1"]
+
+
 def test_update_item_name_and_price(client, item):
     r = client.put(f"/items/{item['id']}", json={"name": "Renamed", "unit_price": 9.99})
     assert r.status_code == 200
