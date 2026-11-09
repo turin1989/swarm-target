@@ -115,6 +115,25 @@ def test_movement_invalid_kind_422(client, item, loc_a):
     assert r.status_code == 422
 
 
+def test_movement_has_created_at(client, item, loc_a):
+    from datetime import datetime, timezone
+
+    before = datetime.now(timezone.utc)
+    r = _move(client, item_id=item["id"], kind="receive", qty=3, to_location_id=loc_a["id"])
+    after = datetime.now(timezone.utc)
+    assert r.status_code == 201
+    body = r.json()
+    assert "created_at" in body
+    created = datetime.fromisoformat(body["created_at"])
+    assert created.tzinfo is not None
+    assert created.utcoffset().total_seconds() == 0  # UTC
+    assert before <= created <= after
+
+    # also present when listing movements
+    movements = client.get("/movements").json()
+    assert movements[0]["created_at"] == body["created_at"]
+
+
 def test_list_movements_pagination(client, item, loc_a):
     for _ in range(4):
         _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
