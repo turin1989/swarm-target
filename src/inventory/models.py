@@ -2,7 +2,7 @@
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 MovementKind = Literal["receive", "ship", "transfer", "adjust"]
 
@@ -10,19 +10,31 @@ LOCATION_CODE_PATTERN = r"^[A-Z0-9][A-Z0-9-]{0,31}$"
 
 
 class ItemCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     sku: str = Field(..., min_length=1, max_length=64)
     name: str = Field(..., min_length=1, max_length=200)
-    description: str = ""
-    unit_price: float = Field(0.0, ge=0)
-    reorder_point: int = Field(0, ge=0)
+    description: str = Field("", max_length=2000)
+    unit_price: float = Field(default=0.0, ge=0)
+    reorder_level: int = Field(default=0, ge=0)
     barcode: Optional[str] = None
+
+    @field_validator("sku")
+    @classmethod
+    def normalise_sku(cls, value: str) -> str:
+        value = value.strip().upper()
+        if not value:
+            raise ValueError("sku must not be empty or whitespace only")
+        return value
 
 
 class ItemUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: Optional[str] = None
-    description: Optional[str] = None
-    unit_price: Optional[float] = Field(None, ge=0)
-    reorder_point: Optional[int] = Field(None, ge=0)
+    description: Optional[str] = Field(None, max_length=2000)
+    unit_price: Optional[float] = Field(default=None, ge=0)
+    reorder_level: Optional[int] = Field(default=None, ge=0)
     active: Optional[bool] = None
 
 
@@ -32,10 +44,10 @@ class Item(BaseModel):
     name: str
     description: str
     unit_price: float
-    reorder_point: int
+    reorder_level: int
     active: bool
-    created_at: str
     barcode: Optional[str] = None
+    created_at: str
 
 
 class ItemPage(BaseModel):
@@ -66,20 +78,22 @@ class Location(BaseModel):
 
 
 class MovementCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     item_id: int
     kind: MovementKind
-    qty: int
+    quantity: int = Field(..., gt=0)
     from_location_id: Optional[int] = None
     to_location_id: Optional[int] = None
-    note: str = Field("", max_length=500)
-    reference: Optional[str] = Field(None, max_length=64)
+    note: str = Field(default="", max_length=500)
+    reference: Optional[str] = Field(default=None, max_length=64)
 
 
 class Movement(BaseModel):
     id: int
     item_id: int
     kind: MovementKind
-    qty: int
+    quantity: int
     from_location_id: Optional[int]
     to_location_id: Optional[int]
     note: str
@@ -90,7 +104,7 @@ class Movement(BaseModel):
 class StockLevel(BaseModel):
     item_id: int
     location_id: int
-    qty: int
+    quantity: int
 
 
 class ItemStock(BaseModel):
@@ -109,4 +123,5 @@ class LowStockEntry(BaseModel):
     sku: str
     name: str
     total_qty: int
-    reorder_point: int
+    reorder_level: int
+    shortfall: int = Field(..., ge=0)
