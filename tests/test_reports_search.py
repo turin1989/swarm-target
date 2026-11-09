@@ -279,6 +279,7 @@ def test_inventory_value_unknown_location_404(client, loc_a):
     _seed(client, "P1", "p1", reorder=0, quantity=3, loc=loc_a, price=2.0)
     r = client.get("/reports/value", params={"location_id": 999})
     assert r.status_code == 404
+    assert r.json()["error"]["code"] == "not_found"
 
 
 def test_inventory_value_empty_location(client, loc_a, loc_b):
