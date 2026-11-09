@@ -156,6 +156,14 @@ def test_search_description_results_ordered_by_name(client):
     assert names == ["Alpha foo", "Mid", "Zeta"]
 
 
+def test_search_description_matches_respect_limit_and_ordering(client):
+    client.post("/items", json={"sku": "L1", "name": "Charlie", "description": "foo quality"})
+    client.post("/items", json={"sku": "L2", "name": "Alpha", "description": "best foo"})
+    client.post("/items", json={"sku": "L3-foo", "name": "Bravo", "description": "plain"})
+    names = [i["name"] for i in client.get("/search", params={"q": "foo", "limit": 2}).json()]
+    assert names == ["Alpha", "Bravo"]
+
+
 def test_search_requires_query(client):
     assert client.get("/search").status_code == 422
     assert client.get("/search", params={"q": ""}).status_code == 422
