@@ -311,6 +311,11 @@ def reverse_movement(
     return stock.reverse_movement(conn, movement_id)
 
 
+@router.get("/movements/{movement_id}", response_model=Movement)
+def get_movement(movement_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Movement:
+    return stock.get_movement(conn, movement_id)
+
+
 @router.get("/movements", response_model=list[Movement])
 def list_movements(
     item_id: Optional[int] = Query(None),
