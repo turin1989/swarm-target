@@ -39,6 +39,7 @@ class Item(BaseModel):
     unit_price: float
     reorder_point: int
     active: bool
+    created_at: str
 
 
 class ItemPage(BaseModel):
@@ -49,12 +50,14 @@ class ItemPage(BaseModel):
 
 
 class LocationCreate(BaseModel):
-    code: str = Field(..., min_length=1, max_length=32)
+    code: str = Field(..., min_length=1, max_length=32, pattern=r"^[A-Z0-9][A-Z0-9-]{0,31}$")
     name: str = Field(..., min_length=1, max_length=200)
 
 
 class LocationUpdate(BaseModel):
-    code: Optional[str] = Field(None, min_length=1, max_length=32)
+    code: Optional[str] = Field(
+        None, min_length=1, max_length=32, pattern=r"^[A-Z0-9][A-Z0-9-]{0,31}$"
+    )
     name: Optional[str] = Field(None, min_length=1, max_length=200)
 
 
@@ -72,7 +75,7 @@ class MovementCreate(BaseModel):
     quantity: int = Field(..., gt=0)
     from_location_id: Optional[int] = None
     to_location_id: Optional[int] = None
-    note: str = ""
+    note: str = Field(default="", max_length=500)
 
 
 class Movement(BaseModel):

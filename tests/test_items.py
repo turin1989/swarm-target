@@ -1,5 +1,7 @@
 """Item CRUD and listing."""
 
+import re
+
 
 def test_health(client):
     r = client.get("/health")
@@ -199,6 +201,36 @@ def test_list_items_sort_with_pagination_envelope(client):
     assert body["offset"] == 1
 
 
+def test_list_items_total_count_header(client):
+    for n in range(5):
+        client.post("/items", json={"sku": f"S{n}", "name": f"N{n}"})
+    r = client.get("/items")
+    assert r.headers["X-Total-Count"] == "5"
+
+
+def test_list_items_total_count_ignores_limit_and_offset(client):
+    for n in range(5):
+        client.post("/items", json={"sku": f"S{n}", "name": f"N{n}"})
+    r = client.get("/items", params={"limit": 2, "offset": 4})
+    assert len(r.json()["items"]) == 1
+    assert r.headers["X-Total-Count"] == "5"
+
+
+def test_list_items_total_count_respects_filters(client, item):
+    client.post("/items", json={"sku": "INACTIVE", "name": "Old"})
+    client.put("/items/2", json={"active": False})
+    assert client.get("/items", params={"active": "true"}).headers["X-Total-Count"] == "1"
+    assert client.get("/items", params={"active": "false"}).headers["X-Total-Count"] == "1"
+    assert client.get("/items").headers["X-Total-Count"] == "2"
+
+
+def test_list_items_total_count_respects_sku_filter(client, item):
+    client.post("/items", json={"sku": "GADGET-1", "name": "Gadget"})
+    assert client.get("/items", params={"sku": "WIDGET-1"}).headers["X-Total-Count"] == "1"
+    assert client.get("/items", params={"sku": "NOPE"}).headers["X-Total-Count"] == "0"
+    assert client.get("/items").headers["X-Total-Count"] == "2"
+
+
 def test_list_items_filter_active(client, item):
     client.post("/items", json={"sku": "INACTIVE", "name": "Old"})
     client.put("/items/2", json={"active": False})
@@ -352,3 +384,130 @@ def test_delete_item_twice_returns_404(client, item):
     body = r.json()
     assert body["error"]["code"] == "not_found"
     assert body["error"]["message"] == f"item {item['id']} not found"
+
+
+# --- bulk creation -------------------------------------------------------------
+
+
+def test_bulk_create_returns_201_and_created_items(client):
+    r = client.post(
+        "/items/bulk",
+        json=[
+            {"sku": "B-1", "name": "Bulk One", "unit_price": 1.0},
+            {"sku": "B-2", "name": "Bulk Two", "unit_price": 2.0, "reorder_point": 3},
+        ],
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert [i["sku"] for i in body] == ["B-1", "B-2"]
+    assert all(i["id"] > 0 for i in body)
+    assert body[0]["active"] is True
+    assert body[1]["reorder_point"] == 3
+    # items are persisted
+    assert [i["sku"] for i in client.get("/items").json()["items"]] == ["B-1", "B-2"]
+
+
+def test_bulk_create_normalises_sku(client):
+    r = client.post("/items/bulk", json=[{"sku": "  bulk-1 ", "name": "Bulk"}])
+    assert r.status_code == 201
+    assert r.json()[0]["sku"] == "BULK-1"
+
+
+def test_bulk_create_duplicate_sku_is_atomic(client, item):
+    r = client.post(
+        "/items/bulk",
+        json=[
+            {"sku": "NEW-1", "name": "New One"},
+            {"sku": item["sku"], "name": "Dup"},
+            {"sku": "NEW-2", "name": "New Two"},
+        ],
+    )
+    assert r.status_code == 409
+    body = r.json()
+    assert body["error"]["code"] == "conflict"
+    # nothing was created: only the pre-existing fixture item remains
+    listing = client.get("/items").json()
+    assert [i["sku"] for i in listing["items"]] == [item["sku"]]
+    assert listing["total"] == 1
+
+
+def test_bulk_create_duplicate_sku_within_payload_is_atomic(client):
+    r = client.post(
+        "/items/bulk",
+        json=[
+            {"sku": "SAME", "name": "First"},
+            {"sku": "SAME", "name": "Second"},
+        ],
+    )
+    assert r.status_code == 409
+    listing = client.get("/items").json()
+    assert listing["items"] == []
+    assert listing["total"] == 0
+
+
+def test_bulk_create_empty_list_422(client):
+    r = client.post("/items/bulk", json=[])
+    assert r.status_code == 422
+
+
+def test_bulk_create_invalid_entry_422(client):
+    r = client.post("/items/bulk", json=[{"sku": "OK-1", "name": "Ok"}, {"name": "missing sku"}])
+    assert r.status_code == 422
+    listing = client.get("/items").json()
+    assert listing["items"] == []
+    assert listing["total"] == 0
+
+
+# --- created_at ----------------------------------------------------------------
+
+
+ISO_UTC = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+
+
+def test_create_item_sets_created_at_iso_utc(client):
+    r = client.post("/items", json={"sku": "TS-1", "name": "Timestamped"})
+    assert r.status_code == 201
+    created_at = r.json()["created_at"]
+    assert ISO_UTC.match(created_at), created_at
+
+
+def test_created_at_returned_by_get_list_and_search(client, item):
+    assert ISO_UTC.match(item["created_at"])
+
+    got = client.get(f"/items/{item['id']}").json()
+    assert got["created_at"] == item["created_at"]
+
+    listed = client.get("/items").json()
+    assert listed["items"][0]["created_at"] == item["created_at"]
+
+    found = client.get("/search", params={"q": item["sku"]}).json()
+    assert found[0]["created_at"] == item["created_at"]
+
+
+def test_created_at_cannot_be_set_by_client_on_create(client):
+    r = client.post(
+        "/items",
+        json={"sku": "TS-2", "name": "Sneaky", "created_at": "1999-01-01T00:00:00Z"},
+    )
+    assert r.status_code == 201
+    assert r.json()["created_at"] != "1999-01-01T00:00:00Z"
+    assert ISO_UTC.match(r.json()["created_at"])
+
+
+def test_created_at_ignored_on_put(client, item):
+    r = client.put(
+        f"/items/{item['id']}",
+        json={"name": "Renamed", "created_at": "1999-01-01T00:00:00Z"},
+    )
+    assert r.status_code == 200
+    assert r.json()["name"] == "Renamed"
+    assert r.json()["created_at"] == item["created_at"]
+
+    # still unchanged when fetched again
+    assert client.get(f"/items/{item['id']}").json()["created_at"] == item["created_at"]
+
+
+def test_bulk_create_sets_created_at(client):
+    r = client.post("/items/bulk", json=[{"sku": "B-TS", "name": "Bulk TS"}])
+    assert r.status_code == 201
+    assert ISO_UTC.match(r.json()[0]["created_at"])

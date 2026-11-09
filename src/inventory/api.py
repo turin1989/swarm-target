@@ -1,9 +1,10 @@
 """HTTP routes."""
 
 import sqlite3
-from typing import Optional
+from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import JSONResponse
 
 from inventory.db import get_db
 from inventory.models import (
@@ -22,8 +23,30 @@ from inventory.models import (
 )
 from inventory.services import items as items_service
 from inventory.services import reports, search, stock
+from inventory.services.errors import InventoryError
 
 router = APIRouter()
+
+ERROR_CODES = {
+    400: "bad_request",
+    404: "not_found",
+    409: "conflict",
+    422: "validation_error",
+}
+
+
+def error_response(status_code: int, message: str) -> JSONResponse:
+    """Build the uniform error body: {"error": {"code": ..., "message": ...}}."""
+    code = ERROR_CODES.get(status_code, "error")
+    return JSONResponse(
+        status_code=status_code,
+        content={"error": {"code": code, "message": message}},
+    )
+
+
+def inventory_error_handler(request: Request, exc: InventoryError) -> JSONResponse:
+    """Translate service-layer errors into HTTP responses in one place."""
+    return error_response(exc.status_code, str(exc))
 
 
 def _fetch_item(conn: sqlite3.Connection, item_id: int) -> Item:
@@ -44,11 +67,27 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
         raise HTTPException(status_code=409, detail=f"sku {payload.sku!r} already exists")
 
 
+@router.post("/items/bulk", response_model=list[Item], status_code=201)
+def create_items_bulk(
+    payload: Annotated[list[ItemCreate], Body(min_length=1)],
+    conn: sqlite3.Connection = Depends(get_db),
+) -> list[Item]:
+    created: list[Item] = []
+    for entry in payload:
+        try:
+            created.append(items_service.create_item(conn, entry))
+        except sqlite3.IntegrityError:
+            conn.rollback()
+            raise HTTPException(status_code=409, detail=f"sku {entry.sku!r} already exists")
+    return created
+
+
 _SORTABLE_COLUMNS = items_service.SORTABLE_COLUMNS
 
 
 @router.get("/items", response_model=ItemPage)
 def list_items(
+    response: Response,
     active: Optional[bool] = None,
     sku: Optional[str] = None,
     sort: str = Query("id"),
@@ -70,6 +109,7 @@ def list_items(
         offset=offset,
     )
     total = items_service.count_items(conn, active=active, sku=sku)
+    response.headers["X-Total-Count"] = str(total)
     return ItemPage(items=items, total=total, limit=limit, offset=offset)
 
 
@@ -193,20 +233,14 @@ def update_location(
 def create_movement(
     payload: MovementCreate, conn: sqlite3.Connection = Depends(get_db)
 ) -> Movement:
-    try:
-        return stock.apply_movement(conn, payload)
-    except stock.StockError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    return stock.apply_movement(conn, payload)
 
 
 @router.post("/movements/{movement_id}/reverse", response_model=Movement, status_code=201)
 def reverse_movement(
     movement_id: int, conn: sqlite3.Connection = Depends(get_db)
 ) -> Movement:
-    try:
-        return stock.reverse_movement(conn, movement_id)
-    except stock.StockError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    return stock.reverse_movement(conn, movement_id)
 
 
 @router.get("/movements", response_model=list[Movement])
