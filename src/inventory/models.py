@@ -11,7 +11,7 @@ class ItemCreate(BaseModel):
     sku: str = Field(..., min_length=1, max_length=64)
     name: str = Field(..., min_length=1, max_length=200)
     description: str = ""
-    unit_price: float = 0.0
+    unit_price: float = Field(default=0.0, ge=0)
     reorder_point: int = 0
 
     @field_validator("sku")
@@ -26,7 +26,7 @@ class ItemCreate(BaseModel):
 class ItemUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
-    unit_price: Optional[float] = None
+    unit_price: Optional[float] = Field(default=None, ge=0)
     reorder_point: Optional[int] = None
     active: Optional[bool] = None
 
