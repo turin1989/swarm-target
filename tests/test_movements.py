@@ -824,6 +824,76 @@ def test_item_movements_empty_for_fresh_item(client, item):
 def test_item_movements_unknown_item_404(client):
     r = client.get("/items/999/movements")
     assert r.status_code == 404
+    body = r.json()
+    assert body["error"]["code"] == "not_found"
+
+
+def test_item_movements_ordered_by_id_across_kinds(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", quantity=5, to_location_id=loc_a["id"])
+    _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        quantity=2,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    _move(client, item_id=item["id"], kind="ship", quantity=1, from_location_id=loc_b["id"])
+    _move(client, item_id=item["id"], kind="adjust", quantity=7, to_location_id=loc_a["id"])
+
+    r = client.get(f"/items/{item['id']}/movements")
+    assert r.status_code == 200
+    ids = [m["id"] for m in r.json()]
+    assert ids == sorted(ids) == [1, 2, 3, 4]
+
+
+def test_item_movements_offset_past_end_returns_empty(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", quantity=1, to_location_id=loc_a["id"])
+    r = client.get(f"/items/{item['id']}/movements", params={"offset": 10})
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_item_movements_limit_offset_bounds_validated(client, item):
+    assert client.get(f"/items/{item['id']}/movements", params={"limit": 0}).status_code == 422
+    assert client.get(f"/items/{item['id']}/movements", params={"limit": 501}).status_code == 422
+    assert client.get(f"/items/{item['id']}/movements", params={"offset": -1}).status_code == 422
+
+
+def test_item_movements_service_filters_by_item_id(tmp_path):
+    """stock.list_movements with item_id only returns that item's rows, ordered by id."""
+    from inventory.db import connect, init_db
+    from inventory.models import ItemCreate, MovementCreate
+    from inventory.services import items as items_service
+    from inventory.services import stock
+
+    path = str(tmp_path / "svc-movements.db")
+    init_db(path)
+    conn = connect(path)
+    try:
+        a = items_service.create_item(conn, ItemCreate(sku="SVC-A", name="A", unit_price=1.0))
+        b = items_service.create_item(conn, ItemCreate(sku="SVC-B", name="B", unit_price=1.0))
+        conn.execute("INSERT INTO locations (code, name) VALUES ('SVC-LOC', 'Svc Loc')")
+        loc_id = conn.execute(
+            "SELECT id FROM locations WHERE code = 'SVC-LOC'"
+        ).fetchone()["id"]
+
+        for item_obj in (a, b, a):
+            stock.apply_movement(
+                conn,
+                MovementCreate(
+                    item_id=item_obj.id, kind="receive", quantity=1, to_location_id=loc_id
+                ),
+            )
+
+        rows = stock.list_movements(conn, item_id=a.id)
+        assert [m.item_id for m in rows] == [a.id, a.id]
+        assert [m.id for m in rows] == sorted(m.id for m in rows)
+
+        paged = stock.list_movements(conn, item_id=a.id, limit=1, offset=1)
+        assert [m.id for m in paged] == [rows[1].id]
+    finally:
+        conn.close()
 
 
 # --- qty -> quantity rename (T047) ----------------------------------------------
