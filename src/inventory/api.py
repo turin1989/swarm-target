@@ -1,6 +1,7 @@
 """HTTP routes."""
 
 import sqlite3
+from http import HTTPStatus
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
@@ -36,9 +37,18 @@ ERROR_CODES = {
 }
 
 
+def _snake_case_code(status_code: int) -> str:
+    """Derive a snake_case code for statuses outside the explicit mapping."""
+    try:
+        phrase = HTTPStatus(status_code).phrase
+    except ValueError:
+        return "error"
+    return phrase.lower().replace(" ", "_").replace("-", "_").replace("'", "")
+
+
 def error_response(status_code: int, message: str) -> JSONResponse:
     """Build the uniform error body: {"error": {"code": ..., "message": ...}}."""
-    code = ERROR_CODES.get(status_code, "error")
+    code = ERROR_CODES.get(status_code) or _snake_case_code(status_code)
     return JSONResponse(
         status_code=status_code,
         content={"error": {"code": code, "message": message}},
