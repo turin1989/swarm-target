@@ -37,6 +37,11 @@ def test_create_item_rejects_negative_unit_price(client):
     assert r.status_code == 422
 
 
+def test_create_item_rejects_negative_integer_unit_price(client):
+    r = client.post("/items", json={"sku": "NEG-2", "name": "Neg", "unit_price": -1})
+    assert r.status_code == 422
+
+
 def test_create_item_accepts_zero_unit_price(client):
     r = client.post("/items", json={"sku": "ZERO-1", "name": "Zero", "unit_price": 0})
     assert r.status_code == 201
@@ -45,6 +50,13 @@ def test_create_item_accepts_zero_unit_price(client):
 
 def test_update_item_rejects_negative_unit_price(client, item):
     r = client.put(f"/items/{item['id']}", json={"unit_price": -5})
+    assert r.status_code == 422
+    # persisted value unchanged
+    assert client.get(f"/items/{item['id']}").json()["unit_price"] == item["unit_price"]
+
+
+def test_update_item_rejects_small_negative_unit_price(client, item):
+    r = client.put(f"/items/{item['id']}", json={"unit_price": -0.01})
     assert r.status_code == 422
     # persisted value unchanged
     assert client.get(f"/items/{item['id']}").json()["unit_price"] == item["unit_price"]
