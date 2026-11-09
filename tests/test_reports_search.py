@@ -81,6 +81,30 @@ def test_low_stock_shortfall_never_negative(client, loc_a):
     assert all(e["shortfall"] >= 0 for e in entries)
 
 
+def test_low_stock_shortfall_zero_at_exact_reorder_point(client, loc_a):
+    _seed(client, "EXACT", "exact", reorder=5, quantity=5, loc=loc_a)
+    entries = client.get("/reports/low-stock").json()
+    assert [e["sku"] for e in entries] == ["EXACT"]
+    assert entries[0]["shortfall"] == 0
+
+
+def test_low_stock_entry_model_rejects_negative_shortfall():
+    import pytest
+    from pydantic import ValidationError
+
+    from inventory.models import LowStockEntry
+
+    with pytest.raises(ValidationError):
+        LowStockEntry(
+            item_id=1,
+            sku="X",
+            name="x",
+            total_qty=10,
+            reorder_level=5,
+            shortfall=-5,
+        )
+
+
 def test_low_stock_includes_items_with_no_stock(client, loc_a):
     _seed(client, "NONE", "Nothing", reorder=1, quantity=0, loc=loc_a)
     assert [e["sku"] for e in client.get("/reports/low-stock").json()] == ["NONE"]
@@ -113,10 +137,12 @@ def test_low_stock_scoped_to_location(client, loc_a, loc_b):
     entries = r.json()
     assert [e["sku"] for e in entries] == ["SPLIT"]
     assert entries[0]["total_qty"] == 2
+    assert entries[0]["shortfall"] == 3
     # scoped to B: 4 counted -> still low
     entries_b = client.get("/reports/low-stock", params={"location_id": loc_b["id"]}).json()
     assert [e["sku"] for e in entries_b] == ["SPLIT"]
     assert entries_b[0]["total_qty"] == 4
+    assert entries_b[0]["shortfall"] == 1
 
 
 def test_low_stock_scoped_counts_zero_for_items_without_stock_at_location(client, loc_a, loc_b):
