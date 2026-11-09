@@ -41,6 +41,7 @@ class Item(BaseModel):
     reorder_point: int
     active: bool
     barcode: Optional[str] = None
+    created_at: str
 
 
 class ItemPage(BaseModel):

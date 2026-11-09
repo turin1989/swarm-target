@@ -1,5 +1,7 @@
 """Item CRUD and listing."""
 
+import re
+
 
 def test_health(client):
     r = client.get("/health")
@@ -581,3 +583,58 @@ def test_bulk_create_duplicate_barcode_within_payload_is_atomic(client):
     listing = client.get("/items").json()
     assert listing["items"] == []
     assert listing["total"] == 0
+
+
+# --- created_at ----------------------------------------------------------------
+
+
+ISO_UTC = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+
+
+def test_create_item_sets_created_at_iso_utc(client):
+    r = client.post("/items", json={"sku": "TS-1", "name": "Timestamped"})
+    assert r.status_code == 201
+    created_at = r.json()["created_at"]
+    assert ISO_UTC.match(created_at), created_at
+
+
+def test_created_at_returned_by_get_list_and_search(client, item):
+    assert ISO_UTC.match(item["created_at"])
+
+    got = client.get(f"/items/{item['id']}").json()
+    assert got["created_at"] == item["created_at"]
+
+    listed = client.get("/items").json()
+    assert listed["items"][0]["created_at"] == item["created_at"]
+
+    found = client.get("/search", params={"q": item["sku"]}).json()
+    assert found[0]["created_at"] == item["created_at"]
+
+
+def test_created_at_cannot_be_set_by_client_on_create(client):
+    r = client.post(
+        "/items",
+        json={"sku": "TS-2", "name": "Sneaky", "created_at": "1999-01-01T00:00:00Z"},
+    )
+    assert r.status_code == 201
+    assert r.json()["created_at"] != "1999-01-01T00:00:00Z"
+    assert ISO_UTC.match(r.json()["created_at"])
+
+
+def test_created_at_ignored_on_put(client, item):
+    r = client.put(
+        f"/items/{item['id']}",
+        json={"name": "Renamed", "created_at": "1999-01-01T00:00:00Z"},
+    )
+    assert r.status_code == 200
+    assert r.json()["name"] == "Renamed"
+    assert r.json()["created_at"] == item["created_at"]
+
+    # still unchanged when fetched again
+    assert client.get(f"/items/{item['id']}").json()["created_at"] == item["created_at"]
+
+
+def test_bulk_create_sets_created_at(client):
+    r = client.post("/items/bulk", json=[{"sku": "B-TS", "name": "Bulk TS"}])
+    assert r.status_code == 201
+    assert ISO_UTC.match(r.json()[0]["created_at"])

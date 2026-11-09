@@ -8,25 +8,12 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from inventory import __version__
-from inventory.api import router
+from inventory.api import error_response as _error_response
+from inventory.api import inventory_error_handler, router
 from inventory.db import connect, init_db
+from inventory.services.errors import InventoryError
 
 DEFAULT_DB_PATH = "inventory.db"
-
-ERROR_CODES = {
-    400: "bad_request",
-    404: "not_found",
-    409: "conflict",
-    422: "validation_error",
-}
-
-
-def _error_response(status_code: int, message: str) -> JSONResponse:
-    code = ERROR_CODES.get(status_code, "error")
-    return JSONResponse(
-        status_code=status_code,
-        content={"error": {"code": code, "message": message}},
-    )
 
 
 def create_app(db_path: str | None = None) -> FastAPI:
@@ -35,6 +22,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
     app = FastAPI(title="Inventory", version=__version__)
     app.state.db_path = db_path
     app.include_router(router)
+    app.add_exception_handler(InventoryError, inventory_error_handler)
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(
