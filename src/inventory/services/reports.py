@@ -41,6 +41,21 @@ def low_stock(
     ]
 
 
+def stats(conn: sqlite3.Connection) -> dict:
+    """Entity counts plus total units on hand across all stock levels."""
+    row = conn.execute(
+        """
+        SELECT
+            (SELECT COUNT(*) FROM items) AS items,
+            (SELECT COUNT(*) FROM items WHERE active = 1) AS active_items,
+            (SELECT COUNT(*) FROM locations) AS locations,
+            (SELECT COUNT(*) FROM movements) AS movements,
+            (SELECT COALESCE(SUM(qty), 0) FROM stock_levels) AS total_units
+        """
+    ).fetchone()
+    return dict(row)
+
+
 def inventory_value(conn: sqlite3.Connection, location_id: int | None = None) -> float:
     """Total value of stock on hand (sum of qty * unit_price).
 
