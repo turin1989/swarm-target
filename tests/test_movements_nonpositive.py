@@ -8,7 +8,6 @@ from inventory.models import MovementCreate
 from inventory.services import stock
 from inventory.services.errors import ValidationError
 
-
 # --- model layer ---------------------------------------------------------------
 
 
