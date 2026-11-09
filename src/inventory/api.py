@@ -108,7 +108,11 @@ def list_items(
     descending = sort.startswith("-")
     column = sort[1:] if descending else sort
     if column not in _SORTABLE_COLUMNS:
-        raise HTTPException(status_code=422, detail=f"invalid sort field {sort!r}")
+        raise HTTPException(
+            status_code=422,
+            detail=f"invalid sort {sort!r}; must be one of "
+            f"{sorted(_SORTABLE_COLUMNS)} optionally prefixed with '-'",
+        )
     items = items_service.list_items(
         conn,
         active=active,
