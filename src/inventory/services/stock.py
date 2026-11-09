@@ -30,6 +30,18 @@ def get_item_levels(conn: sqlite3.Connection, item_id: int) -> list[StockLevel]:
     return [StockLevel(**dict(r)) for r in rows]
 
 
+def get_location_levels(conn: sqlite3.Connection, location_id: int) -> list[StockLevel]:
+    rows = conn.execute(
+        """
+        SELECT item_id, location_id, qty FROM stock_levels
+        WHERE location_id = ? AND qty != 0
+        ORDER BY item_id
+        """,
+        (location_id,),
+    ).fetchall()
+    return [StockLevel(**dict(r)) for r in rows]
+
+
 def total_stock(conn: sqlite3.Connection, item_id: int) -> int:
     row = conn.execute(
         "SELECT COALESCE(SUM(qty), 0) AS total FROM stock_levels WHERE item_id = ?",
