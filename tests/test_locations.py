@@ -4,7 +4,9 @@
 def test_duplicate_location_code_returns_409(client, loc_a):
     r = client.post("/locations", json={"code": "WH-A", "name": "Another Warehouse"})
     assert r.status_code == 409, r.text
-    assert "WH-A" in r.json()["detail"]
+    body = r.json()
+    assert body["error"]["code"] == "conflict"
+    assert "WH-A" in body["error"]["message"]
 
 
 def test_distinct_location_codes_allowed(client, loc_a):

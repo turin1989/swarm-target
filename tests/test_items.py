@@ -63,7 +63,9 @@ def test_get_item_by_sku(client, item):
 def test_get_item_by_sku_unknown_404(client):
     r = client.get("/items/by-sku/NOPE-1")
     assert r.status_code == 404
-    assert r.json()["detail"] == "sku NOPE-1 not found"
+    body = r.json()
+    assert body["error"]["code"] == "not_found"
+    assert body["error"]["message"] == "sku NOPE-1 not found"
 
 
 def test_get_item_by_sku_does_not_shadow_get_by_id(client, item):
@@ -239,11 +241,15 @@ def test_delete_item_cascades_stock(client, item, loc_a):
 def test_delete_missing_item_404(client):
     r = client.delete("/items/999")
     assert r.status_code == 404
-    assert r.json()["detail"] == "item 999 not found"
+    body = r.json()
+    assert body["error"]["code"] == "not_found"
+    assert body["error"]["message"] == "item 999 not found"
 
 
 def test_delete_item_twice_returns_404(client, item):
     assert client.delete(f"/items/{item['id']}").status_code == 204
     r = client.delete(f"/items/{item['id']}")
     assert r.status_code == 404
-    assert r.json()["detail"] == f"item {item['id']} not found"
+    body = r.json()
+    assert body["error"]["code"] == "not_found"
+    assert body["error"]["message"] == f"item {item['id']} not found"

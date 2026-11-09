@@ -111,7 +111,9 @@ def test_ship_more_than_on_hand_rejected_409(client, item, loc_a):
     _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
     r = _move(client, item_id=item["id"], kind="ship", qty=6, from_location_id=loc_a["id"])
     assert r.status_code == 409
-    assert "insufficient" in r.json()["detail"]
+    body = r.json()
+    assert body["error"]["code"] == "conflict"
+    assert "insufficient" in body["error"]["message"]
     # no movement row written and stock unchanged
     movements = client.get("/movements").json()
     assert len(movements) == 1
@@ -123,7 +125,9 @@ def test_ship_more_than_on_hand_rejected_409(client, item, loc_a):
 def test_ship_from_empty_location_rejected_409(client, item, loc_a):
     r = _move(client, item_id=item["id"], kind="ship", qty=1, from_location_id=loc_a["id"])
     assert r.status_code == 409
-    assert "insufficient" in r.json()["detail"]
+    body = r.json()
+    assert body["error"]["code"] == "conflict"
+    assert "insufficient" in body["error"]["message"]
     assert client.get("/movements").json() == []
     assert client.get(f"/items/{item['id']}/stock").json()["total"] == 0
 
@@ -146,7 +150,9 @@ def test_transfer_more_than_source_stock_rejected_409(client, item, loc_a, loc_b
         to_location_id=loc_b["id"],
     )
     assert r.status_code == 409
-    assert "insufficient" in r.json()["detail"]
+    body = r.json()
+    assert body["error"]["code"] == "conflict"
+    assert "insufficient" in body["error"]["message"]
     # no movement row written and stock unchanged
     movements = client.get("/movements").json()
     assert len(movements) == 1  # only the receive
@@ -166,7 +172,9 @@ def test_transfer_checks_source_not_destination(client, item, loc_a, loc_b):
         to_location_id=loc_b["id"],
     )
     assert r.status_code == 409
-    assert "insufficient" in r.json()["detail"]
+    body = r.json()
+    assert body["error"]["code"] == "conflict"
+    assert "insufficient" in body["error"]["message"]
 
 def test_stock_for_missing_item_404(client):
     assert client.get("/items/77/stock").status_code == 404
