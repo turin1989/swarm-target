@@ -1,5 +1,7 @@
 """Item CRUD and listing."""
 
+import re
+
 
 def test_health(client):
     r = client.get("/health")
@@ -95,3 +97,52 @@ def test_delete_item_cascades_stock(client, item, loc_a):
     )
     client.delete(f"/items/{item['id']}")
     assert client.get("/movements").json() == []
+
+
+# --- created_at ---------------------------------------------------------------
+
+ISO_UTC_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+
+
+def test_create_item_sets_created_at(client):
+    r = client.post("/items", json={"sku": "TS-1", "name": "Timestamped"})
+    assert r.status_code == 201
+    body = r.json()
+    assert "created_at" in body
+    assert ISO_UTC_RE.match(body["created_at"]), body["created_at"]
+
+
+def test_created_at_returned_by_all_item_endpoints(client, item):
+    created_at = item["created_at"]
+    assert ISO_UTC_RE.match(created_at)
+
+    # GET /items/{id}
+    assert client.get(f"/items/{item['id']}").json()["created_at"] == created_at
+    # GET /items
+    assert client.get("/items").json()[0]["created_at"] == created_at
+    # PUT /items/{id}
+    assert client.put(f"/items/{item['id']}", json={"name": "New"}).json()["created_at"] == created_at
+    # GET /search
+    results = client.get("/search", params={"q": "WIDGET"}).json()
+    assert results[0]["created_at"] == created_at
+
+
+def test_created_at_ignored_on_create(client):
+    r = client.post(
+        "/items",
+        json={"sku": "NOPE-1", "name": "Nope", "created_at": "1999-01-01T00:00:00Z"},
+    )
+    assert r.status_code == 201
+    assert r.json()["created_at"] != "1999-01-01T00:00:00Z"
+    assert ISO_UTC_RE.match(r.json()["created_at"])
+
+
+def test_created_at_cannot_be_changed_on_put(client, item):
+    r = client.put(
+        f"/items/{item['id']}",
+        json={"name": "Renamed", "created_at": "1999-01-01T00:00:00Z"},
+    )
+    assert r.status_code == 200
+    assert r.json()["created_at"] == item["created_at"]
+    # persisted value unchanged too
+    assert client.get(f"/items/{item['id']}").json()["created_at"] == item["created_at"]
