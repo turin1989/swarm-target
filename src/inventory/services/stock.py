@@ -86,7 +86,9 @@ def _require_location(conn: sqlite3.Connection, location_id: int | None, field: 
 
 def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
     """Validate and apply a stock movement, returning the persisted record."""
-    if m.quantity <= 0:  # pragma: no cover - guarded by the model's gt=0 constraint
+    # Defence in depth: the MovementCreate model enforces gt=0, but callers may
+    # bypass validation (e.g. model_construct), so reject here before any write.
+    if m.quantity <= 0:
         raise ValidationError("quantity must be a positive integer")
 
     item = conn.execute(
