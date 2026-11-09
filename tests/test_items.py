@@ -33,6 +33,16 @@ def test_update_item_rejects_reorder_point(client, item):
     assert r.status_code == 422
 
 
+def test_item_responses_do_not_expose_legacy_reorder_point(client, item):
+    # The field was renamed to reorder_level (T049); the old key must be gone
+    # from every item representation.
+    fetched = client.get(f"/items/{item['id']}").json()
+    assert "reorder_point" not in fetched
+    assert fetched["reorder_level"] == 5
+    listed = client.get("/items").json()["items"]
+    assert all("reorder_point" not in entry for entry in listed)
+
+
 def test_create_item_rejects_negative_reorder_point(client):
     r = client.post(
         "/items", json={"sku": "A-2", "name": "Alpha", "reorder_point": -1}
