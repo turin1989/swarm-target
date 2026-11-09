@@ -80,6 +80,58 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
     return _fetch_item(conn, cur.lastrowid)
 
 
+@router.post("/items/bulk", response_model=list[Item], status_code=201)
+def create_items_bulk(
+    payload: list[ItemCreate], conn: sqlite3.Connection = Depends(get_db)
+) -> list[Item]:
+    if not payload:
+        raise HTTPException(status_code=422, detail="item list must not be empty")
+
+    # Reject duplicate skus within the request itself.
+    seen: set[str] = set()
+    for item in payload:
+        if item.sku in seen:
+            raise HTTPException(status_code=409, detail=f"sku {item.sku!r} already exists")
+        seen.add(item.sku)
+
+    # Reject if any sku already exists; nothing is created in that case.
+    placeholders = ", ".join("?" for _ in payload)
+    existing = conn.execute(
+        f"SELECT sku FROM items WHERE sku IN ({placeholders})",
+        [item.sku for item in payload],
+    ).fetchone()
+    if existing is not None:
+        raise HTTPException(status_code=409, detail=f"sku {existing['sku']!r} already exists")
+
+    created_ids: list[int] = []
+    for item in payload:
+        try:
+            cur = conn.execute(
+                """
+                INSERT INTO items (sku, name, description, unit_price, reorder_point, created_at, barcode)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    item.sku,
+                    item.name,
+                    item.description,
+                    item.unit_price,
+                    item.reorder_point,
+                    utc_now_iso(),
+                    item.barcode,
+                ),
+            )
+        except sqlite3.IntegrityError as exc:
+            # Raising aborts the request; get_db rolls back, so nothing is created.
+            if "barcode" in str(exc):
+                raise HTTPException(
+                    status_code=409, detail=f"barcode {item.barcode!r} already exists"
+                )
+            raise HTTPException(status_code=409, detail=f"sku {item.sku!r} already exists")
+        created_ids.append(cur.lastrowid)
+    return [_fetch_item(conn, item_id) for item_id in created_ids]
+
+
 @router.get("/items", response_model=ItemPage)
 def list_items(
     response: Response,
