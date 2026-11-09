@@ -1,5 +1,7 @@
 """Health endpoint database connectivity checks."""
 
+from inventory import __version__
+
 
 def test_health_reports_db_ok(client):
     r = client.get("/health")
@@ -7,7 +9,7 @@ def test_health_reports_db_ok(client):
     body = r.json()
     assert body["db"] == "ok"
     assert body["status"] == "ok"
-    assert "version" in body
+    assert body["version"] == __version__
 
 
 def test_health_returns_503_when_db_cannot_be_opened(client, tmp_path):
@@ -19,4 +21,4 @@ def test_health_returns_503_when_db_cannot_be_opened(client, tmp_path):
     body = r.json()
     assert body["db"] == "error"
     assert "status" in body
-    assert "version" in body
+    assert body["version"] == __version__
