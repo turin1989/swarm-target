@@ -39,7 +39,7 @@ def test_stock_error_is_removed():
 def test_api_maps_not_found_error_to_404(client, item):
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 1, "to_location_id": 999},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 1, "to_location_id": 999},
     )
     assert r.status_code == 404
     assert "not found" in r.json()["detail"]
@@ -48,7 +48,7 @@ def test_api_maps_not_found_error_to_404(client, item):
 def test_api_maps_validation_error_to_400(client, item):
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 1},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 1},
     )
     assert r.status_code == 400
     assert "required" in r.json()["detail"]

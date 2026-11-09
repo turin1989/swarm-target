@@ -4,18 +4,18 @@ def _make_item(client, sku):
     return r.json()
 
 
-def _receive(client, item_id, location_id, qty):
+def _receive(client, item_id, location_id, quantity):
     r = client.post(
         "/movements",
-        json={"item_id": item_id, "kind": "receive", "qty": qty, "to_location_id": location_id},
+        json={"item_id": item_id, "kind": "receive", "quantity": quantity, "to_location_id": location_id},
     )
     assert r.status_code == 201, r.text
 
 
-def _ship(client, item_id, location_id, qty):
+def _ship(client, item_id, location_id, quantity):
     r = client.post(
         "/movements",
-        json={"item_id": item_id, "kind": "ship", "qty": qty, "from_location_id": location_id},
+        json={"item_id": item_id, "kind": "ship", "quantity": quantity, "from_location_id": location_id},
     )
     assert r.status_code == 201, r.text
 
@@ -40,9 +40,9 @@ class TestLocationStock:
         body = r.json()
         assert body["location_id"] == loc_a["id"]
         assert body["levels"] == [
-            {"item_id": item_1["id"], "location_id": loc_a["id"], "qty": 4},
-            {"item_id": item_2["id"], "location_id": loc_a["id"], "qty": 9},
-            {"item_id": item_3["id"], "location_id": loc_a["id"], "qty": 7},
+            {"item_id": item_1["id"], "location_id": loc_a["id"], "quantity": 4},
+            {"item_id": item_2["id"], "location_id": loc_a["id"], "quantity": 9},
+            {"item_id": item_3["id"], "location_id": loc_a["id"], "quantity": 7},
         ]
 
     def test_zero_qty_levels_are_omitted(self, client, loc_a):
@@ -55,7 +55,7 @@ class TestLocationStock:
         r = client.get(f"/locations/{loc_a['id']}/stock")
         assert r.status_code == 200, r.text
         assert r.json()["levels"] == [
-            {"item_id": item_2["id"], "location_id": loc_a["id"], "qty": 3}
+            {"item_id": item_2["id"], "location_id": loc_a["id"], "quantity": 3}
         ]
 
     def test_negative_qty_levels_are_included(self, client, loc_a):
@@ -67,7 +67,7 @@ class TestLocationStock:
         r = client.get(f"/locations/{loc_a['id']}/stock")
         assert r.status_code == 200, r.text
         assert r.json()["levels"] == [
-            {"item_id": item["id"], "location_id": loc_a["id"], "qty": -3}
+            {"item_id": item["id"], "location_id": loc_a["id"], "quantity": -3}
         ]
 
     def test_only_levels_for_this_location(self, client, loc_a, loc_b):
@@ -79,7 +79,7 @@ class TestLocationStock:
         assert r.status_code == 200, r.text
         assert r.json() == {
             "location_id": loc_b["id"],
-            "levels": [{"item_id": item["id"], "location_id": loc_b["id"], "qty": 2}],
+            "levels": [{"item_id": item["id"], "location_id": loc_b["id"], "quantity": 2}],
         }
 
     def test_unknown_location_returns_404(self, client):

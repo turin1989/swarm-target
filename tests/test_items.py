@@ -175,7 +175,7 @@ def test_delete_missing_item_does_not_affect_existing_items(client, item):
 def test_delete_item_cascades_stock(client, item, loc_a):
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 3, "to_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 3, "to_location_id": loc_a["id"]},
     )
     client.delete(f"/items/{item['id']}")
     assert client.get("/movements").json() == []
