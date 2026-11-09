@@ -49,6 +49,7 @@ _SORTABLE_COLUMNS = items_service.SORTABLE_COLUMNS
 
 @router.get("/items", response_model=ItemPage)
 def list_items(
+    response: Response,
     active: Optional[bool] = None,
     sku: Optional[str] = None,
     sort: str = Query("id"),
@@ -70,6 +71,7 @@ def list_items(
         offset=offset,
     )
     total = items_service.count_items(conn, active=active, sku=sku)
+    response.headers["X-Total-Count"] = str(total)
     return ItemPage(items=items, total=total, limit=limit, offset=offset)
 
 

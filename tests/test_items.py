@@ -199,6 +199,36 @@ def test_list_items_sort_with_pagination_envelope(client):
     assert body["offset"] == 1
 
 
+def test_list_items_total_count_header(client):
+    for n in range(5):
+        client.post("/items", json={"sku": f"S{n}", "name": f"N{n}"})
+    r = client.get("/items")
+    assert r.headers["X-Total-Count"] == "5"
+
+
+def test_list_items_total_count_ignores_limit_and_offset(client):
+    for n in range(5):
+        client.post("/items", json={"sku": f"S{n}", "name": f"N{n}"})
+    r = client.get("/items", params={"limit": 2, "offset": 4})
+    assert len(r.json()["items"]) == 1
+    assert r.headers["X-Total-Count"] == "5"
+
+
+def test_list_items_total_count_respects_filters(client, item):
+    client.post("/items", json={"sku": "INACTIVE", "name": "Old"})
+    client.put("/items/2", json={"active": False})
+    assert client.get("/items", params={"active": "true"}).headers["X-Total-Count"] == "1"
+    assert client.get("/items", params={"active": "false"}).headers["X-Total-Count"] == "1"
+    assert client.get("/items").headers["X-Total-Count"] == "2"
+
+
+def test_list_items_total_count_respects_sku_filter(client, item):
+    client.post("/items", json={"sku": "GADGET-1", "name": "Gadget"})
+    assert client.get("/items", params={"sku": "WIDGET-1"}).headers["X-Total-Count"] == "1"
+    assert client.get("/items", params={"sku": "NOPE"}).headers["X-Total-Count"] == "0"
+    assert client.get("/items").headers["X-Total-Count"] == "2"
+
+
 def test_list_items_filter_active(client, item):
     client.post("/items", json={"sku": "INACTIVE", "name": "Old"})
     client.put("/items/2", json={"active": False})
