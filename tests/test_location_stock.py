@@ -59,10 +59,21 @@ class TestLocationStock:
         ]
 
     def test_negative_qty_levels_are_included(self, client, loc_a):
-        # only qty == 0 levels are omitted; negative levels must still be listed
+        # only qty == 0 levels are omitted; negative levels must still be listed.
+        # Shipping below zero is rejected (409), so drive the level negative
+        # with an absolute adjust instead.
         item = _make_item(client, "SKU-1")
         _receive(client, item["id"], loc_a["id"], 2)
-        _ship(client, item["id"], loc_a["id"], 5)  # drives level to -3
+        r = client.post(
+            "/movements",
+            json={
+                "item_id": item["id"],
+                "kind": "adjust",
+                "qty": -3,
+                "to_location_id": loc_a["id"],
+            },
+        )
+        assert r.status_code == 201, r.text
 
         r = client.get(f"/locations/{loc_a['id']}/stock")
         assert r.status_code == 200, r.text
