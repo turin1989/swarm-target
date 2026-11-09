@@ -466,6 +466,42 @@ def test_delete_item_with_stock_conflicts(client, item, loc_a):
     assert client.get(f"/items/{item['id']}").status_code == 200
 
 
+def test_delete_item_with_stock_in_multiple_locations_conflicts(client, item, loc_a, loc_b):
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "quantity": 4, "to_location_id": loc_a["id"]},
+    )
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "quantity": 6, "to_location_id": loc_b["id"]},
+    )
+    r = client.delete(f"/items/{item['id']}")
+    assert r.status_code == 409
+    body = r.json()
+    assert body["error"]["code"] == "conflict"
+    # the detail mentions the total remaining quantity across locations
+    assert "10" in body["error"]["message"]
+    assert client.get(f"/items/{item['id']}").status_code == 200
+
+
+def test_delete_item_partially_drained_still_conflicts(client, item, loc_a):
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "quantity": 5, "to_location_id": loc_a["id"]},
+    )
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "ship", "quantity": 2, "from_location_id": loc_a["id"]},
+    )
+    r = client.delete(f"/items/{item['id']}")
+    assert r.status_code == 409
+    body = r.json()
+    assert body["error"]["code"] == "conflict"
+    # the detail mentions the quantity that is still in stock
+    assert "3" in body["error"]["message"]
+    assert client.get(f"/items/{item['id']}").status_code == 200
+
+
 def test_delete_item_after_stock_drained_to_zero(client, item, loc_a):
     client.post(
         "/movements",
