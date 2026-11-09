@@ -116,6 +116,60 @@ def test_inventory_value(client, loc_a):
     assert client.get("/reports/value").json() == {"value": 16.0}
 
 
+def test_movements_summary_empty_has_all_kinds_zeroed(client):
+    r = client.get("/reports/movements-summary")
+    assert r.status_code == 200
+    assert r.json() == {
+        "receive": {"count": 0, "qty": 0},
+        "ship": {"count": 0, "qty": 0},
+        "transfer": {"count": 0, "qty": 0},
+    }
+
+
+def test_movements_summary_aggregates_counts_and_qty(client, item, loc_a, loc_b):
+    for qty in (5, 3):
+        r = client.post(
+            "/movements",
+            json={"item_id": item["id"], "kind": "receive", "qty": qty, "to_location_id": loc_a["id"]},
+        )
+        assert r.status_code == 201, r.text
+    r = client.post(
+        "/movements",
+        json={
+            "item_id": item["id"],
+            "kind": "transfer",
+            "qty": 2,
+            "from_location_id": loc_a["id"],
+            "to_location_id": loc_b["id"],
+        },
+    )
+    assert r.status_code == 201, r.text
+    r = client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "ship", "qty": 4, "from_location_id": loc_a["id"]},
+    )
+    assert r.status_code == 201, r.text
+
+    summary = client.get("/reports/movements-summary").json()
+    assert summary == {
+        "receive": {"count": 2, "qty": 8},
+        "ship": {"count": 1, "qty": 4},
+        "transfer": {"count": 1, "qty": 2},
+    }
+
+
+def test_movements_summary_zero_for_kinds_without_movements(client, item, loc_a):
+    r = client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "qty": 7, "to_location_id": loc_a["id"]},
+    )
+    assert r.status_code == 201, r.text
+    summary = client.get("/reports/movements-summary").json()
+    assert summary["receive"] == {"count": 1, "qty": 7}
+    assert summary["ship"] == {"count": 0, "qty": 0}
+    assert summary["transfer"] == {"count": 0, "qty": 0}
+
+
 def test_stats_empty_database(client):
     r = client.get("/stats")
     assert r.status_code == 200
