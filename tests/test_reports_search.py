@@ -8,7 +8,12 @@ def _seed(client, sku, name, reorder, quantity, loc, price=1.0):
     if quantity:
         client.post(
             "/movements",
-            json={"item_id": item["id"], "kind": "receive", "quantity": quantity, "to_location_id": loc["id"]},
+            json={
+                "item_id": item["id"],
+                "kind": "receive",
+                "quantity": quantity,
+                "to_location_id": loc["id"],
+            },
         )
     return item
 
@@ -130,7 +135,12 @@ def test_movements_summary_aggregates_counts_and_qty(client, item, loc_a, loc_b)
     for qty in (5, 3):
         r = client.post(
             "/movements",
-            json={"item_id": item["id"], "kind": "receive", "qty": qty, "to_location_id": loc_a["id"]},
+            json={
+                "item_id": item["id"],
+                "kind": "receive",
+                "quantity": qty,
+                "to_location_id": loc_a["id"],
+            },
         )
         assert r.status_code == 201, r.text
     r = client.post(
@@ -138,7 +148,7 @@ def test_movements_summary_aggregates_counts_and_qty(client, item, loc_a, loc_b)
         json={
             "item_id": item["id"],
             "kind": "transfer",
-            "qty": 2,
+            "quantity": 2,
             "from_location_id": loc_a["id"],
             "to_location_id": loc_b["id"],
         },
@@ -146,7 +156,7 @@ def test_movements_summary_aggregates_counts_and_qty(client, item, loc_a, loc_b)
     assert r.status_code == 201, r.text
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "ship", "qty": 4, "from_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "ship", "quantity": 4, "from_location_id": loc_a["id"]},
     )
     assert r.status_code == 201, r.text
 
@@ -161,7 +171,7 @@ def test_movements_summary_aggregates_counts_and_qty(client, item, loc_a, loc_b)
 def test_movements_summary_zero_for_kinds_without_movements(client, item, loc_a):
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 7, "to_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 7, "to_location_id": loc_a["id"]},
     )
     assert r.status_code == 201, r.text
     summary = client.get("/reports/movements-summary").json()
