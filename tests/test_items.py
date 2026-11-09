@@ -75,6 +75,54 @@ def test_list_items_limit(client):
     assert [i["sku"] for i in r.json()] == ["S0", "S1"]
 
 
+def test_list_items_sort_by_name_ascending(client):
+    for sku, name in [("S1", "Charlie"), ("S2", "Alpha"), ("S3", "Bravo")]:
+        client.post("/items", json={"sku": sku, "name": name})
+    r = client.get("/items", params={"sort": "name"})
+    assert r.status_code == 200
+    assert [i["name"] for i in r.json()] == ["Alpha", "Bravo", "Charlie"]
+
+
+def test_list_items_sort_by_sku(client):
+    for sku in ["C", "A", "B"]:
+        client.post("/items", json={"sku": sku, "name": sku})
+    r = client.get("/items", params={"sort": "sku"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["A", "B", "C"]
+
+
+def test_list_items_sort_by_id_explicit(client):
+    for sku in ["C", "A", "B"]:
+        client.post("/items", json={"sku": sku, "name": sku})
+    r = client.get("/items", params={"sort": "id"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["C", "A", "B"]
+
+
+def test_list_items_sort_descending(client):
+    for sku, name in [("S1", "Alpha"), ("S2", "Charlie"), ("S3", "Bravo")]:
+        client.post("/items", json={"sku": sku, "name": name})
+    r = client.get("/items", params={"sort": "-name"})
+    assert r.status_code == 200
+    assert [i["name"] for i in r.json()] == ["Charlie", "Bravo", "Alpha"]
+
+    r = client.get("/items", params={"sort": "-id"})
+    assert [i["sku"] for i in r.json()] == ["S3", "S2", "S1"]
+
+
+def test_list_items_sort_invalid_value_422(client):
+    assert client.get("/items", params={"sort": "price"}).status_code == 422
+    assert client.get("/items", params={"sort": "-unknown"}).status_code == 422
+    assert client.get("/items", params={"sort": ""}).status_code == 422
+
+
+def test_list_items_default_sort_is_id(client):
+    for sku in ["B", "A"]:
+        client.post("/items", json={"sku": sku, "name": sku})
+    r = client.get("/items")
+    assert [i["sku"] for i in r.json()] == ["B", "A"]
+
+
 def test_list_items_filter_active(client, item):
     client.post("/items", json={"sku": "INACTIVE", "name": "Old"})
     client.put("/items/2", json={"active": False})
