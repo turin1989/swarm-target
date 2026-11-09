@@ -75,6 +75,16 @@ def init_db(path: str) -> None:
             conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_items_barcode ON items(barcode)"
             )
+        # Older databases may predate the created_at column; add it if missing
+        # and backfill existing rows so the column is always a valid timestamp.
+        if "created_at" not in item_columns:
+            conn.execute(
+                "ALTER TABLE items ADD COLUMN created_at TEXT NOT NULL DEFAULT ''"
+            )
+        conn.execute(
+            "UPDATE items SET created_at = ? WHERE created_at IS NULL OR created_at = ''",
+            (utc_now_iso(),),
+        )
         # Older databases may predate the locations.active column; add it if missing.
         location_columns = {r["name"] for r in conn.execute("PRAGMA table_info(locations)")}
         if "active" not in location_columns:
