@@ -420,6 +420,7 @@ def test_get_movement_unknown_id_404(client):
         ("receive", {"to_location_id": 1}),
         ("ship", {"from_location_id": 1}),
         ("transfer", {"from_location_id": 1, "to_location_id": 2}),
+        ("adjust", {"to_location_id": 1}),
     ],
 )
 def test_movement_rejected_for_inactive_item(client, item, loc_a, loc_b, kind, payload):
@@ -439,6 +440,26 @@ def test_movement_rejected_for_inactive_item(client, item, loc_a, loc_b, kind, p
     assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "quantity": 10}]
 
     # no movement record was created
+    assert len(client.get("/movements").json()) == 1
+
+
+def test_reverse_movement_rejected_for_inactive_item(client, item, loc_a):
+    created = _move(
+        client, item_id=item["id"], kind="receive", quantity=10, to_location_id=loc_a["id"]
+    ).json()
+    r = client.put(f"/items/{item['id']}", json={"active": False})
+    assert r.status_code == 200 and r.json()["active"] is False
+
+    r = client.post(f"/movements/{created['id']}/reverse")
+    assert r.status_code == 409
+    body = r.json()
+    assert body["error"]["code"] == "conflict"
+    assert "inactive" in body["error"]["message"]
+
+    # stock levels are unchanged and no reversal record was created
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 10
+    assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "quantity": 10}]
     assert len(client.get("/movements").json()) == 1
 
 
