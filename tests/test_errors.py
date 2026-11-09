@@ -52,3 +52,23 @@ def test_api_maps_validation_error_to_400(client, item):
     )
     assert r.status_code == 400
     assert "required" in r.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    "exc_class,status_code",
+    [
+        (NotFoundError, 404),
+        (ConflictError, 409),
+        (ValidationError, 400),
+        (InventoryError, 400),
+    ],
+)
+def test_exception_handler_maps_all_error_types(exc_class, status_code):
+    """The single handler translates any InventoryError to a JSON error response."""
+    import json
+
+    from inventory.api import inventory_error_handler
+
+    response = inventory_error_handler(None, exc_class("kaboom"))
+    assert response.status_code == status_code
+    assert json.loads(response.body) == {"detail": "kaboom"}
