@@ -29,7 +29,9 @@ def get_item_by_sku(conn: sqlite3.Connection, sku: str) -> Item | None:
     return _row_to_item(row)
 
 
-def _filters(active: Optional[bool], sku: Optional[str]) -> tuple[str, list]:
+def _filters(
+    active: Optional[bool], sku: Optional[str], barcode: Optional[str] = None
+) -> tuple[str, list]:
     conditions: list[str] = []
     params: list = []
     if active is not None:
@@ -38,6 +40,9 @@ def _filters(active: Optional[bool], sku: Optional[str]) -> tuple[str, list]:
     if sku is not None:
         conditions.append("sku = ?")
         params.append(sku)
+    if barcode is not None:
+        conditions.append("barcode = ?")
+        params.append(barcode)
     where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
     return where, params
 
@@ -46,6 +51,7 @@ def list_items(
     conn: sqlite3.Connection,
     active: Optional[bool] = None,
     sku: Optional[str] = None,
+    barcode: Optional[str] = None,
     sort: str = "id",
     descending: bool = False,
     limit: int = 100,
@@ -53,7 +59,7 @@ def list_items(
 ) -> list[Item]:
     if sort not in SORTABLE_COLUMNS:
         raise ValueError(f"invalid sort column {sort!r}")
-    where, params = _filters(active, sku)
+    where, params = _filters(active, sku, barcode)
     direction = "DESC" if descending else "ASC"
     sql = f"SELECT * FROM items{where} ORDER BY {sort} {direction} LIMIT ? OFFSET ?"
     params += [limit, offset]
@@ -64,22 +70,30 @@ def count_items(
     conn: sqlite3.Connection,
     active: Optional[bool] = None,
     sku: Optional[str] = None,
+    barcode: Optional[str] = None,
 ) -> int:
-    where, params = _filters(active, sku)
+    where, params = _filters(active, sku, barcode)
     return conn.execute(f"SELECT COUNT(*) FROM items{where}", params).fetchone()[0]
 
 
 def create_item(conn: sqlite3.Connection, payload: ItemCreate) -> Item:
     """Insert a new item and return it.
 
-    Raises sqlite3.IntegrityError if the sku already exists.
+    Raises sqlite3.IntegrityError if the sku or barcode already exists.
     """
     cur = conn.execute(
         """
-        INSERT INTO items (sku, name, description, unit_price, reorder_level)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO items (sku, name, description, unit_price, reorder_level, barcode)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (payload.sku, payload.name, payload.description, payload.unit_price, payload.reorder_level),
+        (
+            payload.sku,
+            payload.name,
+            payload.description,
+            payload.unit_price,
+            payload.reorder_level,
+            payload.barcode,
+        ),
     )
     item = get_item(conn, cur.lastrowid)
     assert item is not None

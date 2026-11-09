@@ -63,7 +63,11 @@ def _fetch_item(conn: sqlite3.Connection, item_id: int) -> Item:
 def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db)) -> Item:
     try:
         return items_service.create_item(conn, payload)
-    except sqlite3.IntegrityError:
+    except sqlite3.IntegrityError as exc:
+        if "barcode" in str(exc):
+            raise HTTPException(
+                status_code=409, detail=f"barcode {payload.barcode!r} already exists"
+            )
         raise HTTPException(status_code=409, detail=f"sku {payload.sku!r} already exists")
 
 
@@ -76,8 +80,12 @@ def create_items_bulk(
     for entry in payload:
         try:
             created.append(items_service.create_item(conn, entry))
-        except sqlite3.IntegrityError:
+        except sqlite3.IntegrityError as exc:
             conn.rollback()
+            if "barcode" in str(exc):
+                raise HTTPException(
+                    status_code=409, detail=f"barcode {entry.barcode!r} already exists"
+                )
             raise HTTPException(status_code=409, detail=f"sku {entry.sku!r} already exists")
     return created
 
@@ -90,6 +98,7 @@ def list_items(
     response: Response,
     active: Optional[bool] = None,
     sku: Optional[str] = None,
+    barcode: Optional[str] = None,
     sort: str = Query("id"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -103,12 +112,13 @@ def list_items(
         conn,
         active=active,
         sku=sku,
+        barcode=barcode,
         sort=column,
         descending=descending,
         limit=limit,
         offset=offset,
     )
-    total = items_service.count_items(conn, active=active, sku=sku)
+    total = items_service.count_items(conn, active=active, sku=sku, barcode=barcode)
     response.headers["X-Total-Count"] = str(total)
     return ItemPage(items=items, total=total, limit=limit, offset=offset)
 
@@ -138,6 +148,13 @@ def update_item(
 
 @router.delete("/items/{item_id}", status_code=204)
 def delete_item(item_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Response:
+    _fetch_item(conn, item_id)
+    remaining = stock.total_stock(conn, item_id)
+    if remaining > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"item {item_id} still has {remaining} units in stock",
+        )
     if not items_service.delete_item(conn, item_id):
         raise HTTPException(status_code=404, detail=f"item {item_id} not found")
     return Response(status_code=204)
@@ -167,6 +184,19 @@ def item_movements(
 # --- locations ---------------------------------------------------------------
 
 
+def _row_to_location(row: sqlite3.Row) -> Location:
+    data = dict(row)
+    data["active"] = bool(data["active"])
+    return Location(**data)
+
+
+def _fetch_location(conn: sqlite3.Connection, location_id: int) -> Location:
+    row = conn.execute("SELECT * FROM locations WHERE id = ?", (location_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"location {location_id} not found")
+    return _row_to_location(row)
+
+
 @router.post("/locations", response_model=Location, status_code=201)
 def create_location(
     payload: LocationCreate, conn: sqlite3.Connection = Depends(get_db)
@@ -177,22 +207,77 @@ def create_location(
         )
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=409, detail=f"location code {payload.code!r} already exists")
-    row = conn.execute("SELECT * FROM locations WHERE id = ?", (cur.lastrowid,)).fetchone()
-    return Location(**dict(row))
+    return _fetch_location(conn, cur.lastrowid)
 
 
 @router.get("/locations", response_model=list[Location])
-def list_locations(conn: sqlite3.Connection = Depends(get_db)) -> list[Location]:
-    rows = conn.execute("SELECT * FROM locations ORDER BY id").fetchall()
-    return [Location(**dict(r)) for r in rows]
+def list_locations(
+    active: Optional[bool] = None,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> list[Location]:
+    sql = "SELECT * FROM locations"
+    params: list = []
+    if active is not None:
+        sql += " WHERE active = ?"
+        params.append(int(active))
+    sql += " ORDER BY id"
+    rows = conn.execute(sql, params).fetchall()
+    return [_row_to_location(r) for r in rows]
 
 
 @router.get("/locations/{location_id}", response_model=Location)
 def get_location(location_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Location:
-    row = conn.execute("SELECT * FROM locations WHERE id = ?", (location_id,)).fetchone()
+    return _fetch_location(conn, location_id)
+
+
+@router.put("/locations/{location_id}", response_model=Location)
+def update_location(
+    location_id: int, payload: LocationUpdate, conn: sqlite3.Connection = Depends(get_db)
+) -> Location:
+    _fetch_location(conn, location_id)
+    updates = payload.model_dump(exclude_unset=True)
+    allowed = {"code", "name", "active"}
+    updates = {k: v for k, v in updates.items() if k in allowed and v is not None}
+    if updates:
+        if "active" in updates:
+            updates["active"] = int(updates["active"])
+        assignments = ", ".join(f"{k} = ?" for k in updates)
+        try:
+            conn.execute(
+                f"UPDATE locations SET {assignments} WHERE id = ?",
+                [*updates.values(), location_id],
+            )
+        except sqlite3.IntegrityError:
+            raise HTTPException(
+                status_code=409,
+                detail=f"location code {updates.get('code')!r} already exists",
+            )
+    return _fetch_location(conn, location_id)
+
+
+@router.delete("/locations/{location_id}", status_code=204)
+def delete_location(location_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Response:
+    row = conn.execute("SELECT id FROM locations WHERE id = ?", (location_id,)).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail=f"location {location_id} not found")
-    return Location(**dict(row))
+    held = conn.execute(
+        "SELECT 1 FROM stock_levels WHERE location_id = ? AND qty != 0 LIMIT 1",
+        (location_id,),
+    ).fetchone()
+    if held is not None:
+        raise HTTPException(
+            status_code=409, detail=f"location {location_id} holds stock and cannot be deleted"
+        )
+    conn.execute(
+        "UPDATE movements SET from_location_id = NULL WHERE from_location_id = ?",
+        (location_id,),
+    )
+    conn.execute(
+        "UPDATE movements SET to_location_id = NULL WHERE to_location_id = ?",
+        (location_id,),
+    )
+    conn.execute("DELETE FROM locations WHERE id = ?", (location_id,))
+    return Response(status_code=204)
 
 
 @router.get("/locations/{location_id}/stock", response_model=LocationStock)
@@ -206,24 +291,6 @@ def location_stock(
         location_id=location_id,
         levels=stock.get_location_levels(conn, location_id),
     )
-
-
-@router.put("/locations/{location_id}", response_model=Location)
-def update_location(
-    location_id: int, payload: LocationUpdate, conn: sqlite3.Connection = Depends(get_db)
-) -> Location:
-    row = conn.execute("SELECT * FROM locations WHERE id = ?", (location_id,)).fetchone()
-    if row is None:
-        raise HTTPException(status_code=404, detail=f"location {location_id} not found")
-    updates = payload.model_dump(exclude_unset=True)
-    updates = {k: v for k, v in updates.items() if k in {"name", "code"} and v is not None}
-    if updates:
-        assignments = ", ".join(f"{k} = ?" for k in updates)
-        conn.execute(
-            f"UPDATE locations SET {assignments} WHERE id = ?", [*updates.values(), location_id]
-        )
-    row = conn.execute("SELECT * FROM locations WHERE id = ?", (location_id,)).fetchone()
-    return Location(**dict(row))
 
 
 # --- movements ---------------------------------------------------------------
@@ -283,6 +350,11 @@ def inventory_value_report(
                 status_code=404, detail=f"location {location_id} not found"
             )
     return {"value": reports.inventory_value(conn, location_id=location_id)}
+
+
+@router.get("/stats")
+def get_stats(conn: sqlite3.Connection = Depends(get_db)) -> dict:
+    return reports.stats(conn)
 
 
 @router.get("/search", response_model=list[Item])
