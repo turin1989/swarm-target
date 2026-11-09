@@ -29,9 +29,23 @@ def get_item_by_sku(conn: sqlite3.Connection, sku: str) -> Item | None:
     return _row_to_item(row)
 
 
+def _filters(active: Optional[bool], sku: Optional[str]) -> tuple[str, list]:
+    conditions: list[str] = []
+    params: list = []
+    if active is not None:
+        conditions.append("active = ?")
+        params.append(int(active))
+    if sku is not None:
+        conditions.append("sku = ?")
+        params.append(sku)
+    where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
+    return where, params
+
+
 def list_items(
     conn: sqlite3.Connection,
     active: Optional[bool] = None,
+    sku: Optional[str] = None,
     sort: str = "id",
     descending: bool = False,
     limit: int = 100,
@@ -39,24 +53,20 @@ def list_items(
 ) -> list[Item]:
     if sort not in SORTABLE_COLUMNS:
         raise ValueError(f"invalid sort column {sort!r}")
-    sql = "SELECT * FROM items"
-    params: list = []
-    if active is not None:
-        sql += " WHERE active = ?"
-        params.append(int(active))
+    where, params = _filters(active, sku)
     direction = "DESC" if descending else "ASC"
-    sql += f" ORDER BY {sort} {direction} LIMIT ? OFFSET ?"
+    sql = f"SELECT * FROM items{where} ORDER BY {sort} {direction} LIMIT ? OFFSET ?"
     params += [limit, offset]
     return [_row_to_item(r) for r in conn.execute(sql, params).fetchall()]
 
 
-def count_items(conn: sqlite3.Connection, active: Optional[bool] = None) -> int:
-    sql = "SELECT COUNT(*) FROM items"
-    params: list = []
-    if active is not None:
-        sql += " WHERE active = ?"
-        params.append(int(active))
-    return conn.execute(sql, params).fetchone()[0]
+def count_items(
+    conn: sqlite3.Connection,
+    active: Optional[bool] = None,
+    sku: Optional[str] = None,
+) -> int:
+    where, params = _filters(active, sku)
+    return conn.execute(f"SELECT COUNT(*) FROM items{where}", params).fetchone()[0]
 
 
 def create_item(conn: sqlite3.Connection, payload: ItemCreate) -> Item:

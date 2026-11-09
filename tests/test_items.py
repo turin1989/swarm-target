@@ -239,6 +239,41 @@ def test_update_item_zero_unit_price_accepted(client, item):
     assert r.json()["unit_price"] == 0
 
 
+def test_list_items_filter_sku_exact(client, item):
+    client.post("/items", json={"sku": "WIDGET-2", "name": "Other"})
+    r = client.get("/items", params={"sku": "WIDGET-1"})
+    assert r.status_code == 200
+    body = r.json()
+    assert [i["sku"] for i in body["items"]] == ["WIDGET-1"]
+    assert body["total"] == 1
+    # no partial matches
+    partial = client.get("/items", params={"sku": "WIDGET"}).json()
+    assert partial["items"] == []
+    assert partial["total"] == 0
+
+
+def test_list_items_filter_sku_unknown_returns_empty_list(client, item):
+    r = client.get("/items", params={"sku": "NOPE"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["items"] == []
+    assert body["total"] == 0
+
+
+def test_list_items_filter_sku_combined_with_active(client, item):
+    client.post("/items", json={"sku": "GADGET-1", "name": "Gadget"})
+    client.put("/items/2", json={"active": False})
+    assert [
+        i["sku"]
+        for i in client.get("/items", params={"sku": "WIDGET-1", "active": "true"}).json()["items"]
+    ] == ["WIDGET-1"]
+    assert client.get("/items", params={"sku": "WIDGET-1", "active": "false"}).json()["items"] == []
+    assert [
+        i["sku"]
+        for i in client.get("/items", params={"sku": "GADGET-1", "active": "false"}).json()["items"]
+    ] == ["GADGET-1"]
+
+
 def test_update_item_name_and_price(client, item):
     r = client.put(f"/items/{item['id']}", json={"name": "Renamed", "unit_price": 9.99})
     assert r.status_code == 200

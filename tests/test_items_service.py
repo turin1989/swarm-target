@@ -121,6 +121,38 @@ def test_list_items_invalid_sort_raises(conn):
         items_service.list_items(conn, sort="unit_price")
 
 
+def test_list_items_filter_sku_exact(conn):
+    for sku in ["WIDGET-1", "WIDGET-2"]:
+        _create(conn, sku=sku, name=sku)
+    assert [i.sku for i in items_service.list_items(conn, sku="WIDGET-1")] == ["WIDGET-1"]
+    # no partial matches
+    assert items_service.list_items(conn, sku="WIDGET") == []
+    assert items_service.list_items(conn, sku="NOPE") == []
+
+
+def test_list_items_filter_sku_combined_with_active(conn):
+    for sku in ["WIDGET-1", "GADGET-1"]:
+        _create(conn, sku=sku, name=sku)
+    items_service.update_item(conn, 2, ItemUpdate(active=False))
+    assert [i.sku for i in items_service.list_items(conn, sku="WIDGET-1", active=True)] == [
+        "WIDGET-1"
+    ]
+    assert items_service.list_items(conn, sku="WIDGET-1", active=False) == []
+    assert [i.sku for i in items_service.list_items(conn, sku="GADGET-1", active=False)] == [
+        "GADGET-1"
+    ]
+
+
+def test_count_items_with_sku_filter(conn):
+    for sku in ["WIDGET-1", "WIDGET-2"]:
+        _create(conn, sku=sku, name=sku)
+    assert items_service.count_items(conn, sku="WIDGET-1") == 1
+    assert items_service.count_items(conn, sku="WIDGET") == 0
+    items_service.update_item(conn, 1, ItemUpdate(active=False))
+    assert items_service.count_items(conn, sku="WIDGET-1", active=True) == 0
+    assert items_service.count_items(conn, sku="WIDGET-1", active=False) == 1
+
+
 def test_count_items_with_active_filter(conn):
     for sku in ["A", "B", "C"]:
         _create(conn, sku=sku, name=sku)
