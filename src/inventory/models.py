@@ -39,6 +39,7 @@ class Item(BaseModel):
     unit_price: float
     reorder_point: int
     active: bool
+    created_at: str
 
 
 class ItemPage(BaseModel):
