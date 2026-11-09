@@ -1,21 +1,18 @@
-"""Typed service-layer exceptions with associated HTTP status codes."""
+"""Typed service-layer exceptions that map to HTTP status codes."""
 
 
 class InventoryError(Exception):
     """Base class for service-layer errors.
 
-    Carries an HTTP ``status_code`` so the API layer can translate errors
-    into responses in a single place.
+    Each subclass carries a ``status_code`` describing the HTTP response
+    the error should translate to at the API boundary.
     """
 
-    status_code: int = 400
-
-    def __init__(self, message: str) -> None:
-        super().__init__(message)
+    status_code: int = 500
 
 
 class NotFoundError(InventoryError):
-    """A referenced entity does not exist."""
+    """A referenced resource does not exist."""
 
     status_code = 404
 
