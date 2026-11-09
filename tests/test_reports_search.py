@@ -48,7 +48,12 @@ def test_low_stock_at_reorder_point_sums_stock_across_locations(client, loc_a, l
     item = _seed(client, "SPLIT", "Split", reorder=5, quantity=3, loc=loc_a)
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "quantity": 2, "to_location_id": loc_b["id"]},
+        json={
+            "item_id": item["id"],
+            "kind": "receive",
+            "quantity": 2,
+            "to_location_id": loc_b["id"],
+        },
     )
     entries = client.get("/reports/low-stock").json()
     assert [e["sku"] for e in entries] == ["SPLIT"]
@@ -125,6 +130,7 @@ def test_low_stock_scoped_excludes_inactive(client, loc_a):
     item = _seed(client, "INACT", "Inactive", reorder=5, quantity=0, loc=loc_a)
     client.put(f"/items/{item['id']}", json={"active": False})
     assert client.get("/reports/low-stock", params={"location_id": loc_a["id"]}).json() == []
+
 
 
 def test_low_stock_unknown_location_returns_404(client, loc_a):
