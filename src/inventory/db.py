@@ -13,13 +13,16 @@ CREATE TABLE IF NOT EXISTS items (
     description TEXT NOT NULL DEFAULT '',
     unit_price REAL NOT NULL DEFAULT 0,
     reorder_point INTEGER NOT NULL DEFAULT 0,
-    active INTEGER NOT NULL DEFAULT 1
+    active INTEGER NOT NULL DEFAULT 1,
+    barcode TEXT UNIQUE,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
 CREATE TABLE IF NOT EXISTS locations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    code TEXT NOT NULL,
-    name TEXT NOT NULL
+    code TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS stock_levels (
@@ -37,9 +40,16 @@ CREATE TABLE IF NOT EXISTS movements (
     from_location_id INTEGER REFERENCES locations(id),
     to_location_id INTEGER REFERENCES locations(id),
     note TEXT NOT NULL DEFAULT '',
-    reference TEXT
+    reference TEXT,
+    created_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS schema_version (
+    version INTEGER NOT NULL
 );
 """
+
+SCHEMA_VERSION = 1
 
 
 def connect(path: str) -> sqlite3.Connection:
@@ -49,11 +59,35 @@ def connect(path: str) -> sqlite3.Connection:
     return conn
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Apply additive schema changes to databases created before a column existed."""
+    location_cols = {row["name"] for row in conn.execute("PRAGMA table_info(locations)")}
+    if "active" not in location_cols:
+        conn.execute("ALTER TABLE locations ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
+
+
 def init_db(path: str) -> None:
     conn = connect(path)
     try:
         conn.executescript(SCHEMA)
+        _migrate(conn)
+        row = conn.execute("SELECT version FROM schema_version").fetchone()
+        if row is None:
+            conn.execute(
+                "INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,)
+            )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def get_schema_version(path: str) -> int:
+    conn = connect(path)
+    try:
+        row = conn.execute("SELECT version FROM schema_version").fetchone()
+        if row is None:
+            raise RuntimeError("schema_version table is empty")
+        return int(row["version"])
     finally:
         conn.close()
 
