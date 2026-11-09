@@ -275,3 +275,28 @@ def test_list_movements_filter_no_matches(client, item, loc_a):
     _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
     assert client.get("/movements", params={"kind": "transfer"}).json() == []
     assert client.get("/movements", params={"item_id": 999}).json() == []
+
+
+def test_note_too_long_422(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=1,
+        to_location_id=loc_a["id"],
+        note="x" * 501,
+    )
+    assert r.status_code == 422
+
+
+def test_note_at_max_length_accepted(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=1,
+        to_location_id=loc_a["id"],
+        note="x" * 500,
+    )
+    assert r.status_code == 201
+    assert r.json()["note"] == "x" * 500
