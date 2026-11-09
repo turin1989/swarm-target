@@ -258,6 +258,23 @@ def test_stats_counts_entities_and_sums_units(client, loc_a, loc_b):
     }
 
 
+def test_stats_total_units_reflects_shipments(client, loc_a):
+    item = _seed(client, "ST1", "One", reorder=0, quantity=10, loc=loc_a)
+    r = client.post(
+        "/movements",
+        json={
+            "item_id": item["id"],
+            "kind": "ship",
+            "quantity": 4,
+            "from_location_id": loc_a["id"],
+        },
+    )
+    assert r.status_code == 201, r.text
+    stats = client.get("/stats").json()
+    assert stats["total_units"] == 6
+    assert stats["movements"] == 2
+
+
 def test_inventory_value_filtered_by_location(client, loc_a, loc_b):
     _seed(client, "P1", "p1", reorder=0, quantity=3, loc=loc_a, price=2.0)
     _seed(client, "P2", "p2", reorder=0, quantity=1, loc=loc_b, price=10.0)
