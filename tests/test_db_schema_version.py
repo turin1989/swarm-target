@@ -101,6 +101,41 @@ def test_init_db_adds_created_at_to_legacy_movements_table(tmp_path):
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", created_at)
 
 
+def test_get_schema_version_returns_int(tmp_path):
+    path = str(tmp_path / "typed.db")
+    db.init_db(path)
+    version = db.get_schema_version(path)
+    assert isinstance(version, int)
+    assert version == 1
+
+
+def test_init_db_records_version_on_legacy_db_without_schema_version(tmp_path):
+    """Databases predating the schema_version table get version 1 recorded."""
+    path = str(tmp_path / "legacy_no_version.db")
+    conn = sqlite3.connect(path)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sku TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                unit_price REAL NOT NULL DEFAULT 0,
+                reorder_point INTEGER NOT NULL DEFAULT 0,
+                active INTEGER NOT NULL DEFAULT 1
+            )
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    db.init_db(path)
+
+    assert db.get_schema_version(path) == 1
+
+
 def test_init_db_is_idempotent(tmp_path):
     path = str(tmp_path / "twice.db")
     db.init_db(path)
