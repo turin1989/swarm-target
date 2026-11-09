@@ -23,6 +23,33 @@ def test_location_requires_code(client):
     assert client.post("/locations", json={"name": "x"}).status_code == 422
 
 
+@pytest.mark.parametrize(
+    "code",
+    ["WH-A", "A", "0", "WH-1-SOUTH", "X" * 32, "A" + "-" * 31],
+)
+def test_location_code_valid_formats(client, code):
+    r = client.post("/locations", json={"code": code, "name": "Loc"})
+    assert r.status_code == 201
+    assert r.json()["code"] == code
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "",  # empty
+        "-WH",  # cannot start with a hyphen
+        "wh-a",  # lowercase not allowed
+        "WH A",  # spaces not allowed
+        "WH_A",  # underscore not allowed
+        "WH.A",  # dot not allowed
+        "X" * 33,  # too long
+    ],
+)
+def test_location_code_invalid_formats(client, code):
+    r = client.post("/locations", json={"code": code, "name": "Loc"})
+    assert r.status_code == 422
+
+
 def test_update_location_name_and_code(client, loc_a):
     r = client.put(
         f"/locations/{loc_a['id']}", json={"name": "Main Warehouse", "code": "WH-MAIN"}
@@ -51,6 +78,17 @@ def test_update_location_empty_payload_is_noop(client, loc_a):
 
 def test_update_location_unknown_id_404(client):
     assert client.put("/locations/999", json={"name": "nope"}).status_code == 404
+
+
+@pytest.mark.parametrize(
+    "code",
+    ["", "-WH", "wh-a", "WH A", "WH_A", "WH.A", "X" * 33],
+)
+def test_update_location_rejects_invalid_code_format(client, loc_a, code):
+    r = client.put(f"/locations/{loc_a['id']}", json={"code": code})
+    assert r.status_code == 422
+    # location unchanged
+    assert client.get(f"/locations/{loc_a['id']}").json() == loc_a
 
 
 def test_receive_increases_stock(client, item, loc_a):

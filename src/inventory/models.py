@@ -49,12 +49,14 @@ class ItemPage(BaseModel):
 
 
 class LocationCreate(BaseModel):
-    code: str = Field(..., min_length=1, max_length=32)
+    code: str = Field(..., min_length=1, max_length=32, pattern=r"^[A-Z0-9][A-Z0-9-]{0,31}$")
     name: str = Field(..., min_length=1, max_length=200)
 
 
 class LocationUpdate(BaseModel):
-    code: Optional[str] = Field(None, min_length=1, max_length=32)
+    code: Optional[str] = Field(
+        None, min_length=1, max_length=32, pattern=r"^[A-Z0-9][A-Z0-9-]{0,31}$"
+    )
     name: Optional[str] = Field(None, min_length=1, max_length=200)
 
 
