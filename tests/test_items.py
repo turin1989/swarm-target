@@ -409,3 +409,102 @@ def test_get_item_by_sku_numeric_sku(client):
     r = client.get("/items/by-sku/12345")
     assert r.status_code == 200
     assert r.json() == created
+
+
+# --- bulk creation ---------------------------------------------------------------
+
+
+def test_bulk_create_items_returns_201_and_created_items(client):
+    r = client.post(
+        "/items/bulk",
+        json=[
+            {"sku": "BULK-1", "name": "One", "unit_price": 1.0},
+            {"sku": "BULK-2", "name": "Two", "reorder_point": 3},
+        ],
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert [i["sku"] for i in body] == ["BULK-1", "BULK-2"]
+    assert body[0]["name"] == "One"
+    assert body[0]["unit_price"] == 1.0
+    assert body[1]["reorder_point"] == 3
+    for created in body:
+        assert created["active"] is True
+        assert ISO_UTC_RE.match(created["created_at"])
+    # all items persisted
+    assert client.get("/items").json()["total"] == 2
+
+
+def test_bulk_create_items_empty_list_422(client):
+    r = client.post("/items/bulk", json=[])
+    assert r.status_code == 422
+    assert client.get("/items").json()["total"] == 0
+
+
+def test_bulk_create_items_existing_sku_conflicts_and_creates_nothing(client, item):
+    r = client.post(
+        "/items/bulk",
+        json=[
+            {"sku": "NEW-1", "name": "New"},
+            {"sku": item["sku"], "name": "Dup"},
+            {"sku": "NEW-2", "name": "Newer"},
+        ],
+    )
+    assert r.status_code == 409
+    assert item["sku"] in r.json()["detail"]
+    # atomic: nothing was created
+    skus = [i["sku"] for i in client.get("/items").json()["items"]]
+    assert skus == [item["sku"]]
+
+
+def test_bulk_create_items_duplicate_sku_within_payload_conflicts_atomically(client):
+    r = client.post(
+        "/items/bulk",
+        json=[
+            {"sku": "DUP-X", "name": "First"},
+            {"sku": "DUP-X", "name": "Second"},
+        ],
+    )
+    assert r.status_code == 409
+    assert client.get("/items").json()["total"] == 0
+
+
+def test_bulk_create_items_validation_error_422(client):
+    # missing name on second entry
+    r = client.post(
+        "/items/bulk",
+        json=[{"sku": "OK-1", "name": "Ok"}, {"sku": "BAD-1"}],
+    )
+    assert r.status_code == 422
+    assert client.get("/items").json()["total"] == 0
+
+
+def test_bulk_create_items_with_barcodes(client):
+    r = client.post(
+        "/items/bulk",
+        json=[
+            {"sku": "BB-1", "name": "One", "barcode": "111"},
+            {"sku": "BB-2", "name": "Two"},
+        ],
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body[0]["barcode"] == "111"
+    assert body[1]["barcode"] is None
+
+
+def test_bulk_create_items_duplicate_barcode_conflicts_atomically(client):
+    r1 = client.post("/items", json={"sku": "EX-1", "name": "Existing", "barcode": "DUP-BC"})
+    assert r1.status_code == 201
+    r = client.post(
+        "/items/bulk",
+        json=[
+            {"sku": "BB-1", "name": "One"},
+            {"sku": "BB-2", "name": "Two", "barcode": "DUP-BC"},
+        ],
+    )
+    assert r.status_code == 409
+    assert "barcode" in r.json()["detail"]
+    # atomic: only the pre-existing item remains
+    skus = [i["sku"] for i in client.get("/items").json()["items"]]
+    assert skus == ["EX-1"]
