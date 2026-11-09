@@ -33,6 +33,18 @@ def get_item_levels(conn: sqlite3.Connection, item_id: int) -> list[StockLevel]:
     ]
 
 
+def get_location_levels(conn: sqlite3.Connection, location_id: int) -> list[StockLevel]:
+    rows = conn.execute(
+        """
+        SELECT item_id, location_id, qty AS quantity FROM stock_levels
+        WHERE location_id = ? AND qty != 0
+        ORDER BY item_id
+        """,
+        (location_id,),
+    ).fetchall()
+    return [StockLevel(**dict(r)) for r in rows]
+
+
 def total_stock(conn: sqlite3.Connection, item_id: int) -> int:
     row = conn.execute(
         "SELECT COALESCE(SUM(qty), 0) AS total FROM stock_levels WHERE item_id = ?",
@@ -90,10 +102,10 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
         _adjust(conn, m.item_id, from_id, -m.quantity)
     elif m.kind == "transfer":
         from_id = _require_location(conn, m.from_location_id, "from_location_id")
-        _require_location(conn, m.to_location_id, "to_location_id")
+        to_id = _require_location(conn, m.to_location_id, "to_location_id")
         _require_stock(conn, m.item_id, from_id, m.quantity)
         _adjust(conn, m.item_id, from_id, -m.quantity)
-        _adjust(conn, m.item_id, from_id, m.quantity)
+        _adjust(conn, m.item_id, to_id, m.quantity)
     else:  # pragma: no cover - guarded by the Literal type
         raise StockError(f"unknown movement kind {m.kind!r}")
 
@@ -112,6 +124,39 @@ def _row_to_movement(row: sqlite3.Row) -> Movement:
     data = dict(row)
     data["quantity"] = data.pop("qty")
     return Movement(**data)
+
+
+def reverse_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
+    """Create and apply a new movement that undoes the given movement."""
+    original = get_movement(conn, movement_id)
+
+    if original.kind == "receive":
+        reversal = MovementCreate(
+            item_id=original.item_id,
+            kind="ship",
+            quantity=original.quantity,
+            from_location_id=original.to_location_id,
+            note=f"reversal of {movement_id}",
+        )
+    elif original.kind == "ship":
+        reversal = MovementCreate(
+            item_id=original.item_id,
+            kind="receive",
+            quantity=original.quantity,
+            to_location_id=original.from_location_id,
+            note=f"reversal of {movement_id}",
+        )
+    else:  # transfer
+        reversal = MovementCreate(
+            item_id=original.item_id,
+            kind="transfer",
+            quantity=original.quantity,
+            from_location_id=original.to_location_id,
+            to_location_id=original.from_location_id,
+            note=f"reversal of {movement_id}",
+        )
+
+    return apply_movement(conn, reversal)
 
 
 def get_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:

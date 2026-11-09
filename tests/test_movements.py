@@ -107,6 +107,24 @@ def test_transfer_is_recorded(client, item, loc_a, loc_b):
     assert movements[1]["kind"] == "transfer"
 
 
+def test_transfer_moves_stock_between_locations(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", quantity=5, to_location_id=loc_a["id"])
+    _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        quantity=2,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 5
+    assert s["levels"] == [
+        {"item_id": item["id"], "location_id": loc_a["id"], "quantity": 3},
+        {"item_id": item["id"], "location_id": loc_b["id"], "quantity": 2},
+    ]
+
+
 def test_ship_more_than_on_hand_rejected_409(client, item, loc_a):
     _move(client, item_id=item["id"], kind="receive", quantity=5, to_location_id=loc_a["id"])
     r = _move(client, item_id=item["id"], kind="ship", quantity=6, from_location_id=loc_a["id"])
@@ -244,6 +262,72 @@ def test_movement_qty_alongside_quantity_422(client, item, loc_a):
     assert r.status_code == 422
 
 
+def test_reverse_receive_creates_ship(client, item, loc_a):
+    original = _move(
+        client, item_id=item["id"], kind="receive", quantity=10, to_location_id=loc_a["id"]
+    ).json()
+    r = client.post(f"/movements/{original['id']}/reverse")
+    assert r.status_code == 201
+    body = r.json()
+    assert body["id"] != original["id"]
+    assert body["kind"] == "ship"
+    assert body["quantity"] == 10
+    assert body["from_location_id"] == loc_a["id"]
+    assert body["to_location_id"] is None
+    assert body["note"] == f"reversal of {original['id']}"
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 0
+
+
+def test_reverse_ship_creates_receive(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", quantity=10, to_location_id=loc_a["id"])
+    original = _move(
+        client, item_id=item["id"], kind="ship", quantity=3, from_location_id=loc_a["id"]
+    ).json()
+    r = client.post(f"/movements/{original['id']}/reverse")
+    assert r.status_code == 201
+    body = r.json()
+    assert body["kind"] == "receive"
+    assert body["quantity"] == 3
+    assert body["to_location_id"] == loc_a["id"]
+    assert body["from_location_id"] is None
+    assert body["note"] == f"reversal of {original['id']}"
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 10
+
+
+def test_reverse_transfer_swaps_locations(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", quantity=5, to_location_id=loc_a["id"])
+    original = _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        quantity=2,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    ).json()
+    r = client.post(f"/movements/{original['id']}/reverse")
+    assert r.status_code == 201
+    body = r.json()
+    assert body["kind"] == "transfer"
+    assert body["quantity"] == 2
+    assert body["from_location_id"] == loc_b["id"]
+    assert body["to_location_id"] == loc_a["id"]
+    assert body["note"] == f"reversal of {original['id']}"
+
+
+def test_reverse_is_recorded_in_movement_list(client, item, loc_a):
+    original = _move(
+        client, item_id=item["id"], kind="receive", quantity=1, to_location_id=loc_a["id"]
+    ).json()
+    reversal = client.post(f"/movements/{original['id']}/reverse").json()
+    movements = client.get("/movements").json()
+    assert [m["id"] for m in movements] == [original["id"], reversal["id"]]
+
+
+def test_reverse_unknown_movement_404(client):
+    r = client.post("/movements/999/reverse")
+    assert r.status_code == 404
+
+
 def test_movement_has_created_at(client, item, loc_a):
     from datetime import datetime, timezone
 
@@ -268,6 +352,63 @@ def test_list_movements_pagination(client, item, loc_a):
         _move(client, item_id=item["id"], kind="receive", quantity=1, to_location_id=loc_a["id"])
     r = client.get("/movements", params={"limit": 2, "offset": 2})
     assert [m["id"] for m in r.json()] == [3, 4]
+
+
+# --- location stock ------------------------------------------------------------
+
+
+def _receive(client, item_id, location_id, qty):
+    r = _move(client, item_id=item_id, kind="receive", quantity=qty, to_location_id=location_id)
+    assert r.status_code == 201, r.text
+    return r
+
+
+def test_location_stock_empty_for_new_location(client, loc_a):
+    r = client.get(f"/locations/{loc_a['id']}/stock")
+    assert r.status_code == 200
+    assert r.json() == {"location_id": loc_a["id"], "levels": []}
+
+
+def test_location_stock_unknown_location_404(client):
+    assert client.get("/locations/999/stock").status_code == 404
+
+
+def test_location_stock_lists_levels_ordered_by_item_id(client, loc_a, loc_b):
+    item_ids = []
+    for sku in ("C-SKU", "A-SKU", "B-SKU"):
+        r = client.post("/items", json={"sku": sku, "name": sku})
+        assert r.status_code == 201, r.text
+        item_ids.append(r.json()["id"])
+    # receive in a shuffled order so insertion order != item_id order
+    for item_id, qty in [(item_ids[2], 3), (item_ids[0], 7), (item_ids[1], 5)]:
+        _receive(client, item_id, loc_a["id"], qty)
+    # stock at another location should not appear
+    _receive(client, item_ids[0], loc_b["id"], 99)
+
+    r = client.get(f"/locations/{loc_a['id']}/stock")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["location_id"] == loc_a["id"]
+    assert [lvl["item_id"] for lvl in body["levels"]] == sorted(item_ids)
+    by_item = {lvl["item_id"]: lvl for lvl in body["levels"]}
+    assert by_item[item_ids[0]]["quantity"] == 7
+    assert by_item[item_ids[1]]["quantity"] == 5
+    assert by_item[item_ids[2]]["quantity"] == 3
+    assert all(lvl["location_id"] == loc_a["id"] for lvl in body["levels"])
+
+
+def test_location_stock_omits_zero_qty_levels(client, item, loc_a):
+    _receive(client, item["id"], loc_a["id"], 4)
+    r = client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "ship", "quantity": 4, "from_location_id": loc_a["id"]},
+    )
+    assert r.status_code == 201, r.text
+    body = client.get(f"/locations/{loc_a['id']}/stock").json()
+    assert body == {"location_id": loc_a["id"], "levels": []}
+
+
+# --- item movements ------------------------------------------------------------
 
 
 def test_item_movements_only_returns_that_items_history(client, item, loc_a):
