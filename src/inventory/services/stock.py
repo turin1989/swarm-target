@@ -17,13 +17,11 @@ def get_stock_level(conn: sqlite3.Connection, item_id: int, location_id: int) ->
 
 def get_item_levels(conn: sqlite3.Connection, item_id: int) -> list[StockLevel]:
     rows = conn.execute(
-        "SELECT item_id, location_id, qty FROM stock_levels WHERE item_id = ? ORDER BY location_id",
+        "SELECT item_id, location_id, qty AS quantity FROM stock_levels"
+        " WHERE item_id = ? ORDER BY location_id",
         (item_id,),
     ).fetchall()
-    return [
-        StockLevel(item_id=r["item_id"], location_id=r["location_id"], quantity=r["qty"])
-        for r in rows
-    ]
+    return [StockLevel(**dict(r)) for r in rows]
 
 
 def get_location_levels(conn: sqlite3.Connection, location_id: int) -> list[StockLevel]:
@@ -145,7 +143,8 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
 
 def _row_to_movement(row: sqlite3.Row) -> Movement:
     data = dict(row)
-    data["quantity"] = data.pop("qty")
+    if "qty" in data:
+        data["quantity"] = data.pop("qty")
     return Movement(**data)
 
 
@@ -183,7 +182,11 @@ def reverse_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
 
 
 def get_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
-    row = conn.execute("SELECT * FROM movements WHERE id = ?", (movement_id,)).fetchone()
+    row = conn.execute(
+        "SELECT id, item_id, kind, qty AS quantity, from_location_id, to_location_id,"
+        " note, reference, created_at FROM movements WHERE id = ?",
+        (movement_id,),
+    ).fetchone()
     if row is None:
         raise NotFoundError(f"movement {movement_id} not found")
     return _row_to_movement(row)
@@ -196,7 +199,10 @@ def list_movements(
     limit: int = 100,
     offset: int = 0,
 ) -> list[Movement]:
-    sql = "SELECT * FROM movements"
+    sql = (
+        "SELECT id, item_id, kind, qty AS quantity, from_location_id, to_location_id,"
+        " note, reference, created_at FROM movements"
+    )
     conditions: list[str] = []
     params: list = []
     if item_id is not None:
