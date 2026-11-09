@@ -7,8 +7,7 @@ location A was unchanged (debited then re-credited) and B received nothing.
 import pytest
 
 from inventory.db import connect, init_db
-from inventory.models import MovementCreate
-from inventory.models import ItemCreate
+from inventory.models import ItemCreate, MovementCreate
 from inventory.services.items import create_item
 from inventory.services.stock import apply_movement, get_stock_level, total_stock
 
