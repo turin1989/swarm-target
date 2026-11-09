@@ -26,6 +26,7 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-p no:cacheprovider"
+pythonpath = ["src"]
 
 [tool.ruff]
 line-length = 110
