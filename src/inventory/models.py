@@ -6,6 +6,8 @@ from pydantic import BaseModel, Field
 
 MovementKind = Literal["receive", "ship", "transfer", "adjust"]
 
+LOCATION_CODE_PATTERN = r"^[A-Z0-9][A-Z0-9-]{0,31}$"
+
 
 class ItemCreate(BaseModel):
     sku: str = Field(..., min_length=1, max_length=64)
@@ -44,12 +46,14 @@ class ItemPage(BaseModel):
 
 
 class LocationCreate(BaseModel):
-    code: str = Field(..., min_length=1, max_length=32)
+    code: str = Field(..., min_length=1, max_length=32, pattern=LOCATION_CODE_PATTERN)
     name: str = Field(..., min_length=1, max_length=200)
 
 
 class LocationUpdate(BaseModel):
-    code: Optional[str] = Field(None, min_length=1, max_length=32)
+    code: Optional[str] = Field(
+        None, min_length=1, max_length=32, pattern=LOCATION_CODE_PATTERN
+    )
     name: Optional[str] = Field(None, min_length=1, max_length=200)
     active: Optional[bool] = None
 
