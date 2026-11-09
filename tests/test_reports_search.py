@@ -3,7 +3,7 @@
 
 def _seed(client, sku, name, reorder, quantity, loc, price=1.0):
     item = client.post(
-        "/items", json={"sku": sku, "name": name, "reorder_point": reorder, "unit_price": price}
+        "/items", json={"sku": sku, "name": name, "reorder_level": reorder, "unit_price": price}
     ).json()
     if quantity:
         client.post(
@@ -25,7 +25,7 @@ def test_low_stock_lists_items_below_reorder_point(client, loc_a):
         "sku": "LOW",
         "name": "Low",
         "total_qty": 2,
-        "reorder_point": 5,
+        "reorder_level": 5,
         "shortfall": 3,
     }
 
@@ -36,7 +36,7 @@ def test_low_stock_includes_items_exactly_at_reorder_point(client, loc_a):
     entries = client.get("/reports/low-stock").json()
     assert [e["sku"] for e in entries] == ["EDGE"]
     assert entries[0]["total_qty"] == 5
-    assert entries[0]["reorder_point"] == 5
+    assert entries[0]["reorder_level"] == 5
 
 
 def test_low_stock_includes_zero_reorder_point_with_zero_stock(client, loc_a):

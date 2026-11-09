@@ -397,6 +397,23 @@ def test_movement_qty_alongside_quantity_422(client, item, loc_a):
     assert r.status_code == 422
 
 
+def test_get_movement_by_id(client, item, loc_a):
+    created = _move(
+        client, item_id=item["id"], kind="receive", quantity=10, to_location_id=loc_a["id"]
+    ).json()
+    r = client.get(f"/movements/{created['id']}")
+    assert r.status_code == 200
+    assert r.json() == created
+
+
+def test_get_movement_unknown_id_404(client):
+    r = client.get("/movements/42")
+    assert r.status_code == 404
+    body = r.json()
+    assert body["error"]["code"] == "not_found"
+    assert body["error"]["message"] == "movement 42 not found"
+
+
 @pytest.mark.parametrize(
     "kind,payload",
     [
@@ -406,11 +423,11 @@ def test_movement_qty_alongside_quantity_422(client, item, loc_a):
     ],
 )
 def test_movement_rejected_for_inactive_item(client, item, loc_a, loc_b, kind, payload):
-    _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", quantity=10, to_location_id=loc_a["id"])
     r = client.put(f"/items/{item['id']}", json={"active": False})
     assert r.status_code == 200 and r.json()["active"] is False
 
-    r = _move(client, item_id=item["id"], kind=kind, qty=1, **payload)
+    r = _move(client, item_id=item["id"], kind=kind, quantity=1, **payload)
     assert r.status_code == 409
     body = r.json()
     assert body["error"]["code"] == "conflict"
@@ -419,10 +436,56 @@ def test_movement_rejected_for_inactive_item(client, item, loc_a, loc_b, kind, p
     # stock levels are unchanged
     s = client.get(f"/items/{item['id']}/stock").json()
     assert s["total"] == 10
-    assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "qty": 10}]
+    assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "quantity": 10}]
 
     # no movement record was created
     assert len(client.get("/movements").json()) == 1
+
+
+def test_movement_reference_round_trip(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        quantity=5,
+        to_location_id=loc_a["id"],
+        reference="PO-12345",
+    )
+    assert r.status_code == 201
+    assert r.json()["reference"] == "PO-12345"
+
+    movements = client.get("/movements").json()
+    assert movements[0]["reference"] == "PO-12345"
+
+
+def test_movement_reference_defaults_to_none(client, item, loc_a):
+    r = _move(client, item_id=item["id"], kind="receive", quantity=1, to_location_id=loc_a["id"])
+    assert r.status_code == 201
+    assert r.json()["reference"] is None
+    assert client.get("/movements").json()[0]["reference"] is None
+
+
+def test_movement_reference_max_length(client, item, loc_a):
+    ok = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        quantity=1,
+        to_location_id=loc_a["id"],
+        reference="R" * 64,
+    )
+    assert ok.status_code == 201
+    assert ok.json()["reference"] == "R" * 64
+
+    too_long = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        quantity=1,
+        to_location_id=loc_a["id"],
+        reference="R" * 65,
+    )
+    assert too_long.status_code == 422
 
 
 def test_movement_note_too_long_422(client, item, loc_a):
@@ -554,9 +617,9 @@ def item2(client):
 
 
 def test_filter_movements_by_item_id(client, item, item2, loc_a):
-    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
-    _move(client, item_id=item2["id"], kind="receive", qty=3, to_location_id=loc_a["id"])
-    _move(client, item_id=item["id"], kind="ship", qty=1, from_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", quantity=5, to_location_id=loc_a["id"])
+    _move(client, item_id=item2["id"], kind="receive", quantity=3, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="ship", quantity=1, from_location_id=loc_a["id"])
 
     r = client.get("/movements", params={"item_id": item["id"]})
     assert r.status_code == 200
@@ -569,9 +632,9 @@ def test_filter_movements_by_item_id(client, item, item2, loc_a):
 
 
 def test_filter_movements_by_kind(client, item, loc_a):
-    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
-    _move(client, item_id=item["id"], kind="ship", qty=1, from_location_id=loc_a["id"])
-    _move(client, item_id=item["id"], kind="receive", qty=2, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", quantity=5, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="ship", quantity=1, from_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", quantity=2, to_location_id=loc_a["id"])
 
     r = client.get("/movements", params={"kind": "ship"})
     assert r.status_code == 200
@@ -589,9 +652,9 @@ def test_filter_movements_invalid_kind_422(client):
 
 def test_filter_movements_combined_with_pagination(client, item, item2, loc_a):
     for _ in range(3):
-        _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
-    _move(client, item_id=item["id"], kind="ship", qty=1, from_location_id=loc_a["id"])
-    _move(client, item_id=item2["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
+        _move(client, item_id=item["id"], kind="receive", quantity=1, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="ship", quantity=1, from_location_id=loc_a["id"])
+    _move(client, item_id=item2["id"], kind="receive", quantity=1, to_location_id=loc_a["id"])
 
     r = client.get("/movements", params={"item_id": item["id"], "kind": "receive"})
     body = r.json()
@@ -606,7 +669,7 @@ def test_filter_movements_combined_with_pagination(client, item, item2, loc_a):
 
 
 def test_filter_movements_unknown_item_returns_empty(client, item, loc_a):
-    _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", quantity=1, to_location_id=loc_a["id"])
     assert client.get("/movements", params={"item_id": 999}).json() == []
 
 
@@ -709,7 +772,7 @@ def test_location_stock_omits_zero_qty_levels(client, item, loc_a):
 def test_item_movements_only_returns_that_items_history(client, item, loc_a):
     other = client.post(
         "/items",
-        json={"sku": "GADGET-1", "name": "Gadget", "unit_price": 1.0, "reorder_point": 2},
+        json={"sku": "GADGET-1", "name": "Gadget", "unit_price": 1.0, "reorder_level": 2},
     ).json()
     _move(client, item_id=item["id"], kind="receive", quantity=3, to_location_id=loc_a["id"])
     _move(client, item_id=other["id"], kind="receive", quantity=9, to_location_id=loc_a["id"])

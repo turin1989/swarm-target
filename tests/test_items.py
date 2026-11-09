@@ -17,8 +17,26 @@ def test_create_item_returns_201_and_fields(client):
     assert body["sku"] == "A-1"
     assert body["name"] == "Alpha"
     assert body["unit_price"] == 1.25
-    assert body["reorder_point"] == 0
+    assert body["reorder_level"] == 0
     assert body["active"] is True
+
+
+def test_create_item_rejects_reorder_point(client):
+    r = client.post(
+        "/items", json={"sku": "A-2", "name": "Alpha", "reorder_point": 3}
+    )
+    assert r.status_code == 422
+
+
+def test_update_item_rejects_reorder_point(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": 3})
+    assert r.status_code == 422
+
+
+def test_create_item_accepts_reorder_level(client):
+    r = client.post("/items", json={"sku": "A-3", "name": "Alpha", "reorder_level": 7})
+    assert r.status_code == 201
+    assert r.json()["reorder_level"] == 7
 
 
 def test_create_item_duplicate_sku_conflicts(client, item):
@@ -32,25 +50,25 @@ def test_create_item_requires_sku_and_name(client):
     assert client.post("/items", json={"sku": "", "name": "x"}).status_code == 422
 
 
-def test_create_item_rejects_negative_reorder_point(client):
-    r = client.post("/items", json={"sku": "NEG-1", "name": "Neg", "reorder_point": -1})
+def test_create_item_rejects_negative_reorder_level(client):
+    r = client.post("/items", json={"sku": "NEG-1", "name": "Neg", "reorder_level": -1})
     assert r.status_code == 422
 
 
-def test_create_item_allows_zero_reorder_point(client):
-    r = client.post("/items", json={"sku": "ZERO-1", "name": "Zero", "reorder_point": 0})
+def test_create_item_allows_zero_reorder_level(client):
+    r = client.post("/items", json={"sku": "ZERO-1", "name": "Zero", "reorder_level": 0})
     assert r.status_code == 201
-    assert r.json()["reorder_point"] == 0
+    assert r.json()["reorder_level"] == 0
 
 
-def test_update_item_rejects_negative_reorder_point(client, item):
-    r = client.put(f"/items/{item['id']}", json={"reorder_point": -5})
+def test_update_item_rejects_negative_reorder_level(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_level": -5})
     assert r.status_code == 422
 
 
-def test_update_item_allows_nonnegative_reorder_point(client, item):
+def test_update_item_allows_nonnegative_reorder_level(client, item):
     # Non-negative values must pass validation (not a 422).
-    r = client.put(f"/items/{item['id']}", json={"reorder_point": 7})
+    r = client.put(f"/items/{item['id']}", json={"reorder_level": 7})
     assert r.status_code == 200
 
 
@@ -320,35 +338,35 @@ def test_update_item_deactivate(client, item):
     assert r.json()["active"] is False
 
 
-def test_update_item_reorder_point(client, item):
-    r = client.put(f"/items/{item['id']}", json={"reorder_point": 12})
+def test_update_item_reorder_level(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_level": 12})
     assert r.status_code == 200
-    assert r.json()["reorder_point"] == 12
+    assert r.json()["reorder_level"] == 12
     # value is persisted
-    assert client.get(f"/items/{item['id']}").json()["reorder_point"] == 12
+    assert client.get(f"/items/{item['id']}").json()["reorder_level"] == 12
 
 
-def test_update_item_reorder_point_with_other_fields(client, item):
+def test_update_item_reorder_level_with_other_fields(client, item):
     r = client.put(
         f"/items/{item['id']}",
-        json={"reorder_point": 7, "name": "Renamed", "unit_price": 3.75},
+        json={"reorder_level": 7, "name": "Renamed", "unit_price": 3.75},
     )
     assert r.status_code == 200
     body = r.json()
-    assert body["reorder_point"] == 7
+    assert body["reorder_level"] == 7
     assert body["name"] == "Renamed"
     assert body["unit_price"] == 3.75
     stored = client.get(f"/items/{item['id']}").json()
-    assert stored["reorder_point"] == 7
+    assert stored["reorder_level"] == 7
     assert stored["name"] == "Renamed"
 
 
-def test_update_item_omitting_reorder_point_preserves_value(client, item):
-    assert item["reorder_point"] == 5
+def test_update_item_omitting_reorder_level_preserves_value(client, item):
+    assert item["reorder_level"] == 5
     r = client.put(f"/items/{item['id']}", json={"name": "StillWidget"})
     assert r.status_code == 200
-    assert r.json()["reorder_point"] == 5
-    assert client.get(f"/items/{item['id']}").json()["reorder_point"] == 5
+    assert r.json()["reorder_level"] == 5
+    assert client.get(f"/items/{item['id']}").json()["reorder_level"] == 5
 
 
 def test_update_missing_item_404(client):
@@ -458,6 +476,20 @@ def test_create_item_with_barcode(client):
     assert client.get(f"/items/{r.json()['id']}").json()["barcode"] == "0123456789"
 
 
+def test_create_item_with_barcode_and_reorder_level(client):
+    r = client.post(
+        "/items",
+        json={"sku": "B-9", "name": "Both", "barcode": "9999", "reorder_level": 4},
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["barcode"] == "9999"
+    assert body["reorder_level"] == 4
+    stored = client.get(f"/items/{body['id']}").json()
+    assert stored["barcode"] == "9999"
+    assert stored["reorder_level"] == 4
+
+
 def test_create_item_duplicate_barcode_conflicts(client):
     r1 = client.post("/items", json={"sku": "B-1", "name": "Bar", "barcode": "4711"})
     assert r1.status_code == 201
@@ -521,7 +553,7 @@ def test_bulk_create_returns_201_and_created_items(client):
         "/items/bulk",
         json=[
             {"sku": "B-1", "name": "Bulk One", "unit_price": 1.0},
-            {"sku": "B-2", "name": "Bulk Two", "unit_price": 2.0, "reorder_point": 3},
+            {"sku": "B-2", "name": "Bulk Two", "unit_price": 2.0, "reorder_level": 3},
         ],
     )
     assert r.status_code == 201
@@ -529,7 +561,7 @@ def test_bulk_create_returns_201_and_created_items(client):
     assert [i["sku"] for i in body] == ["B-1", "B-2"]
     assert all(i["id"] > 0 for i in body)
     assert body[0]["active"] is True
-    assert body[1]["reorder_point"] == 3
+    assert body[1]["reorder_level"] == 3
     # items are persisted
     assert [i["sku"] for i in client.get("/items").json()["items"]] == ["B-1", "B-2"]
 
@@ -668,26 +700,31 @@ def test_created_at_returned_by_get_list_and_search(client, item):
 
 
 def test_created_at_cannot_be_set_by_client_on_create(client):
+    # created_at is server-managed; with strict payload validation an attempt
+    # to set it is rejected outright rather than silently ignored.
     r = client.post(
         "/items",
         json={"sku": "TS-2", "name": "Sneaky", "created_at": "1999-01-01T00:00:00Z"},
     )
-    assert r.status_code == 201
-    assert r.json()["created_at"] != "1999-01-01T00:00:00Z"
-    assert ISO_UTC.match(r.json()["created_at"])
+    assert r.status_code == 422
+    # no item was created with the forged timestamp
+    skus = [i["sku"] for i in client.get("/items").json()["items"]]
+    assert "TS-2" not in skus
 
 
 def test_created_at_ignored_on_put(client, item):
+    # created_at is server-managed; with strict payload validation an attempt
+    # to change it on update is rejected outright rather than silently ignored.
     r = client.put(
         f"/items/{item['id']}",
         json={"name": "Renamed", "created_at": "1999-01-01T00:00:00Z"},
     )
-    assert r.status_code == 200
-    assert r.json()["name"] == "Renamed"
-    assert r.json()["created_at"] == item["created_at"]
+    assert r.status_code == 422
 
-    # still unchanged when fetched again
-    assert client.get(f"/items/{item['id']}").json()["created_at"] == item["created_at"]
+    # item is completely unchanged when fetched again
+    got = client.get(f"/items/{item['id']}").json()
+    assert got["created_at"] == item["created_at"]
+    assert got["name"] == item["name"]
 
 
 def test_bulk_create_sets_created_at(client):
