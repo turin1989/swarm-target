@@ -1,9 +1,9 @@
 """HTTP routes."""
 
 import sqlite3
-from typing import Optional
+from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 
 from inventory.db import get_db
 from inventory.models import (
@@ -42,6 +42,21 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
         return items_service.create_item(conn, payload)
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=409, detail=f"sku {payload.sku!r} already exists")
+
+
+@router.post("/items/bulk", response_model=list[Item], status_code=201)
+def create_items_bulk(
+    payload: Annotated[list[ItemCreate], Body(min_length=1)],
+    conn: sqlite3.Connection = Depends(get_db),
+) -> list[Item]:
+    created: list[Item] = []
+    for entry in payload:
+        try:
+            created.append(items_service.create_item(conn, entry))
+        except sqlite3.IntegrityError:
+            conn.rollback()
+            raise HTTPException(status_code=409, detail=f"sku {entry.sku!r} already exists")
+    return created
 
 
 _SORTABLE_COLUMNS = items_service.SORTABLE_COLUMNS
