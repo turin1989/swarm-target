@@ -44,6 +44,23 @@ def test_low_stock_includes_items_exactly_at_reorder_point(client, loc_a):
     assert entries[0]["reorder_level"] == 5
 
 
+def test_low_stock_at_reorder_point_sums_stock_across_locations(client, loc_a, loc_b):
+    item = _seed(client, "SPLIT", "Split", reorder=5, quantity=3, loc=loc_a)
+    client.post(
+        "/movements",
+        json={
+            "item_id": item["id"],
+            "kind": "receive",
+            "quantity": 2,
+            "to_location_id": loc_b["id"],
+        },
+    )
+    entries = client.get("/reports/low-stock").json()
+    assert [e["sku"] for e in entries] == ["SPLIT"]
+    assert entries[0]["total_qty"] == 5
+    assert entries[0]["reorder_level"] == 5
+
+
 def test_low_stock_includes_zero_reorder_point_with_zero_stock(client, loc_a):
     _seed(client, "ZERO", "Zero", reorder=0, quantity=0, loc=loc_a)
     _seed(client, "STOCKED", "Stocked", reorder=0, quantity=1, loc=loc_a)
@@ -107,6 +124,13 @@ def test_low_stock_scoped_counts_zero_for_items_without_stock_at_location(client
     entries = client.get("/reports/low-stock", params={"location_id": loc_b["id"]}).json()
     assert [e["sku"] for e in entries] == ["ONLY-A"]
     assert entries[0]["total_qty"] == 0
+
+
+def test_low_stock_scoped_excludes_inactive(client, loc_a):
+    item = _seed(client, "INACT", "Inactive", reorder=5, quantity=0, loc=loc_a)
+    client.put(f"/items/{item['id']}", json={"active": False})
+    assert client.get("/reports/low-stock", params={"location_id": loc_a["id"]}).json() == []
+
 
 
 def test_low_stock_unknown_location_returns_404(client, loc_a):

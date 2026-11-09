@@ -64,6 +64,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
     location_cols = {row["name"] for row in conn.execute("PRAGMA table_info(locations)")}
     if "active" not in location_cols:
         conn.execute("ALTER TABLE locations ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
+    # Older databases may predate the barcode column; add it if missing.
+    item_cols = {row["name"] for row in conn.execute("PRAGMA table_info(items)")}
+    if "barcode" not in item_cols:
+        conn.execute("ALTER TABLE items ADD COLUMN barcode TEXT")
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_items_barcode ON items(barcode)"
+        )
 
 
 def init_db(path: str) -> None:
