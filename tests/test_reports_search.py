@@ -75,6 +75,36 @@ def test_search_by_name_substring(client):
     assert [i["sku"] for i in r.json()] == ["S1"]
 
 
+def test_search_by_name_is_case_insensitive(client):
+    client.post("/items", json={"sku": "S1", "name": "Blue Widget"})
+    client.post("/items", json={"sku": "S2", "name": "Red Gadget"})
+    for q in ("widget", "WIDGET", "Widget", "wIdGeT"):
+        r = client.get("/search", params={"q": q})
+        assert r.status_code == 200
+        assert [i["sku"] for i in r.json()] == ["S1"], q
+
+
+def test_search_by_sku_is_case_insensitive(client):
+    client.post("/items", json={"sku": "BOLT-M8", "name": "Bolt"})
+    client.post("/items", json={"sku": "NUT-M8", "name": "Nut"})
+    for q in ("bolt", "BOLT", "Bolt"):
+        assert [i["sku"] for i in client.get("/search", params={"q": q}).json()] == ["BOLT-M8"], q
+
+
+def test_search_case_insensitive_keeps_ordering_and_limit(client):
+    for n, name in enumerate(["Cable C", "cable a", "CABLE B"]):
+        client.post("/items", json={"sku": f"C{n}", "name": name})
+    names = [i["name"] for i in client.get("/search", params={"q": "cAbLe", "limit": 2}).json()]
+    assert names == sorted(["Cable C", "cable a", "CABLE B"])[:2]
+
+
+def test_search_does_not_treat_percent_or_underscore_as_wildcards(client):
+    client.post("/items", json={"sku": "PCT-1", "name": "100% Cotton"})
+    client.post("/items", json={"sku": "PCT-2", "name": "100 Cotton"})
+    assert [i["sku"] for i in client.get("/search", params={"q": "100%"}).json()] == ["PCT-1"]
+    assert [i["sku"] for i in client.get("/search", params={"q": "0_"}).json()] == []
+
+
 def test_search_by_sku(client):
     client.post("/items", json={"sku": "BOLT-M8", "name": "Bolt"})
     client.post("/items", json={"sku": "NUT-M8", "name": "Nut"})
