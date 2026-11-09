@@ -108,6 +108,29 @@ def test_400_bad_request_shape(client, item):
     _assert_error_shape(r.json(), "bad_request")
 
 
+def test_400_adjust_with_from_location_shape(client, item, loc_a):
+    r = client.post(
+        "/movements",
+        json={
+            "item_id": item["id"],
+            "kind": "adjust",
+            "qty": 1,
+            "from_location_id": loc_a["id"],
+            "to_location_id": loc_a["id"],
+        },
+    )
+    assert r.status_code == 400
+    _assert_error_shape(r.json(), "bad_request")
+    assert "from_location_id must be null" in r.json()["error"]["message"]
+
+
+def test_404_reverse_unknown_movement_shape(client):
+    r = client.post("/movements/999/reverse")
+    assert r.status_code == 404
+    _assert_error_shape(r.json(), "not_found")
+    assert r.json()["error"]["message"] == "movement 999 not found"
+
+
 def test_404_movement_unknown_item_shape(client, loc_a):
     r = client.post(
         "/movements",

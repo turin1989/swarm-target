@@ -4,7 +4,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
-MovementKind = Literal["receive", "ship", "transfer"]
+MovementKind = Literal["receive", "ship", "transfer", "adjust"]
 
 
 class ItemCreate(BaseModel):
@@ -12,7 +12,7 @@ class ItemCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     description: str = ""
     unit_price: float = Field(default=0.0, ge=0)
-    reorder_point: int = 0
+    reorder_point: int = Field(default=0, ge=0)
 
     @field_validator("sku")
     @classmethod
@@ -27,7 +27,7 @@ class ItemUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     unit_price: Optional[float] = Field(default=None, ge=0)
-    reorder_point: Optional[int] = None
+    reorder_point: Optional[int] = Field(default=None, ge=0)
     active: Optional[bool] = None
 
 
@@ -49,12 +49,14 @@ class ItemPage(BaseModel):
 
 
 class LocationCreate(BaseModel):
-    code: str = Field(..., min_length=1, max_length=32)
+    code: str = Field(..., min_length=1, max_length=32, pattern=r"^[A-Z0-9][A-Z0-9-]{0,31}$")
     name: str = Field(..., min_length=1, max_length=200)
 
 
 class LocationUpdate(BaseModel):
-    code: Optional[str] = Field(None, min_length=1, max_length=32)
+    code: Optional[str] = Field(
+        None, min_length=1, max_length=32, pattern=r"^[A-Z0-9][A-Z0-9-]{0,31}$"
+    )
     name: Optional[str] = Field(None, min_length=1, max_length=200)
 
 
@@ -93,6 +95,11 @@ class StockLevel(BaseModel):
 class ItemStock(BaseModel):
     item_id: int
     total: int
+    levels: list[StockLevel]
+
+
+class LocationStock(BaseModel):
+    location_id: int
     levels: list[StockLevel]
 
 
