@@ -196,3 +196,63 @@ def test_list_items_x_total_count_respects_filters(client):
 def test_list_items_x_total_count_empty(client):
     r = client.get("/items")
     assert r.headers["X-Total-Count"] == "0"
+
+
+# --- barcode -------------------------------------------------------------------
+
+
+def test_create_item_barcode_defaults_to_null(client):
+    r = client.post("/items", json={"sku": "NB-1", "name": "No barcode"})
+    assert r.status_code == 201
+    assert r.json()["barcode"] is None
+
+
+def test_create_item_with_barcode(client):
+    r = client.post("/items", json={"sku": "BC-1", "name": "Scanned", "barcode": "0123456789012"})
+    assert r.status_code == 201
+    assert r.json()["barcode"] == "0123456789012"
+    # persisted and returned on GET too
+    assert client.get(f"/items/{r.json()['id']}").json()["barcode"] == "0123456789012"
+
+
+def test_create_item_duplicate_barcode_conflicts(client):
+    r1 = client.post("/items", json={"sku": "BC-1", "name": "One", "barcode": "DUP-123"})
+    assert r1.status_code == 201
+    r2 = client.post("/items", json={"sku": "BC-2", "name": "Two", "barcode": "DUP-123"})
+    assert r2.status_code == 409
+    assert "barcode" in r2.json()["detail"]
+
+
+def test_create_many_items_without_barcode_allowed(client):
+    # NULL barcodes must not collide with each other
+    for n in range(3):
+        r = client.post("/items", json={"sku": f"NULL-{n}", "name": f"N{n}"})
+        assert r.status_code == 201
+        assert r.json()["barcode"] is None
+
+
+def test_list_items_filter_by_barcode(client):
+    client.post("/items", json={"sku": "BC-1", "name": "One", "barcode": "111"})
+    client.post("/items", json={"sku": "BC-2", "name": "Two", "barcode": "222"})
+    client.post("/items", json={"sku": "BC-3", "name": "Three"})
+    r = client.get("/items", params={"barcode": "222"})
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 1
+    assert body[0]["sku"] == "BC-2"
+    assert body[0]["barcode"] == "222"
+    assert r.headers["X-Total-Count"] == "1"
+
+
+def test_list_items_filter_by_barcode_no_match(client):
+    client.post("/items", json={"sku": "BC-1", "name": "One", "barcode": "111"})
+    r = client.get("/items", params={"barcode": "nope"})
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_list_items_filter_barcode_combines_with_active(client):
+    client.post("/items", json={"sku": "BC-1", "name": "One", "barcode": "111"})
+    client.put("/items/1", json={"active": False})
+    assert client.get("/items", params={"barcode": "111", "active": "true"}).json() == []
+    assert len(client.get("/items", params={"barcode": "111", "active": "false"}).json()) == 1
