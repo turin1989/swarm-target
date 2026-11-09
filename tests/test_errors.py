@@ -138,3 +138,62 @@ def test_404_movement_unknown_item_shape(client, loc_a):
     )
     assert r.status_code == 404
     _assert_error_shape(r.json(), "not_found")
+
+
+# --- codes for statuses outside the explicit mapping ---------------------------
+
+
+def test_405_method_not_allowed_shape(client):
+    r = client.delete("/search")
+    assert r.status_code == 405
+    _assert_error_shape(r.json(), "method_not_allowed")
+
+
+@pytest.mark.parametrize(
+    "status_code,code",
+    [
+        (400, "bad_request"),
+        (404, "not_found"),
+        (409, "conflict"),
+        (422, "validation_error"),
+        (403, "forbidden"),
+        (410, "gone"),
+        (500, "internal_server_error"),
+        (503, "service_unavailable"),
+    ],
+)
+def test_error_response_codes_are_snake_case(status_code, code):
+    from inventory.api import error_response
+
+    resp = error_response(status_code, "boom")
+    assert resp.status_code == status_code
+    import json
+
+    body = json.loads(resp.body)
+    _assert_error_shape(body, code)
+    assert body["error"]["message"] == "boom"
+
+
+def test_error_response_unknown_status_falls_back_to_generic_code():
+    import json
+
+    from inventory.api import error_response
+
+    body = json.loads(error_response(499, "boom").body)
+    _assert_error_shape(body, "error")
+
+
+def test_http_exception_with_unmapped_status_is_converted(client):
+    """HTTPException raised with any status still gets the uniform shape."""
+    from fastapi import HTTPException
+
+    app = client.app
+
+    @app.get("/boom-teapot")
+    def boom() -> None:
+        raise HTTPException(status_code=418, detail="short and stout")
+
+    r = client.get("/boom-teapot")
+    assert r.status_code == 418
+    _assert_error_shape(r.json(), "im_a_teapot")
+    assert r.json()["error"]["message"] == "short and stout"
