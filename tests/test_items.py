@@ -382,12 +382,12 @@ def test_delete_item(client, item):
 def test_delete_item_cascades_stock(client, item, loc_a):
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 3, "to_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 3, "to_location_id": loc_a["id"]},
     )
     # drain the stock so the item is deletable
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "ship", "qty": 3, "from_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "ship", "quantity": 3, "from_location_id": loc_a["id"]},
     )
     r = client.delete(f"/items/{item['id']}")
     assert r.status_code == 204
@@ -397,7 +397,7 @@ def test_delete_item_cascades_stock(client, item, loc_a):
 def test_delete_item_with_stock_conflicts(client, item, loc_a):
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 7, "to_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 7, "to_location_id": loc_a["id"]},
     )
     r = client.delete(f"/items/{item['id']}")
     assert r.status_code == 409
@@ -411,11 +411,11 @@ def test_delete_item_with_stock_conflicts(client, item, loc_a):
 def test_delete_item_after_stock_drained_to_zero(client, item, loc_a):
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 2, "to_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 2, "to_location_id": loc_a["id"]},
     )
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "ship", "qty": 2, "from_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "ship", "quantity": 2, "from_location_id": loc_a["id"]},
     )
     r = client.delete(f"/items/{item['id']}")
     assert r.status_code == 204

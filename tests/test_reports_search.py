@@ -1,21 +1,26 @@
 """Reports and search."""
 
 
-def _seed(client, sku, name, reorder, qty, loc, price=1.0):
+def _seed(client, sku, name, reorder, quantity, loc, price=1.0):
     item = client.post(
         "/items", json={"sku": sku, "name": name, "reorder_level": reorder, "unit_price": price}
     ).json()
-    if qty:
+    if quantity:
         client.post(
             "/movements",
-            json={"item_id": item["id"], "kind": "receive", "qty": qty, "to_location_id": loc["id"]},
+            json={
+                "item_id": item["id"],
+                "kind": "receive",
+                "quantity": quantity,
+                "to_location_id": loc["id"],
+            },
         )
     return item
 
 
 def test_low_stock_lists_items_below_reorder_point(client, loc_a):
-    _seed(client, "LOW", "Low", reorder=5, qty=2, loc=loc_a)
-    _seed(client, "OK", "Fine", reorder=5, qty=10, loc=loc_a)
+    _seed(client, "LOW", "Low", reorder=5, quantity=2, loc=loc_a)
+    _seed(client, "OK", "Fine", reorder=5, quantity=10, loc=loc_a)
     r = client.get("/reports/low-stock")
     assert r.status_code == 200
     entries = r.json()
@@ -31,8 +36,8 @@ def test_low_stock_lists_items_below_reorder_point(client, loc_a):
 
 
 def test_low_stock_includes_items_exactly_at_reorder_point(client, loc_a):
-    _seed(client, "EDGE", "Edge", reorder=5, qty=5, loc=loc_a)
-    _seed(client, "ABOVE", "Above", reorder=5, qty=6, loc=loc_a)
+    _seed(client, "EDGE", "Edge", reorder=5, quantity=5, loc=loc_a)
+    _seed(client, "ABOVE", "Above", reorder=5, quantity=6, loc=loc_a)
     entries = client.get("/reports/low-stock").json()
     assert [e["sku"] for e in entries] == ["EDGE"]
     assert entries[0]["total_qty"] == 5
@@ -40,48 +45,48 @@ def test_low_stock_includes_items_exactly_at_reorder_point(client, loc_a):
 
 
 def test_low_stock_includes_zero_reorder_point_with_zero_stock(client, loc_a):
-    _seed(client, "ZERO", "Zero", reorder=0, qty=0, loc=loc_a)
-    _seed(client, "STOCKED", "Stocked", reorder=0, qty=1, loc=loc_a)
+    _seed(client, "ZERO", "Zero", reorder=0, quantity=0, loc=loc_a)
+    _seed(client, "STOCKED", "Stocked", reorder=0, quantity=1, loc=loc_a)
     assert [e["sku"] for e in client.get("/reports/low-stock").json()] == ["ZERO"]
 
 
 def test_low_stock_shortfall_is_reorder_point_minus_total_qty(client, loc_a):
-    _seed(client, "S1", "s1", reorder=10, qty=4, loc=loc_a)
-    _seed(client, "S2", "s2", reorder=7, qty=0, loc=loc_a)
+    _seed(client, "S1", "s1", reorder=10, quantity=4, loc=loc_a)
+    _seed(client, "S2", "s2", reorder=7, quantity=0, loc=loc_a)
     entries = client.get("/reports/low-stock").json()
     assert {e["sku"]: e["shortfall"] for e in entries} == {"S1": 6, "S2": 7}
 
 
 def test_low_stock_shortfall_never_negative(client, loc_a):
-    _seed(client, "FULL", "full", reorder=5, qty=10, loc=loc_a)
-    _seed(client, "LOW", "low", reorder=5, qty=2, loc=loc_a)
+    _seed(client, "FULL", "full", reorder=5, quantity=10, loc=loc_a)
+    _seed(client, "LOW", "low", reorder=5, quantity=2, loc=loc_a)
     entries = client.get("/reports/low-stock").json()
     assert all(e["shortfall"] >= 0 for e in entries)
 
 
 def test_low_stock_includes_items_with_no_stock(client, loc_a):
-    _seed(client, "NONE", "Nothing", reorder=1, qty=0, loc=loc_a)
+    _seed(client, "NONE", "Nothing", reorder=1, quantity=0, loc=loc_a)
     assert [e["sku"] for e in client.get("/reports/low-stock").json()] == ["NONE"]
 
 
 def test_low_stock_excludes_inactive(client, loc_a):
-    item = _seed(client, "GONE", "Gone", reorder=5, qty=0, loc=loc_a)
+    item = _seed(client, "GONE", "Gone", reorder=5, quantity=0, loc=loc_a)
     client.put(f"/items/{item['id']}", json={"active": False})
     assert client.get("/reports/low-stock").json() == []
 
 
 def test_low_stock_sorted_by_sku(client, loc_a):
-    _seed(client, "Z", "z", reorder=1, qty=0, loc=loc_a)
-    _seed(client, "A", "a", reorder=1, qty=0, loc=loc_a)
+    _seed(client, "Z", "z", reorder=1, quantity=0, loc=loc_a)
+    _seed(client, "A", "a", reorder=1, quantity=0, loc=loc_a)
     assert [e["sku"] for e in client.get("/reports/low-stock").json()] == ["A", "Z"]
 
 
 def test_low_stock_scoped_to_location(client, loc_a, loc_b):
     # 2 units in A + 4 in B = 6 total, above reorder point of 5
-    item = _seed(client, "SPLIT", "Split", reorder=5, qty=2, loc=loc_a)
+    item = _seed(client, "SPLIT", "Split", reorder=5, quantity=2, loc=loc_a)
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 4, "to_location_id": loc_b["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 4, "to_location_id": loc_b["id"]},
     )
     # unscoped: not low
     assert client.get("/reports/low-stock").json() == []
@@ -98,21 +103,21 @@ def test_low_stock_scoped_to_location(client, loc_a, loc_b):
 
 
 def test_low_stock_scoped_counts_zero_for_items_without_stock_at_location(client, loc_a, loc_b):
-    _seed(client, "ONLY-A", "Only A", reorder=5, qty=10, loc=loc_a)
+    _seed(client, "ONLY-A", "Only A", reorder=5, quantity=10, loc=loc_a)
     entries = client.get("/reports/low-stock", params={"location_id": loc_b["id"]}).json()
     assert [e["sku"] for e in entries] == ["ONLY-A"]
     assert entries[0]["total_qty"] == 0
 
 
 def test_low_stock_unknown_location_returns_404(client, loc_a):
-    _seed(client, "LOW", "Low", reorder=5, qty=2, loc=loc_a)
+    _seed(client, "LOW", "Low", reorder=5, quantity=2, loc=loc_a)
     r = client.get("/reports/low-stock", params={"location_id": 999})
     assert r.status_code == 404
 
 
 def test_inventory_value(client, loc_a):
-    _seed(client, "P1", "p1", reorder=0, qty=3, loc=loc_a, price=2.0)
-    _seed(client, "P2", "p2", reorder=0, qty=1, loc=loc_a, price=10.0)
+    _seed(client, "P1", "p1", reorder=0, quantity=3, loc=loc_a, price=2.0)
+    _seed(client, "P2", "p2", reorder=0, quantity=1, loc=loc_a, price=10.0)
     assert client.get("/reports/value").json() == {"value": 16.0}
 
 
@@ -130,7 +135,12 @@ def test_movements_summary_aggregates_counts_and_qty(client, item, loc_a, loc_b)
     for qty in (5, 3):
         r = client.post(
             "/movements",
-            json={"item_id": item["id"], "kind": "receive", "qty": qty, "to_location_id": loc_a["id"]},
+            json={
+                "item_id": item["id"],
+                "kind": "receive",
+                "quantity": qty,
+                "to_location_id": loc_a["id"],
+            },
         )
         assert r.status_code == 201, r.text
     r = client.post(
@@ -138,7 +148,7 @@ def test_movements_summary_aggregates_counts_and_qty(client, item, loc_a, loc_b)
         json={
             "item_id": item["id"],
             "kind": "transfer",
-            "qty": 2,
+            "quantity": 2,
             "from_location_id": loc_a["id"],
             "to_location_id": loc_b["id"],
         },
@@ -146,7 +156,7 @@ def test_movements_summary_aggregates_counts_and_qty(client, item, loc_a, loc_b)
     assert r.status_code == 201, r.text
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "ship", "qty": 4, "from_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "ship", "quantity": 4, "from_location_id": loc_a["id"]},
     )
     assert r.status_code == 201, r.text
 
@@ -161,7 +171,7 @@ def test_movements_summary_aggregates_counts_and_qty(client, item, loc_a, loc_b)
 def test_movements_summary_zero_for_kinds_without_movements(client, item, loc_a):
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 7, "to_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 7, "to_location_id": loc_a["id"]},
     )
     assert r.status_code == 201, r.text
     summary = client.get("/reports/movements-summary").json()
@@ -183,9 +193,9 @@ def test_stats_empty_database(client):
 
 
 def test_stats_counts_entities_and_sums_units(client, loc_a, loc_b):
-    _seed(client, "ST1", "One", reorder=0, qty=3, loc=loc_a)
-    _seed(client, "ST2", "Two", reorder=0, qty=5, loc=loc_b)
-    inactive = _seed(client, "ST3", "Three", reorder=0, qty=0, loc=loc_a)
+    _seed(client, "ST1", "One", reorder=0, quantity=3, loc=loc_a)
+    _seed(client, "ST2", "Two", reorder=0, quantity=5, loc=loc_b)
+    inactive = _seed(client, "ST3", "Three", reorder=0, quantity=0, loc=loc_a)
     client.put(f"/items/{inactive['id']}", json={"active": False})
     r = client.get("/stats")
     assert r.status_code == 200
@@ -199,8 +209,8 @@ def test_stats_counts_entities_and_sums_units(client, loc_a, loc_b):
 
 
 def test_inventory_value_filtered_by_location(client, loc_a, loc_b):
-    _seed(client, "P1", "p1", reorder=0, qty=3, loc=loc_a, price=2.0)
-    _seed(client, "P2", "p2", reorder=0, qty=1, loc=loc_b, price=10.0)
+    _seed(client, "P1", "p1", reorder=0, quantity=3, loc=loc_a, price=2.0)
+    _seed(client, "P2", "p2", reorder=0, quantity=1, loc=loc_b, price=10.0)
     r = client.get("/reports/value", params={"location_id": loc_a["id"]})
     assert r.status_code == 200
     assert r.json() == {"value": 6.0}
@@ -210,19 +220,19 @@ def test_inventory_value_filtered_by_location(client, loc_a, loc_b):
 
 
 def test_inventory_value_without_filter_unchanged(client, loc_a, loc_b):
-    _seed(client, "P1", "p1", reorder=0, qty=3, loc=loc_a, price=2.0)
-    _seed(client, "P2", "p2", reorder=0, qty=1, loc=loc_b, price=10.0)
+    _seed(client, "P1", "p1", reorder=0, quantity=3, loc=loc_a, price=2.0)
+    _seed(client, "P2", "p2", reorder=0, quantity=1, loc=loc_b, price=10.0)
     assert client.get("/reports/value").json() == {"value": 16.0}
 
 
 def test_inventory_value_unknown_location_404(client, loc_a):
-    _seed(client, "P1", "p1", reorder=0, qty=3, loc=loc_a, price=2.0)
+    _seed(client, "P1", "p1", reorder=0, quantity=3, loc=loc_a, price=2.0)
     r = client.get("/reports/value", params={"location_id": 999})
     assert r.status_code == 404
 
 
 def test_inventory_value_empty_location(client, loc_a, loc_b):
-    _seed(client, "P1", "p1", reorder=0, qty=3, loc=loc_a, price=2.0)
+    _seed(client, "P1", "p1", reorder=0, quantity=3, loc=loc_a, price=2.0)
     r = client.get("/reports/value", params={"location_id": loc_b["id"]})
     assert r.status_code == 200
     assert r.json() == {"value": 0.0}
