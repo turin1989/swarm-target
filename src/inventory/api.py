@@ -23,9 +23,19 @@ from inventory.models import (
 )
 from inventory.services import items as items_service
 from inventory.services import reports, search, stock
+from inventory.services.errors import InventoryError
 from inventory.services.items import row_to_item as _row_to_item
 
 router = APIRouter()
+
+
+def inventory_error_to_http(exc: InventoryError) -> HTTPException:
+    """Map a domain :class:`InventoryError` to an :class:`HTTPException`.
+
+    This is the single place where service-layer errors are translated to
+    HTTP responses; routes must not wrap service calls in try/except.
+    """
+    return HTTPException(status_code=exc.status_code, detail=str(exc))
 
 
 def _row_to_location(row: sqlite3.Row) -> Location:
@@ -290,26 +300,17 @@ def delete_location(location_id: int, conn: sqlite3.Connection = Depends(get_db)
 def create_movement(
     payload: MovementCreate, conn: sqlite3.Connection = Depends(get_db)
 ) -> Movement:
-    try:
-        return stock.apply_movement(conn, payload)
-    except stock.StockError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    return stock.apply_movement(conn, payload)
 
 
 @router.post("/movements/{movement_id}/reverse", response_model=Movement, status_code=201)
 def reverse_movement(movement_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Movement:
-    try:
-        return stock.reverse_movement(conn, movement_id)
-    except stock.StockError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    return stock.reverse_movement(conn, movement_id)
 
 
 @router.get("/movements/{movement_id}", response_model=Movement)
 def get_movement(movement_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Movement:
-    try:
-        return stock.get_movement(conn, movement_id)
-    except stock.StockError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    return stock.get_movement(conn, movement_id)
 
 
 @router.get("/movements", response_model=list[Movement])
