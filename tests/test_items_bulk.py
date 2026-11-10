@@ -3,7 +3,7 @@
 
 def _payload(*skus):
     return [
-        {"sku": sku, "name": f"Item {sku}", "unit_price": 1.0, "reorder_point": 2}
+        {"sku": sku, "name": f"Item {sku}", "unit_price": 1.0, "reorder_level": 2}
         for sku in skus
     ]
 

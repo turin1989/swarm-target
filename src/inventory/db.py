@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS items (
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     unit_price REAL NOT NULL DEFAULT 0,
-    reorder_point INTEGER NOT NULL DEFAULT 0,
+    reorder_level INTEGER NOT NULL DEFAULT 0,
     active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     barcode TEXT
@@ -75,6 +75,9 @@ def init_db(path: str) -> None:
         item_columns = {r["name"] for r in conn.execute("PRAGMA table_info(items)")}
         if "barcode" not in item_columns:
             conn.execute("ALTER TABLE items ADD COLUMN barcode TEXT")
+        # Migration: rename items.reorder_point to items.reorder_level.
+        if "reorder_point" in item_columns:
+            conn.execute("ALTER TABLE items RENAME COLUMN reorder_point TO reorder_level")
         # Unique only for non-null barcodes (partial index).
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_items_barcode "
