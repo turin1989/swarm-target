@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS items (
 
 CREATE TABLE IF NOT EXISTS locations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    code TEXT NOT NULL,
+    code TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     active INTEGER NOT NULL DEFAULT 1
 );
@@ -40,7 +40,8 @@ CREATE TABLE IF NOT EXISTS movements (
     from_location_id INTEGER REFERENCES locations(id),
     to_location_id INTEGER REFERENCES locations(id),
     note TEXT NOT NULL DEFAULT '',
-    reference TEXT
+    reference TEXT,
+    created_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS schema_version (
