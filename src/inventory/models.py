@@ -39,6 +39,14 @@ class Item(BaseModel):
     unit_price: float
     reorder_point: int
     active: bool
+    created_at: str
+
+
+class ItemPage(BaseModel):
+    items: list[Item]
+    total: int = Field(..., ge=0)
+    limit: int = Field(..., ge=1)
+    offset: int = Field(..., ge=0)
 
 
 class LocationCreate(BaseModel):

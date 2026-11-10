@@ -130,7 +130,7 @@ def test_low_stock_unknown_location_returns_404(client, loc_a):
     _seed(client, "LOW", "Low", reorder=5, qty=2, loc=loc_a)
     r = client.get("/reports/low-stock", params={"location_id": 9999})
     assert r.status_code == 404
-    assert "9999" in r.json()["detail"]
+    assert "9999" in r.json()["error"]["message"]
 
 
 def test_low_stock_without_location_param_unchanged(client, loc_a, loc_b):

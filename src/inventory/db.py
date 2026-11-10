@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS items (
     description TEXT NOT NULL DEFAULT '',
     unit_price REAL NOT NULL DEFAULT 0,
     reorder_point INTEGER NOT NULL DEFAULT 0,
-    active INTEGER NOT NULL DEFAULT 1
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
 CREATE TABLE IF NOT EXISTS locations (
@@ -65,6 +66,16 @@ def init_db(path: str) -> None:
         }
         if "reference" not in movement_columns:
             conn.execute("ALTER TABLE movements ADD COLUMN reference TEXT")
+        # Migrate databases created before the items.created_at column existed.
+        item_columns = {
+            r["name"] for r in conn.execute("PRAGMA table_info(items)").fetchall()
+        }
+        if "created_at" not in item_columns:
+            conn.execute("ALTER TABLE items ADD COLUMN created_at TEXT")
+            conn.execute(
+                "UPDATE items SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') "
+                "WHERE created_at IS NULL"
+            )
         row = conn.execute("SELECT version FROM schema_version").fetchone()
         if row is None:
             conn.execute(

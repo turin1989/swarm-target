@@ -9,6 +9,7 @@ from inventory.db import get_db
 from inventory.models import (
     Item,
     ItemCreate,
+    ItemPage,
     ItemStock,
     ItemUpdate,
     Location,
@@ -18,6 +19,7 @@ from inventory.models import (
     LowStockEntry,
     Movement,
     MovementCreate,
+    MovementKind,
 )
 from inventory.services import items as items_service
 from inventory.services import reports, search, stock
@@ -57,10 +59,17 @@ def create_items_bulk(
         for item in payload:
             cur = conn.execute(
                 """
-                INSERT INTO items (sku, name, description, unit_price, reorder_point)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO items (sku, name, description, unit_price, reorder_point, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (item.sku, item.name, item.description, item.unit_price, item.reorder_point),
+                (
+                    item.sku,
+                    item.name,
+                    item.description,
+                    item.unit_price,
+                    item.reorder_point,
+                    items_service.utc_now_iso(),
+                ),
             )
             created_ids.append(cur.lastrowid)
     except sqlite3.IntegrityError:
@@ -69,7 +78,7 @@ def create_items_bulk(
     return [_fetch_item(conn, item_id) for item_id in created_ids]
 
 
-@router.get("/items", response_model=list[Item])
+@router.get("/items", response_model=ItemPage)
 def list_items(
     response: Response,
     active: Optional[bool] = None,
@@ -78,7 +87,7 @@ def list_items(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     conn: sqlite3.Connection = Depends(get_db),
-) -> list[Item]:
+) -> ItemPage:
     sql = "SELECT * FROM items"
     params: list = []
     conditions: list[str] = []
@@ -105,7 +114,8 @@ def list_items(
         raise HTTPException(status_code=422, detail=f"invalid sort field {sort!r}")
     sql += f" ORDER BY {column} {direction} LIMIT ? OFFSET ?"
     params += [limit, offset]
-    return [items_service.row_to_item(r) for r in conn.execute(sql, params).fetchall()]
+    items = [items_service.row_to_item(r) for r in conn.execute(sql, params).fetchall()]
+    return ItemPage(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.get("/items/by-sku/{sku}", response_model=Item)
@@ -290,11 +300,13 @@ def reverse_movement(
 
 @router.get("/movements", response_model=list[Movement])
 def list_movements(
+    item_id: Optional[int] = None,
+    kind: Optional[MovementKind] = None,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     conn: sqlite3.Connection = Depends(get_db),
 ) -> list[Movement]:
-    return stock.list_movements(conn, limit=limit, offset=offset)
+    return stock.list_movements(conn, item_id=item_id, kind=kind, limit=limit, offset=offset)
 
 
 # --- reports & search --------------------------------------------------------

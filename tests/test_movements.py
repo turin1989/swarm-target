@@ -144,7 +144,7 @@ def test_transfer_to_same_location_rejected(client, item, loc_a):
         to_location_id=loc_a["id"],
     )
     assert r.status_code == 400
-    assert "same location" in r.json()["detail"]
+    assert "same location" in r.json()["error"]["message"]
 
     # No movement row was written and stock is unchanged.
     movements = client.get("/movements").json()
@@ -172,7 +172,7 @@ def test_stock_empty_for_new_item(client, item):
 def test_movement_requires_locations(client, item, loc_a, kind, payload):
     r = _move(client, item_id=item["id"], kind=kind, qty=1, **payload)
     assert r.status_code == 400
-    assert "required" in r.json()["detail"]
+    assert "required" in r.json()["error"]["message"]
 
 
 def test_movement_unknown_location_404(client, item):
@@ -242,7 +242,7 @@ def test_ship_more_than_on_hand_409(client, item, loc_a):
 
     r = _move(client, item_id=item["id"], kind="ship", qty=6, from_location_id=loc_a["id"])
     assert r.status_code == 409
-    assert "insufficient" in r.json()["detail"]
+    assert "insufficient" in r.json()["error"]["message"]
 
     # No movement row was written and stock levels are unchanged.
     assert len(client.get("/movements").json()) == 1
@@ -252,7 +252,7 @@ def test_ship_more_than_on_hand_409(client, item, loc_a):
 def test_ship_with_no_stock_at_all_409(client, item, loc_a):
     r = _move(client, item_id=item["id"], kind="ship", qty=1, from_location_id=loc_a["id"])
     assert r.status_code == 409
-    assert "insufficient" in r.json()["detail"]
+    assert "insufficient" in r.json()["error"]["message"]
     assert client.get("/movements").json() == []
     assert client.get(f"/items/{item['id']}/stock").json()["total"] == 0
 
@@ -277,7 +277,7 @@ def test_transfer_more_than_source_stock_409(client, item, loc_a, loc_b):
         to_location_id=loc_b["id"],
     )
     assert r.status_code == 409
-    assert "insufficient" in r.json()["detail"]
+    assert "insufficient" in r.json()["error"]["message"]
 
     # No movement row was written and stock levels are unchanged.
     assert len(client.get("/movements").json()) == 1
@@ -297,7 +297,7 @@ def test_transfer_checks_source_not_destination(client, item, loc_a, loc_b):
         to_location_id=loc_b["id"],
     )
     assert r.status_code == 409
-    assert "insufficient" in r.json()["detail"]
+    assert "insufficient" in r.json()["error"]["message"]
 
 
 def test_transfer_exactly_source_stock_succeeds(client, item, loc_a, loc_b):
@@ -367,7 +367,7 @@ def test_movement_for_inactive_item_409(client, item, loc_a, loc_b, kind, payloa
 
     r = _move(client, item_id=item["id"], kind=kind, qty=3, **payload)
     assert r.status_code == 409
-    assert "inactive" in r.json()["detail"]
+    assert "inactive" in r.json()["error"]["message"]
 
     # Stock levels are unchanged and no movement was recorded.
     after = client.get(f"/items/{item['id']}/stock").json()
@@ -453,7 +453,7 @@ def test_adjust_only_affects_target_location(client, item, loc_a, loc_b):
 def test_adjust_requires_to_location(client, item, loc_a):
     r = _move(client, item_id=item["id"], kind="adjust", qty=5)
     assert r.status_code == 400
-    assert "required" in r.json()["detail"]
+    assert "required" in r.json()["error"]["message"]
     assert client.get("/movements").json() == []
 
 
@@ -467,7 +467,7 @@ def test_adjust_rejects_from_location(client, item, loc_a, loc_b):
         to_location_id=loc_b["id"],
     )
     assert r.status_code == 400
-    assert "from_location_id" in r.json()["detail"]
+    assert "from_location_id" in r.json()["error"]["message"]
     assert client.get("/movements").json() == []
     assert client.get(f"/items/{item['id']}/stock").json()["total"] == 0
 
@@ -580,6 +580,133 @@ def test_list_movements_service_filters_by_item():
     assert [m.id for m in list_movements(conn, item_id=2)] == [2]
     assert [m.id for m in list_movements(conn)] == [1, 2, 3]
     assert [m.id for m in list_movements(conn, item_id=1, limit=1, offset=1)] == [3]
+
+
+# --- GET /movements filters (T044) ---------------------------------------------
+
+
+@pytest.fixture()
+def _movement_fixture_data(client, item, loc_a, loc_b):
+    """Create a second item and a mix of movements across both items.
+
+    Movements (ids 1..5):
+      1: item   receive  -> A
+      2: other  receive  -> A
+      3: item   ship     <- A
+      4: other  ship     <- A
+      5: item   receive  -> B
+    """
+    other = client.post(
+        "/items",
+        json={"sku": "OTHER-1", "name": "Other", "unit_price": 1.0, "reorder_point": 0},
+    ).json()
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    _move(client, item_id=other["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="ship", qty=1, from_location_id=loc_a["id"])
+    _move(client, item_id=other["id"], kind="ship", qty=2, from_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", qty=3, to_location_id=loc_b["id"])
+    return {"item": item, "other": other}
+
+
+def test_movements_filter_by_item_id(client, _movement_fixture_data):
+    item = _movement_fixture_data["item"]
+    other = _movement_fixture_data["other"]
+
+    r = client.get("/movements", params={"item_id": item["id"]})
+    assert r.status_code == 200
+    movements = r.json()
+    assert [m["id"] for m in movements] == [1, 3, 5]
+    assert all(m["item_id"] == item["id"] for m in movements)
+
+    r = client.get("/movements", params={"item_id": other["id"]})
+    assert [m["id"] for m in r.json()] == [2, 4]
+
+
+def test_movements_filter_by_item_id_no_matches(client, _movement_fixture_data):
+    r = client.get("/movements", params={"item_id": 999})
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_movements_filter_by_kind(client, _movement_fixture_data):
+    r = client.get("/movements", params={"kind": "ship"})
+    assert r.status_code == 200
+    movements = r.json()
+    assert [m["id"] for m in movements] == [3, 4]
+    assert all(m["kind"] == "ship" for m in movements)
+
+    r = client.get("/movements", params={"kind": "receive"})
+    assert [m["id"] for m in r.json()] == [1, 2, 5]
+
+    r = client.get("/movements", params={"kind": "transfer"})
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_movements_filter_invalid_kind_422(client, _movement_fixture_data):
+    assert client.get("/movements", params={"kind": "explode"}).status_code == 422
+    assert client.get("/movements", params={"kind": ""}).status_code == 422
+    assert client.get("/movements", params={"kind": "SHIP"}).status_code == 422
+
+
+def test_movements_filters_combine(client, _movement_fixture_data):
+    item = _movement_fixture_data["item"]
+    other = _movement_fixture_data["other"]
+
+    r = client.get("/movements", params={"item_id": item["id"], "kind": "receive"})
+    assert r.status_code == 200
+    movements = r.json()
+    assert [m["id"] for m in movements] == [1, 5]
+    assert all(m["item_id"] == item["id"] and m["kind"] == "receive" for m in movements)
+
+    r = client.get("/movements", params={"item_id": other["id"], "kind": "ship"})
+    assert [m["id"] for m in r.json()] == [4]
+
+
+def test_movements_filters_with_pagination(client, _movement_fixture_data):
+    item = _movement_fixture_data["item"]
+
+    r = client.get("/movements", params={"kind": "receive", "limit": 2, "offset": 1})
+    assert r.status_code == 200
+    assert [m["id"] for m in r.json()] == [2, 5]
+
+    r = client.get(
+        "/movements",
+        params={"item_id": item["id"], "kind": "receive", "limit": 1, "offset": 1},
+    )
+    assert [m["id"] for m in r.json()] == [5]
+
+
+def test_movements_no_filters_returns_all(client, _movement_fixture_data):
+    r = client.get("/movements")
+    assert r.status_code == 200
+    assert [m["id"] for m in r.json()] == [1, 2, 3, 4, 5]
+
+
+def test_list_movements_service_filters_by_kind():
+    """stock.list_movements supports a kind filter at the service layer."""
+    from inventory.db import SCHEMA, connect
+    from inventory.services.stock import list_movements
+
+    conn = connect(":memory:")
+    conn.executescript(SCHEMA)
+    conn.execute(
+        "INSERT INTO items (sku, name, description, unit_price, reorder_point, active) "
+        "VALUES ('S1', 'Widget', '', 1.0, 0, 1)"
+    )
+    conn.execute("INSERT INTO locations (code, name) VALUES ('WH-A', 'Warehouse A')")
+    for kind in ("receive", "ship", "receive"):
+        conn.execute(
+            "INSERT INTO movements (item_id, kind, qty, to_location_id) "
+            "VALUES (1, ?, 1, 1)",
+            (kind,),
+        )
+
+    assert [m.id for m in list_movements(conn, kind="receive")] == [1, 3]
+    assert [m.id for m in list_movements(conn, kind="ship")] == [2]
+    assert [m.id for m in list_movements(conn, item_id=1, kind="receive")] == [1, 3]
+    assert [m.id for m in list_movements(conn, kind="receive", limit=1, offset=1)] == [3]
+    assert [m.id for m in list_movements(conn, item_id=2, kind="receive")] == []
 
 
 # --- DELETE /locations/{id} (T013) --------------------------------------------
@@ -827,7 +954,10 @@ def test_reverse_receive_with_insufficient_stock_409(client, item, loc_a):
 
     r = client.post(f"/movements/{original['id']}/reverse")
     assert r.status_code == 409
-    assert "insufficient" in r.json()["detail"]
+    body = r.json()
+    # Uniform error envelope (T050) applies to the reverse endpoint too.
+    assert body["error"]["code"] == "conflict"
+    assert "insufficient" in body["error"]["message"]
     # Nothing was written.
     assert len(client.get("/movements").json()) == 2
 
