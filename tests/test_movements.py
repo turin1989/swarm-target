@@ -460,6 +460,104 @@ def test_movement_note_max_length_ok(client, item, loc_a):
     assert r.json()["note"] == note
 
 
+# --- reverse a movement -----------------------------------------------------------
+
+
+def test_reverse_receive_creates_ship(client, item, loc_a):
+    original = _move(
+        client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"]
+    ).json()
+    r = client.post(f"/movements/{original['id']}/reverse")
+    assert r.status_code == 201
+    body = r.json()
+    assert body["id"] != original["id"]
+    assert body["kind"] == "ship"
+    assert body["item_id"] == item["id"]
+    assert body["qty"] == 10
+    assert body["from_location_id"] == loc_a["id"]
+    assert body["to_location_id"] is None
+    assert body["note"] == f"reversal of {original['id']}"
+    # stock returns to zero
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 0
+
+
+def test_reverse_ship_creates_receive(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])
+    original = _move(
+        client, item_id=item["id"], kind="ship", qty=4, from_location_id=loc_a["id"]
+    ).json()
+    r = client.post(f"/movements/{original['id']}/reverse")
+    assert r.status_code == 201
+    body = r.json()
+    assert body["kind"] == "receive"
+    assert body["qty"] == 4
+    assert body["to_location_id"] == loc_a["id"]
+    assert body["from_location_id"] is None
+    assert body["note"] == f"reversal of {original['id']}"
+    # stock back to pre-ship level
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 10
+
+
+def test_reverse_transfer_swaps_locations(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    original = _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=2,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    ).json()
+    r = client.post(f"/movements/{original['id']}/reverse")
+    assert r.status_code == 201
+    body = r.json()
+    assert body["kind"] == "transfer"
+    assert body["qty"] == 2
+    assert body["from_location_id"] == loc_b["id"]
+    assert body["to_location_id"] == loc_a["id"]
+    assert body["note"] == f"reversal of {original['id']}"
+
+
+def test_reverse_is_persisted_as_new_movement(client, item, loc_a):
+    original = _move(
+        client, item_id=item["id"], kind="receive", qty=3, to_location_id=loc_a["id"]
+    ).json()
+    created = client.post(f"/movements/{original['id']}/reverse").json()
+    fetched = client.get(f"/movements/{created['id']}")
+    assert fetched.status_code == 200
+    assert fetched.json() == created
+    movements = client.get("/movements").json()
+    assert [m["id"] for m in movements] == [original["id"], created["id"]]
+
+
+def test_reverse_unknown_movement_404(client):
+    r = client.post("/movements/999/reverse")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "movement 999 not found"
+
+
+def test_reverse_movement_service_function(client, item, loc_a):
+    """reverse_movement is exposed on the shared stock service."""
+    from inventory.services import stock
+
+    assert callable(stock.reverse_movement)
+
+
+def test_reverse_movement_of_inactive_item_409(client, item, loc_a):
+    """A reversal is a new movement, so it must also refuse inactive items."""
+    original = _move(
+        client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"]
+    ).json()
+    r = client.put(f"/items/{item['id']}", json={"active": False})
+    assert r.status_code == 200
+    r = client.post(f"/movements/{original['id']}/reverse")
+    assert r.status_code == 409
+    assert "inactive" in r.json()["detail"]
+    # No reversal row was written; stock is unchanged.
+    assert [m["id"] for m in client.get("/movements").json()] == [original["id"]]
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 5
+
+
 # --- inactive items (T041) -----------------------------------------------------
 
 
@@ -518,3 +616,116 @@ def test_reactivated_item_accepts_movements_again(client, item, loc_a):
     r = _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
     assert r.status_code == 201
     assert client.get(f"/items/{item['id']}/stock").json()["total"] == 1
+
+
+# --- GET /movements filters (T044) --------------------------------------------
+
+
+@pytest.fixture()
+def item2(client):
+    r = client.post(
+        "/items",
+        json={"sku": "GADGET-1", "name": "Gadget", "unit_price": 1.0, "reorder_level": 2},
+    )
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+@pytest.fixture()
+def mixed_movements(client, item, item2, loc_a, loc_b):
+    """Create movements across two items and several kinds."""
+    moves = [
+        dict(item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"]),
+        dict(item_id=item2["id"], kind="receive", qty=8, to_location_id=loc_a["id"]),
+        dict(item_id=item["id"], kind="ship", qty=2, from_location_id=loc_a["id"]),
+        dict(item_id=item2["id"], kind="ship", qty=1, from_location_id=loc_a["id"]),
+        dict(
+            item_id=item["id"],
+            kind="transfer",
+            qty=3,
+            from_location_id=loc_a["id"],
+            to_location_id=loc_b["id"],
+        ),
+        dict(item_id=item["id"], kind="ship", qty=1, from_location_id=loc_a["id"]),
+    ]
+    for m in moves:
+        assert _move(client, **m).status_code == 201
+    return moves
+
+
+def test_filter_movements_by_item_id(client, item, item2, mixed_movements):
+    r = client.get("/movements", params={"item_id": item["id"]})
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 4
+    assert all(m["item_id"] == item["id"] for m in body)
+
+    r2 = client.get("/movements", params={"item_id": item2["id"]})
+    assert r2.status_code == 200
+    assert [m["item_id"] for m in r2.json()] == [item2["id"], item2["id"]]
+
+
+def test_filter_movements_by_kind(client, item, item2, mixed_movements):
+    r = client.get("/movements", params={"kind": "ship"})
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 3
+    assert all(m["kind"] == "ship" for m in body)
+
+    r = client.get("/movements", params={"kind": "transfer"})
+    assert [m["kind"] for m in r.json()] == ["transfer"]
+
+    # kind with no matches returns an empty list, not an error
+    r = client.get("/movements", params={"kind": "adjust"})
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_filter_movements_invalid_kind_returns_422(client, mixed_movements):
+    r = client.get("/movements", params={"kind": "teleport"})
+    assert r.status_code == 422
+
+
+def test_filter_movements_combined_filters(client, item, item2, mixed_movements):
+    r = client.get("/movements", params={"item_id": item["id"], "kind": "ship"})
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 2
+    assert all(m["item_id"] == item["id"] and m["kind"] == "ship" for m in body)
+
+    r = client.get("/movements", params={"item_id": item2["id"], "kind": "transfer"})
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_filter_movements_with_pagination(client, item, mixed_movements):
+    all_filtered = client.get("/movements", params={"item_id": item["id"]}).json()
+    assert len(all_filtered) == 4
+
+    page1 = client.get(
+        "/movements", params={"item_id": item["id"], "limit": 2, "offset": 0}
+    ).json()
+    page2 = client.get(
+        "/movements", params={"item_id": item["id"], "limit": 2, "offset": 2}
+    ).json()
+    assert len(page1) == 2
+    assert len(page2) == 2
+    assert page1 + page2 == all_filtered
+
+    # pagination combined with both filters
+    ships = client.get("/movements", params={"item_id": item["id"], "kind": "ship"}).json()
+    s1 = client.get(
+        "/movements",
+        params={"item_id": item["id"], "kind": "ship", "limit": 1, "offset": 0},
+    ).json()
+    s2 = client.get(
+        "/movements",
+        params={"item_id": item["id"], "kind": "ship", "limit": 1, "offset": 1},
+    ).json()
+    assert s1 + s2 == ships
+
+
+def test_movements_unfiltered_still_returns_everything(client, mixed_movements):
+    r = client.get("/movements")
+    assert r.status_code == 200
+    assert len(r.json()) == len(mixed_movements)

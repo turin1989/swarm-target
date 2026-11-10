@@ -176,3 +176,57 @@ def test_get_missing_movement_returns_404(client):
     r = client.get("/movements/999")
     assert r.status_code == 404
     assert "not found" in r.json()["detail"]
+
+
+# --- merged m5-opt services use the typed exceptions too -------------------------
+
+
+def test_get_location_levels_missing_location_raises_not_found(client):
+    from inventory.db import connect
+
+    conn = connect(client.app.state.db_path)
+    try:
+        with pytest.raises(NotFoundError) as exc_info:
+            stock.get_location_levels(conn, 98765)
+    finally:
+        conn.close()
+    assert exc_info.value.status_code == 404
+    assert "not found" in str(exc_info.value)
+
+
+def test_reverse_adjust_movement_raises_validation_error(client, item, loc_a):
+    from inventory.db import connect
+
+    r = client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "adjust", "qty": 5, "to_location_id": loc_a["id"]},
+    )
+    assert r.status_code == 201, r.text
+    movement_id = r.json()["id"]
+
+    conn = connect(client.app.state.db_path)
+    try:
+        with pytest.raises(ValidationError) as exc_info:
+            stock.reverse_movement(conn, movement_id)
+    finally:
+        conn.close()
+    assert exc_info.value.status_code == 400
+    assert "cannot be reversed" in str(exc_info.value)
+
+
+def test_location_stock_missing_location_returns_404_via_handler(client):
+    r = client.get("/locations/98765/stock")
+    assert r.status_code == 404
+    assert "not found" in r.json()["detail"]
+
+
+def test_reverse_adjust_movement_returns_400_via_handler(client, item, loc_a):
+    r = client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "adjust", "qty": 5, "to_location_id": loc_a["id"]},
+    )
+    assert r.status_code == 201, r.text
+
+    r2 = client.post(f"/movements/{r.json()['id']}/reverse")
+    assert r2.status_code == 400
+    assert "cannot be reversed" in r2.json()["detail"]
