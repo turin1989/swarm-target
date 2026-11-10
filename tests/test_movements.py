@@ -562,3 +562,22 @@ def test_list_movements_no_filters_returns_all(client, mixed_movements):
     r = client.get("/movements")
     assert r.status_code == 200
     assert [m["id"] for m in r.json()] == [1, 2, 3, 4, 5, 6]
+
+
+def test_get_movement_by_id(client, item, loc_a):
+    created = _move(
+        client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"]
+    ).json()
+    r = client.get(f"/movements/{created['id']}")
+    assert r.status_code == 200
+    assert r.json() == created
+
+
+def test_get_movement_unknown_id_returns_404(client):
+    r = client.get("/movements/999")
+    assert r.status_code == 404
+    # The endpoint raises HTTPException(detail="movement 999 not found"); the
+    # app-wide handler renders that detail in the uniform error shape.
+    body = r.json()
+    assert body["error"]["code"] == "not_found"
+    assert body["error"]["message"] == "movement 999 not found"
