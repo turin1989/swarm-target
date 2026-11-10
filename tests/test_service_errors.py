@@ -69,7 +69,7 @@ def test_apply_movement_unknown_item_raises_not_found(conn):
     with pytest.raises(NotFoundError) as exc_info:
         stock.apply_movement(
             conn,
-            MovementCreate(item_id=999, kind="receive", qty=1, to_location_id=_loc_id(conn)),
+            MovementCreate(item_id=999, kind="receive", quantity=1, to_location_id=_loc_id(conn)),
         )
     assert exc_info.value.status_code == 404
 
@@ -78,7 +78,7 @@ def test_apply_movement_unknown_location_raises_not_found(conn):
     with pytest.raises(NotFoundError) as exc_info:
         stock.apply_movement(
             conn,
-            MovementCreate(item_id=_item_id(conn), kind="receive", qty=1, to_location_id=999),
+            MovementCreate(item_id=_item_id(conn), kind="receive", quantity=1, to_location_id=999),
         )
     assert exc_info.value.status_code == 404
 
@@ -86,7 +86,7 @@ def test_apply_movement_unknown_location_raises_not_found(conn):
 def test_apply_movement_missing_location_raises_validation_error(conn):
     with pytest.raises(ValidationError) as exc_info:
         stock.apply_movement(
-            conn, MovementCreate(item_id=_item_id(conn), kind="receive", qty=1)
+            conn, MovementCreate(item_id=_item_id(conn), kind="receive", quantity=1)
         )
     assert exc_info.value.status_code == 400
 
@@ -96,7 +96,7 @@ def test_apply_movement_insufficient_stock_raises_conflict(conn):
         stock.apply_movement(
             conn,
             MovementCreate(
-                item_id=_item_id(conn), kind="ship", qty=5, from_location_id=_loc_id(conn)
+                item_id=_item_id(conn), kind="ship", quantity=5, from_location_id=_loc_id(conn)
             ),
         )
     assert exc_info.value.status_code == 409
@@ -109,7 +109,7 @@ def test_apply_movement_inactive_item_raises_conflict(conn):
     with pytest.raises(ConflictError) as exc_info:
         stock.apply_movement(
             conn,
-            MovementCreate(item_id=item_id, kind="receive", qty=1, to_location_id=_loc_id(conn)),
+            MovementCreate(item_id=item_id, kind="receive", quantity=1, to_location_id=_loc_id(conn)),
         )
     assert exc_info.value.status_code == 409
     assert "inactive" in str(exc_info.value)
@@ -175,7 +175,7 @@ def test_movement_not_found_maps_to_404(client):
 
 def test_movement_missing_location_maps_to_400(client, item):
     r = client.post(
-        "/movements", json={"item_id": item["id"], "kind": "receive", "qty": 1}
+        "/movements", json={"item_id": item["id"], "kind": "receive", "quantity": 1}
     )
     assert r.status_code == 400
     _assert_error_shape(r.json(), "bad_request")
@@ -187,7 +187,7 @@ def test_movement_insufficient_stock_maps_to_409(client, item, loc_a):
         json={
             "item_id": item["id"],
             "kind": "ship",
-            "qty": 3,
+            "quantity": 3,
             "from_location_id": loc_a["id"],
         },
     )
@@ -201,7 +201,7 @@ def test_reverse_adjust_maps_to_400(client, item, loc_a):
         json={
             "item_id": item["id"],
             "kind": "adjust",
-            "qty": 4,
+            "quantity": 4,
             "to_location_id": loc_a["id"],
         },
     )

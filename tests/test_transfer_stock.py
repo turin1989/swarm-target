@@ -11,17 +11,17 @@ def _levels_by_location(client, item_id):
     r = client.get(f"/items/{item_id}/stock")
     assert r.status_code == 200, r.text
     body = r.json()
-    return body, {lvl["location_id"]: lvl["qty"] for lvl in body["levels"]}
+    return body, {lvl["location_id"]: lvl["quantity"] for lvl in body["levels"]}
 
 
 def test_transfer_debits_source_and_credits_destination(client, item, loc_a, loc_b):
-    _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", quantity=10, to_location_id=loc_a["id"])
 
     _move(
         client,
         item_id=item["id"],
         kind="transfer",
-        qty=2,
+        quantity=2,
         from_location_id=loc_a["id"],
         to_location_id=loc_b["id"],
     )
@@ -34,7 +34,7 @@ def test_transfer_debits_source_and_credits_destination(client, item, loc_a, loc
 
 
 def test_transfer_leaves_total_stock_unchanged(client, item, loc_a, loc_b):
-    _move(client, item_id=item["id"], kind="receive", qty=7, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", quantity=7, to_location_id=loc_a["id"])
     before, _ = _levels_by_location(client, item["id"])
     assert before["total"] == 7
 
@@ -42,7 +42,7 @@ def test_transfer_leaves_total_stock_unchanged(client, item, loc_a, loc_b):
         client,
         item_id=item["id"],
         kind="transfer",
-        qty=3,
+        quantity=3,
         from_location_id=loc_a["id"],
         to_location_id=loc_b["id"],
     )
@@ -54,13 +54,13 @@ def test_transfer_leaves_total_stock_unchanged(client, item, loc_a, loc_b):
 def test_item_stock_endpoint_reflects_both_locations_after_transfer(
     client, item, loc_a, loc_b
 ):
-    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", quantity=5, to_location_id=loc_a["id"])
 
     _move(
         client,
         item_id=item["id"],
         kind="transfer",
-        qty=2,
+        quantity=2,
         from_location_id=loc_a["id"],
         to_location_id=loc_b["id"],
     )
@@ -73,14 +73,14 @@ def test_item_stock_endpoint_reflects_both_locations_after_transfer(
 
 
 def test_repeated_transfers_accumulate_correctly(client, item, loc_a, loc_b):
-    _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", quantity=10, to_location_id=loc_a["id"])
 
     for _ in range(3):
         _move(
             client,
             item_id=item["id"],
             kind="transfer",
-            qty=2,
+            quantity=2,
             from_location_id=loc_a["id"],
             to_location_id=loc_b["id"],
         )
@@ -92,12 +92,12 @@ def test_repeated_transfers_accumulate_correctly(client, item, loc_a, loc_b):
 
 
 def test_transfer_back_restores_original_distribution(client, item, loc_a, loc_b):
-    _move(client, item_id=item["id"], kind="receive", qty=6, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", quantity=6, to_location_id=loc_a["id"])
     _move(
         client,
         item_id=item["id"],
         kind="transfer",
-        qty=4,
+        quantity=4,
         from_location_id=loc_a["id"],
         to_location_id=loc_b["id"],
     )
@@ -105,7 +105,7 @@ def test_transfer_back_restores_original_distribution(client, item, loc_a, loc_b
         client,
         item_id=item["id"],
         kind="transfer",
-        qty=4,
+        quantity=4,
         from_location_id=loc_b["id"],
         to_location_id=loc_a["id"],
     )

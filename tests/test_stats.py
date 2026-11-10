@@ -29,8 +29,8 @@ def test_stats_counts_entities(client, item, loc_a, loc_b):
     r = client.put(f"/items/{other.json()['id']}", json={"active": False})
     assert r.status_code == 200
 
-    _move(client, item_id=item["id"], kind="receive", qty=7, to_location_id=loc_a["id"])
-    _move(client, item_id=item["id"], kind="receive", qty=3, to_location_id=loc_b["id"])
+    _move(client, item_id=item["id"], kind="receive", quantity=7, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", quantity=3, to_location_id=loc_b["id"])
 
     r = client.get("/stats")
     assert r.status_code == 200
@@ -44,16 +44,16 @@ def test_stats_counts_entities(client, item, loc_a, loc_b):
 
 
 def test_stats_total_units_sums_all_stock_levels(client, item, loc_a, loc_b):
-    _move(client, item_id=item["id"], kind="receive", qty=8, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", quantity=8, to_location_id=loc_a["id"])
     _move(
         client,
         item_id=item["id"],
         kind="transfer",
-        qty=3,
+        quantity=3,
         from_location_id=loc_a["id"],
         to_location_id=loc_b["id"],
     )
-    _move(client, item_id=item["id"], kind="ship", qty=2, from_location_id=loc_b["id"])
+    _move(client, item_id=item["id"], kind="ship", quantity=2, from_location_id=loc_b["id"])
 
     r = client.get("/stats")
     assert r.status_code == 200

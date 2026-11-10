@@ -59,7 +59,7 @@ def test_422_http_exception_shape(client):
 def test_400_bad_request_shape(client, item):
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 1},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 1},
     )
     assert r.status_code == 400
     _assert_error_shape(r.json(), "bad_request")
@@ -69,7 +69,7 @@ def test_400_bad_request_shape(client, item):
 def test_404_movement_unknown_location_shape(client, item):
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 1, "to_location_id": 123},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 1, "to_location_id": 123},
     )
     assert r.status_code == 404
     _assert_error_shape(r.json(), "not_found")
