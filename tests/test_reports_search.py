@@ -175,3 +175,22 @@ def test_search_case_insensitive_keeps_ordering_and_limit(client):
 def test_search_requires_query(client):
     assert client.get("/search").status_code == 422
     assert client.get("/search", params={"q": ""}).status_code == 422
+
+
+def test_search_trims_surrounding_whitespace(client):
+    _seed(client, "BOLT-M8", "Hex Bolt", reorder=0, qty=0, loc=None)
+    trimmed = client.get("/search", params={"q": "bolt"}).json()
+    padded = client.get("/search", params={"q": "  bolt "})
+    assert padded.status_code == 200
+    assert padded.json() == trimmed
+    assert [i["sku"] for i in padded.json()] == ["BOLT-M8"]
+
+
+def test_search_rejects_query_longer_than_100_chars(client):
+    assert client.get("/search", params={"q": "x" * 100}).status_code == 200
+    assert client.get("/search", params={"q": "x" * 101}).status_code == 422
+
+
+def test_search_rejects_whitespace_only_query(client):
+    assert client.get("/search", params={"q": "   "}).status_code == 422
+    assert client.get("/search", params={"q": " "}).status_code == 422
