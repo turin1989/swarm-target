@@ -34,6 +34,27 @@ def low_stock(
     return [LowStockEntry(**dict(r)) for r in rows]
 
 
+def stats(conn: sqlite3.Connection) -> dict:
+    """Entity counts and total stock units."""
+    row = conn.execute(
+        """
+        SELECT
+            (SELECT COUNT(*) FROM items) AS items,
+            (SELECT COUNT(*) FROM items WHERE active = 1) AS active_items,
+            (SELECT COUNT(*) FROM locations) AS locations,
+            (SELECT COUNT(*) FROM movements) AS movements,
+            (SELECT COALESCE(SUM(qty), 0) FROM stock_levels) AS total_units
+        """
+    ).fetchone()
+    return {
+        "items": row["items"],
+        "active_items": row["active_items"],
+        "locations": row["locations"],
+        "movements": row["movements"],
+        "total_units": row["total_units"],
+    }
+
+
 def movements_summary(conn: sqlite3.Connection) -> dict[str, dict[str, int]]:
     """Count and total quantity of movements grouped by kind.
 
