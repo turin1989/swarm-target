@@ -1,5 +1,60 @@
 """Tests for PUT /locations/{id} (rename a location)."""
 
+import sqlite3
+
+from inventory.db import init_db
+
+
+# --- POST /locations duplicate codes (T007) ------------------------------------
+
+
+def test_create_location_duplicate_code_returns_409(client, loc_a):
+    r = client.post("/locations", json={"code": loc_a["code"], "name": "Another"})
+    assert r.status_code == 409, r.text
+    # the error detail mentions the duplicate code
+    assert loc_a["code"] in r.json()["detail"]
+
+
+def test_create_location_duplicate_code_does_not_create_row(client, loc_a):
+    client.post("/locations", json={"code": loc_a["code"], "name": "Another"})
+    codes = [loc["code"] for loc in client.get("/locations").json()]
+    assert codes.count(loc_a["code"]) == 1
+
+
+def test_create_location_distinct_codes_still_allowed(client, loc_a):
+    r = client.post("/locations", json={"code": "WH-Z", "name": "Warehouse Z"})
+    assert r.status_code == 201, r.text
+
+
+def test_locations_code_column_is_unique_in_schema(tmp_path):
+    db_path = str(tmp_path / "schema.db")
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    try:
+        # a unique index on locations(code) must exist
+        indexes = conn.execute("PRAGMA index_list('locations')").fetchall()
+        unique_columns = set()
+        for _, index_name, is_unique, *_ in indexes:
+            if is_unique:
+                cols = [
+                    row[2]
+                    for row in conn.execute(f"PRAGMA index_info('{index_name}')")
+                ]
+                if len(cols) == 1:
+                    unique_columns.add(cols[0])
+        assert "code" in unique_columns
+
+        # and the constraint is enforced at the database level
+        conn.execute("INSERT INTO locations (code, name) VALUES ('X', 'one')")
+        try:
+            conn.execute("INSERT INTO locations (code, name) VALUES ('X', 'two')")
+        except sqlite3.IntegrityError:
+            pass
+        else:
+            raise AssertionError("duplicate location code was accepted by the schema")
+    finally:
+        conn.close()
+
 
 def test_update_location_name_only(client, loc_a):
     r = client.put(f"/locations/{loc_a['id']}", json={"name": "Main Warehouse"})
