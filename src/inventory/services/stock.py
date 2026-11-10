@@ -144,17 +144,22 @@ def get_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
 def list_movements(
     conn: sqlite3.Connection,
     item_id: int | None = None,
+    kind: str | None = None,
     limit: int = 100,
     offset: int = 0,
 ) -> list[Movement]:
-    """List movements ordered by id, optionally filtered to a single item."""
+    """List movements ordered by id, optionally filtered by item and/or kind."""
+    clauses: list[str] = []
+    params: list[object] = []
     if item_id is not None:
-        rows = conn.execute(
-            "SELECT * FROM movements WHERE item_id = ? ORDER BY id LIMIT ? OFFSET ?",
-            (item_id, limit, offset),
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            "SELECT * FROM movements ORDER BY id LIMIT ? OFFSET ?", (limit, offset)
-        ).fetchall()
+        clauses.append("item_id = ?")
+        params.append(item_id)
+    if kind is not None:
+        clauses.append("kind = ?")
+        params.append(kind)
+    where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    rows = conn.execute(
+        f"SELECT * FROM movements{where} ORDER BY id LIMIT ? OFFSET ?",
+        (*params, limit, offset),
+    ).fetchall()
     return [_row_to_movement(r) for r in rows]
