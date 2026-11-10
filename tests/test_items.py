@@ -187,3 +187,40 @@ def test_created_at_ignored_on_put(client, item):
     assert r.json()["created_at"] == item["created_at"]
     # Still unchanged on a fresh read
     assert client.get(f"/items/{item['id']}").json()["created_at"] == item["created_at"]
+
+
+# --- GET /items/by-sku/{sku} (T011) ---------------------------------------------
+
+
+def test_get_item_by_sku_returns_same_shape_as_get_by_id(client, item):
+    r = client.get(f"/items/by-sku/{item['sku']}")
+    assert r.status_code == 200
+    assert r.json() == client.get(f"/items/{item['id']}").json()
+    assert r.json() == item
+
+
+def test_get_item_by_sku_exact_match_only(client, item):
+    # partial / case-different skus do not match
+    assert client.get("/items/by-sku/WIDGET").status_code == 404
+    assert client.get("/items/by-sku/widget-1").status_code == 404
+
+
+def test_get_item_by_sku_unknown_404_with_detail(client):
+    r = client.get("/items/by-sku/NOPE-99")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "sku NOPE-99 not found"
+
+
+def test_get_item_by_sku_does_not_shadow_get_item_by_id(client, item):
+    # numeric id lookups still work
+    r = client.get(f"/items/{item['id']}")
+    assert r.status_code == 200
+    assert r.json()["id"] == item["id"]
+    # and a sku that collides with sub-resource names still resolves via by-sku
+    client.post("/items", json={"sku": "stock", "name": "Stocky"})
+    r = client.get("/items/by-sku/stock")
+    assert r.status_code == 200
+    assert r.json()["sku"] == "stock"
+    # item sub-resources remain reachable
+    assert client.get(f"/items/{item['id']}/stock").status_code == 200
+    assert client.get(f"/items/{item['id']}/movements").status_code == 200
