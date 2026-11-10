@@ -200,3 +200,17 @@ def test_get_item_by_sku_does_not_shadow_get_by_id(client, item):
     assert r.json()["id"] == item["id"]
     # and non-integer single-segment paths still 422 against the id route
     assert client.get("/items/not-an-int").status_code == 422
+
+
+def test_delete_unknown_item_404(client):
+    r = client.delete("/items/9999")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "item 9999 not found"
+
+
+def test_delete_item_twice_second_404(client, item):
+    item_id = item["id"]
+    assert client.delete(f"/items/{item_id}").status_code == 204
+    r = client.delete(f"/items/{item_id}")
+    assert r.status_code == 404
+    assert r.json()["detail"] == f"item {item_id} not found"
