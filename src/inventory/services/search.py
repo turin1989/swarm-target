@@ -6,12 +6,13 @@ from inventory.models import Item
 
 
 def search_items(conn: sqlite3.Connection, q: str, limit: int = 50) -> list[Item]:
-    """Substring match on sku or name."""
-    pattern = f"*{q}*"
+    """Case-insensitive substring match on sku or name."""
+    escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    pattern = f"%{escaped}%"
     rows = conn.execute(
-        """
+        r"""
         SELECT * FROM items
-        WHERE sku GLOB ? OR name GLOB ?
+        WHERE sku LIKE ? ESCAPE '\' OR name LIKE ? ESCAPE '\'
         ORDER BY name
         LIMIT ?
         """,
