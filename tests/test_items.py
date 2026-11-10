@@ -215,3 +215,36 @@ def test_get_item_exposes_reorder_level_not_reorder_point(client, item):
     body = client.get(f"/items/{item['id']}").json()
     assert body["reorder_level"] == 5
     assert "reorder_point" not in body
+
+
+def test_get_item_by_sku(client, item):
+    r = client.get(f"/items/by-sku/{item['sku']}")
+    assert r.status_code == 200
+    assert r.json() == item
+
+
+def test_get_item_by_sku_same_shape_as_get_by_id(client, item):
+    by_sku = client.get(f"/items/by-sku/{item['sku']}").json()
+    by_id = client.get(f"/items/{item['id']}").json()
+    assert by_sku == by_id
+
+
+def test_get_item_by_sku_exact_match_only(client, item):
+    # prefixes / near-misses must not match
+    assert client.get("/items/by-sku/WIDGET").status_code == 404
+    assert client.get("/items/by-sku/widget-1").status_code == 404
+
+
+def test_get_item_by_sku_unknown_404_detail(client):
+    r = client.get("/items/by-sku/NOPE-99")
+    assert r.status_code == 404
+    body = r.json()
+    assert body["error"]["code"] == "not_found"
+    assert body["error"]["message"] == "sku NOPE-99 not found"
+
+
+def test_get_item_by_sku_does_not_shadow_get_by_id(client, item):
+    # numeric id lookup still works alongside the by-sku route
+    r = client.get(f"/items/{item['id']}")
+    assert r.status_code == 200
+    assert r.json()["id"] == item["id"]
