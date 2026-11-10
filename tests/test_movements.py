@@ -209,6 +209,7 @@ def test_apply_movement_rejects_non_positive_qty_directly():
     Pydantic validation layer is bypassed."""
     from inventory.models import MovementCreate
     from inventory.services import stock
+    from inventory.services.errors import ValidationError
 
     bad = MovementCreate.model_construct(
         item_id=1,
@@ -218,7 +219,7 @@ def test_apply_movement_rejects_non_positive_qty_directly():
         to_location_id=1,
         note="",
     )
-    with pytest.raises(stock.StockError) as exc_info:
+    with pytest.raises(ValidationError) as exc_info:
         stock.apply_movement(conn=_fake_conn(), m=bad)
     assert exc_info.value.status_code == 422
 

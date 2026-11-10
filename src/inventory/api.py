@@ -4,7 +4,8 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import JSONResponse
 
 from inventory.db import get_db
 from inventory.models import (
@@ -20,8 +21,19 @@ from inventory.models import (
     MovementCreate,
 )
 from inventory.services import reports, search, stock
+from inventory.services.errors import InventoryError
 
 router = APIRouter()
+
+
+def inventory_error_handler(request: Request, exc: InventoryError) -> JSONResponse:
+    """Translate service-layer errors into HTTP responses in one place.
+
+    Registered on the application (see ``inventory.main.create_app``) so no
+    route needs its own try/except around service calls. The response body
+    matches FastAPI's ``HTTPException`` shape.
+    """
+    return JSONResponse(status_code=exc.status_code, content={"detail": str(exc)})
 
 
 def _utc_now_iso() -> str:
@@ -231,18 +243,12 @@ def delete_location(location_id: int, conn: sqlite3.Connection = Depends(get_db)
 def create_movement(
     payload: MovementCreate, conn: sqlite3.Connection = Depends(get_db)
 ) -> Movement:
-    try:
-        return stock.apply_movement(conn, payload)
-    except stock.StockError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    return stock.apply_movement(conn, payload)
 
 
 @router.get("/movements/{movement_id}", response_model=Movement)
 def get_movement(movement_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Movement:
-    try:
-        return stock.get_movement(conn, movement_id)
-    except stock.StockError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    return stock.get_movement(conn, movement_id)
 
 
 @router.get("/movements", response_model=list[Movement])
