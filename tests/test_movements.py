@@ -363,3 +363,83 @@ def test_item_movements_unknown_item_404(client):
 def test_item_movements_invalid_pagination_422(client, item):
     assert client.get(f"/items/{item['id']}/movements", params={"limit": 0}).status_code == 422
     assert client.get(f"/items/{item['id']}/movements", params={"offset": -1}).status_code == 422
+
+
+# --- optional reference on movements (T043) ------------------------------------
+
+
+def test_movement_reference_stored_and_returned_on_post(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=3,
+        to_location_id=loc_a["id"],
+        reference="PO-12345",
+    )
+    assert r.status_code == 201
+    assert r.json()["reference"] == "PO-12345"
+
+
+def test_movement_reference_returned_on_get(client, item, loc_a):
+    _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=3,
+        to_location_id=loc_a["id"],
+        reference="PO-99",
+    )
+    movements = client.get("/movements").json()
+    assert len(movements) == 1
+    assert movements[0]["reference"] == "PO-99"
+    # also on per-item history
+    hist = client.get(f"/items/{item['id']}/movements").json()
+    assert hist[0]["reference"] == "PO-99"
+
+
+def test_movement_reference_defaults_to_none(client, item, loc_a):
+    r = _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
+    assert r.status_code == 201
+    assert r.json()["reference"] is None
+    assert client.get("/movements").json()[0]["reference"] is None
+
+
+def test_movement_reference_explicit_null_allowed(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=1,
+        to_location_id=loc_a["id"],
+        reference=None,
+    )
+    assert r.status_code == 201
+    assert r.json()["reference"] is None
+
+
+def test_movement_reference_max_length_allowed(client, item, loc_a):
+    ref = "R" * 64
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=1,
+        to_location_id=loc_a["id"],
+        reference=ref,
+    )
+    assert r.status_code == 201
+    assert r.json()["reference"] == ref
+
+
+def test_movement_reference_too_long_422(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=1,
+        to_location_id=loc_a["id"],
+        reference="R" * 65,
+    )
+    assert r.status_code == 422
+    assert client.get("/movements").json() == []
