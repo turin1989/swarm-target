@@ -132,6 +132,33 @@ def test_inventory_value(client, loc_a):
     assert client.get("/reports/value").json() == {"value": 16.0}
 
 
+def test_inventory_value_scoped_to_location(client, loc_a, loc_b):
+    item = _seed(client, "V1", "v1", reorder=0, qty=3, loc=loc_a, price=2.0)
+    _seed(client, "V2", "v2", reorder=0, qty=1, loc=loc_b, price=10.0)
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "qty": 2, "to_location_id": loc_b["id"]},
+    )
+    r = client.get("/reports/value", params={"location_id": loc_a["id"]})
+    assert r.status_code == 200
+    assert r.json() == {"value": 6.0}
+    assert client.get("/reports/value", params={"location_id": loc_b["id"]}).json() == {
+        "value": 14.0
+    }
+
+
+def test_inventory_value_unknown_location_returns_404(client, loc_a):
+    _seed(client, "V404", "v404", reorder=0, qty=1, loc=loc_a, price=5.0)
+    r = client.get("/reports/value", params={"location_id": 9999})
+    assert r.status_code == 404
+
+
+def test_inventory_value_without_location_param_unchanged(client, loc_a, loc_b):
+    _seed(client, "VG1", "vg1", reorder=0, qty=3, loc=loc_a, price=2.0)
+    _seed(client, "VG2", "vg2", reorder=0, qty=1, loc=loc_b, price=10.0)
+    assert client.get("/reports/value").json() == {"value": 16.0}
+
+
 def test_search_by_name_substring(client):
     client.post("/items", json={"sku": "S1", "name": "Blue Widget"})
     client.post("/items", json={"sku": "S2", "name": "Red Gadget"})
