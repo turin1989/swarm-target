@@ -64,6 +64,7 @@ class MovementCreate(BaseModel):
     from_location_id: Optional[int] = None
     to_location_id: Optional[int] = None
     note: str = Field(default="", max_length=500)
+    reference: Optional[str] = Field(default=None, max_length=64)
 
 
 class Movement(BaseModel):
@@ -74,6 +75,7 @@ class Movement(BaseModel):
     from_location_id: Optional[int]
     to_location_id: Optional[int]
     note: str
+    reference: Optional[str] = None
 
 
 class StockLevel(BaseModel):

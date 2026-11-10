@@ -296,6 +296,75 @@ def test_movement_note_too_long_422(client, item, loc_a):
     assert r.status_code == 422
 
 
+# --- optional reference --------------------------------------------------------
+
+
+def test_movement_reference_stored_and_returned(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=5,
+        to_location_id=loc_a["id"],
+        reference="PO-12345",
+    )
+    assert r.status_code == 201
+    assert r.json()["reference"] == "PO-12345"
+
+    # returned on GET as well
+    movements = client.get("/movements").json()
+    assert movements[0]["reference"] == "PO-12345"
+    per_item = client.get(f"/items/{item['id']}/movements").json()
+    assert per_item[0]["reference"] == "PO-12345"
+
+
+def test_movement_reference_defaults_to_null(client, item, loc_a):
+    r = _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
+    assert r.status_code == 201
+    assert r.json()["reference"] is None
+    assert client.get("/movements").json()[0]["reference"] is None
+
+
+def test_movement_reference_explicit_null_ok(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=1,
+        to_location_id=loc_a["id"],
+        reference=None,
+    )
+    assert r.status_code == 201
+    assert r.json()["reference"] is None
+
+
+def test_movement_reference_max_length_ok(client, item, loc_a):
+    ref = "R" * 64
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=1,
+        to_location_id=loc_a["id"],
+        reference=ref,
+    )
+    assert r.status_code == 201
+    assert r.json()["reference"] == ref
+
+
+def test_movement_reference_too_long_422(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=1,
+        to_location_id=loc_a["id"],
+        reference="R" * 65,
+    )
+    assert r.status_code == 422
+    assert client.get("/movements").json() == []
+
+
 def test_movement_note_max_length_ok(client, item, loc_a):
     note = "x" * 500
     r = _move(
