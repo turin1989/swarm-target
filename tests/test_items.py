@@ -667,3 +667,39 @@ def test_get_item_by_sku_with_numeric_looking_sku(client):
     r = client.get("/items/by-sku/12345")
     assert r.status_code == 200
     assert r.json() == created
+
+
+# --- T008: unit_price must be non-negative ---------------------------------------
+
+
+def test_create_item_negative_unit_price_422(client):
+    r = client.post("/items", json={"sku": "NEGP-1", "name": "Neg Price", "unit_price": -0.01})
+    assert r.status_code == 422
+    # nothing was created
+    assert client.get("/items").json()["items"] == []
+
+
+def test_create_item_zero_unit_price_ok(client):
+    r = client.post("/items", json={"sku": "ZEROP-1", "name": "Zero Price", "unit_price": 0})
+    assert r.status_code == 201
+    assert r.json()["unit_price"] == 0
+
+
+def test_update_item_negative_unit_price_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"unit_price": -5.0})
+    assert r.status_code == 422
+    # item unchanged
+    assert client.get(f"/items/{item['id']}").json() == item
+
+
+def test_update_item_zero_unit_price_ok(client, item):
+    r = client.put(f"/items/{item['id']}", json={"unit_price": 0})
+    assert r.status_code == 200
+    assert r.json()["unit_price"] == 0
+    assert client.get(f"/items/{item['id']}").json()["unit_price"] == 0
+
+
+def test_update_item_positive_unit_price_still_ok(client, item):
+    r = client.put(f"/items/{item['id']}", json={"unit_price": 3.75})
+    assert r.status_code == 200
+    assert r.json()["unit_price"] == 3.75
