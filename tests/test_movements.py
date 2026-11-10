@@ -77,6 +77,60 @@ def test_transfer_is_recorded(client, item, loc_a, loc_b):
     assert movements[1]["kind"] == "transfer"
 
 
+def test_transfer_moves_stock_between_locations(client, item, loc_a, loc_b):
+    """Transfer of N decreases `from` by N and increases `to` by N (T003)."""
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=2,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    assert r.status_code == 201
+
+    s = client.get(f"/items/{item['id']}/stock").json()
+    levels = {lvl["location_id"]: lvl["qty"] for lvl in s["levels"]}
+    assert levels[loc_a["id"]] == 3
+    assert levels[loc_b["id"]] == 2
+
+
+def test_transfer_preserves_total_stock(client, item, loc_a, loc_b):
+    """The item's total stock is unchanged by a transfer (T003)."""
+    _move(client, item_id=item["id"], kind="receive", qty=9, to_location_id=loc_a["id"])
+    before = client.get(f"/items/{item['id']}/stock").json()["total"]
+    _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=4,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    after = client.get(f"/items/{item['id']}/stock").json()["total"]
+    assert before == after == 9
+
+
+def test_transfer_reflected_in_stock_endpoint_for_both_locations(client, item, loc_a, loc_b):
+    """GET /items/{id}/stock shows a level row for both locations after a transfer (T003)."""
+    _move(client, item_id=item["id"], kind="receive", qty=6, to_location_id=loc_a["id"])
+    _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=6,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 6
+    assert s["levels"] == [
+        {"item_id": item["id"], "location_id": loc_a["id"], "qty": 0},
+        {"item_id": item["id"], "location_id": loc_b["id"], "qty": 6},
+    ]
+
+
 def test_transfer_to_same_location_rejected(client, item, loc_a):
     _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
     before = client.get(f"/items/{item['id']}/stock").json()
