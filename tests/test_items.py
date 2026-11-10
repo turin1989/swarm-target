@@ -122,7 +122,9 @@ def test_duplicate_barcode_conflicts(client):
     assert r.status_code == 201
     r = client.post("/items", json={"sku": "BC-2", "name": "Two", "barcode": "DUP-CODE"})
     assert r.status_code == 409
-    assert "barcode" in r.json()["detail"]
+    body = r.json()
+    assert body["error"]["code"] == "conflict"
+    assert "barcode" in body["error"]["message"]
 
 
 def test_multiple_items_without_barcode_allowed(client):
@@ -189,3 +191,44 @@ def test_update_item_description_at_limit_ok(client, item):
     r = client.put(f"/items/{item['id']}", json={"description": "x" * 2000})
     assert r.status_code == 200
     assert r.json()["description"] == "x" * 2000
+
+
+def test_create_item_negative_reorder_point_422(client):
+    r = client.post(
+        "/items",
+        json={"sku": "NEG-1", "name": "Neg", "reorder_point": -1},
+    )
+    assert r.status_code == 422
+
+
+def test_create_item_zero_reorder_point_ok(client):
+    r = client.post(
+        "/items",
+        json={"sku": "ZERO-1", "name": "Zero", "reorder_point": 0},
+    )
+    assert r.status_code == 201
+    assert r.json()["reorder_point"] == 0
+
+
+def test_create_item_with_barcode_and_negative_reorder_point_422(client):
+    # Both merged features must coexist: barcode is accepted as a field,
+    # but a negative reorder_point is still rejected with 422.
+    r = client.post(
+        "/items",
+        json={"sku": "BC-NEG", "name": "Neg", "barcode": "BC-123", "reorder_point": -1},
+    )
+    assert r.status_code == 422
+    assert r.json()["error"]["code"] == "validation_error"
+
+
+def test_update_item_negative_reorder_point_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": -5})
+    assert r.status_code == 422
+    # item unchanged
+    assert client.get(f"/items/{item['id']}").json() == item
+
+
+def test_update_item_nonnegative_reorder_point_not_rejected(client, item):
+    # Non-negative reorder_point values must pass validation (no 422).
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": 7})
+    assert r.status_code == 200
