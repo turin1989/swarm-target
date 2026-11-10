@@ -1,6 +1,7 @@
 """Stock level bookkeeping and movement application."""
 
 import sqlite3
+from datetime import datetime, timezone
 
 from inventory.models import Movement, MovementCreate, StockLevel
 
@@ -60,6 +61,16 @@ def _adjust(conn: sqlite3.Connection, item_id: int, location_id: int, delta: int
     )
 
 
+def _set_level(conn: sqlite3.Connection, item_id: int, location_id: int, qty: int) -> None:
+    conn.execute(
+        """
+        INSERT INTO stock_levels (item_id, location_id, qty) VALUES (?, ?, ?)
+        ON CONFLICT(item_id, location_id) DO UPDATE SET qty = excluded.qty
+        """,
+        (item_id, location_id, qty),
+    )
+
+
 def _require_available(
     conn: sqlite3.Connection, item_id: int, location_id: int, qty: int
 ) -> None:
@@ -85,9 +96,11 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
     if m.qty <= 0:
         raise StockError("qty must be a positive integer", status_code=422)
 
-    item = conn.execute("SELECT id FROM items WHERE id = ?", (m.item_id,)).fetchone()
+    item = conn.execute("SELECT id, active FROM items WHERE id = ?", (m.item_id,)).fetchone()
     if item is None:
         raise StockError(f"item {m.item_id} not found", status_code=404)
+    if not item["active"]:
+        raise StockError(f"item {m.item_id} is inactive", status_code=409)
 
     if m.kind == "receive":
         to_id = _require_location(conn, m.to_location_id, "to_location_id")
@@ -104,15 +117,31 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
         _require_available(conn, m.item_id, from_id, m.qty)
         _adjust(conn, m.item_id, from_id, -m.qty)
         _adjust(conn, m.item_id, to_id, m.qty)
+    elif m.kind == "adjust":
+        if m.from_location_id is not None:
+            raise StockError("from_location_id must be null for adjust movements")
+        to_id = _require_location(conn, m.to_location_id, "to_location_id")
+        _set_level(conn, m.item_id, to_id, m.qty)
     else:  # pragma: no cover - guarded by the Literal type
         raise StockError(f"unknown movement kind {m.kind!r}")
 
+    created_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     cur = conn.execute(
         """
-        INSERT INTO movements (item_id, kind, qty, from_location_id, to_location_id, note)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO movements
+            (item_id, kind, qty, from_location_id, to_location_id, note, reference, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (m.item_id, m.kind, m.qty, m.from_location_id, m.to_location_id, m.note),
+        (
+            m.item_id,
+            m.kind,
+            m.qty,
+            m.from_location_id,
+            m.to_location_id,
+            m.note,
+            m.reference,
+            created_at,
+        ),
     )
     return get_movement(conn, cur.lastrowid)
 
@@ -120,6 +149,9 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
 def reverse_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
     """Create and apply a new movement that undoes an existing one."""
     original = get_movement(conn, movement_id)
+
+    if original.kind == "adjust":
+        raise StockError("adjust movements cannot be reversed")
 
     if original.kind == "receive":
         kind = "ship"

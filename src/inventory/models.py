@@ -4,7 +4,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-MovementKind = Literal["receive", "ship", "transfer"]
+MovementKind = Literal["receive", "ship", "transfer", "adjust"]
 
 
 class _RejectsReorderPoint(BaseModel):
@@ -23,7 +23,7 @@ class ItemCreate(_RejectsReorderPoint):
     name: str = Field(..., min_length=1, max_length=200)
     description: str = Field("", max_length=2000)
     unit_price: float = Field(0.0, ge=0)
-    reorder_level: int = 0
+    reorder_level: int = Field(0, ge=0)
 
     @field_validator("sku")
     @classmethod
@@ -38,7 +38,7 @@ class ItemUpdate(_RejectsReorderPoint):
     name: Optional[str] = None
     description: Optional[str] = Field(None, max_length=2000)
     unit_price: Optional[float] = Field(None, ge=0)
-    reorder_level: Optional[int] = None
+    reorder_level: Optional[int] = Field(None, ge=0)
     active: Optional[bool] = None
 
 
@@ -84,6 +84,7 @@ class MovementCreate(BaseModel):
     from_location_id: Optional[int] = None
     to_location_id: Optional[int] = None
     note: str = Field("", max_length=500)
+    reference: Optional[str] = Field(None, max_length=64)
 
 
 class Movement(BaseModel):
@@ -94,6 +95,8 @@ class Movement(BaseModel):
     from_location_id: Optional[int]
     to_location_id: Optional[int]
     note: str
+    reference: Optional[str] = None
+    created_at: str
 
 
 class StockLevel(BaseModel):

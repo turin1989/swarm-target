@@ -84,6 +84,61 @@ def test_low_stock_shortfall_never_negative(client, loc_a):
     assert all(e["shortfall"] >= 0 for e in entries)
 
 
+def test_low_stock_scoped_to_location_counts_only_that_location(client, loc_a, loc_b):
+    # 2 units at A + 10 at B: fine overall, but low when scoped to A.
+    item = _seed(client, "SPLIT", "Split", reorder=5, qty=2, loc=loc_a)
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "qty": 10, "to_location_id": loc_b["id"]},
+    )
+    # Plenty at A: never low when scoped to A.
+    _seed(client, "OK-A", "Fine at A", reorder=5, qty=10, loc=loc_a)
+
+    scoped = client.get("/reports/low-stock", params={"location_id": loc_a["id"]})
+    assert scoped.status_code == 200
+    entries = scoped.json()
+    assert [e["sku"] for e in entries] == ["SPLIT"]
+    assert entries[0]["total_qty"] == 2  # only stock at A counted
+    assert entries[0]["shortfall"] == 3
+
+    # Scoped to B, SPLIT has 10 units and is not low (OK-A has none at B, so it is).
+    skus_at_b = [
+        e["sku"]
+        for e in client.get("/reports/low-stock", params={"location_id": loc_b["id"]}).json()
+    ]
+    assert "SPLIT" not in skus_at_b
+    assert skus_at_b == ["OK-A"]
+
+
+def test_low_stock_scoped_location_with_no_stock_counts_zero(client, loc_a, loc_b):
+    _seed(client, "ONLY-A", "Only at A", reorder=5, qty=10, loc=loc_a)
+    entries = client.get("/reports/low-stock", params={"location_id": loc_b["id"]}).json()
+    assert [e["sku"] for e in entries] == ["ONLY-A"]
+    assert entries[0]["total_qty"] == 0
+    assert entries[0]["shortfall"] == 5
+
+
+def test_low_stock_unknown_location_returns_404(client, loc_a):
+    _seed(client, "LOW", "Low", reorder=5, qty=2, loc=loc_a)
+    r = client.get("/reports/low-stock", params={"location_id": 999})
+    assert r.status_code == 404
+
+
+def test_low_stock_without_location_param_unchanged(client, loc_a, loc_b):
+    # Totals are still summed across all locations without the parameter.
+    item = _seed(client, "SPLIT", "Split", reorder=5, qty=2, loc=loc_a)
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "qty": 10, "to_location_id": loc_b["id"]},
+    )
+    _seed(client, "LOW", "Low", reorder=5, qty=1, loc=loc_a)
+    r = client.get("/reports/low-stock")
+    assert r.status_code == 200
+    entries = r.json()
+    assert [e["sku"] for e in entries] == ["LOW"]
+    assert entries[0]["total_qty"] == 1
+
+
 def test_inventory_value(client, loc_a):
     _seed(client, "P1", "p1", reorder=0, qty=3, loc=loc_a, price=2.0)
     _seed(client, "P2", "p2", reorder=0, qty=1, loc=loc_a, price=10.0)
@@ -167,6 +222,29 @@ def test_search_sorted_by_name_and_limited(client):
 def test_search_requires_query(client):
     assert client.get("/search").status_code == 422
     assert client.get("/search", params={"q": ""}).status_code == 422
+
+
+def test_search_trims_leading_and_trailing_whitespace(client):
+    client.post("/items", json={"sku": "BOLT-M8", "name": "Bolt"})
+    client.post("/items", json={"sku": "NUT-M8", "name": "Nut"})
+    r = client.get("/search", params={"q": "  bolt "})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["BOLT-M8"]
+    # behaves exactly like the already-trimmed query
+    assert r.json() == client.get("/search", params={"q": "bolt"}).json()
+
+
+def test_search_query_longer_than_100_chars_returns_422(client):
+    client.post("/items", json={"sku": "S1", "name": "Bolt"})
+    assert client.get("/search", params={"q": "x" * 101}).status_code == 422
+    # exactly 100 characters is still accepted
+    assert client.get("/search", params={"q": "x" * 100}).status_code == 200
+
+
+def test_search_whitespace_only_query_returns_422(client):
+    client.post("/items", json={"sku": "S1", "name": "Bolt"})
+    for q in (" ", "   ", "\t", " \t "):
+        assert client.get("/search", params={"q": q}).status_code == 422, repr(q)
 
 
 def test_search_by_description_substring(client):

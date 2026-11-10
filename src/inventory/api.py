@@ -49,15 +49,20 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
 def list_items(
     response: Response,
     active: Optional[bool] = None,
+    sku: Optional[str] = None,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     conn: sqlite3.Connection = Depends(get_db),
 ) -> ItemPage:
-    where = ""
+    conditions: list[str] = []
     where_params: list = []
     if active is not None:
-        where = " WHERE active = ?"
+        conditions.append("active = ?")
         where_params.append(int(active))
+    if sku is not None:
+        conditions.append("sku = ?")
+        where_params.append(sku)
+    where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
     total = conn.execute(f"SELECT COUNT(*) FROM items{where}", where_params).fetchone()[0]
     response.headers["X-Total-Count"] = str(total)
     rows = conn.execute(
@@ -269,8 +274,16 @@ def get_movement(movement_id: int, conn: sqlite3.Connection = Depends(get_db)) -
 
 
 @router.get("/reports/low-stock", response_model=list[LowStockEntry])
-def low_stock_report(conn: sqlite3.Connection = Depends(get_db)) -> list[LowStockEntry]:
-    return reports.low_stock(conn)
+def low_stock_report(
+    location_id: Optional[int] = None, conn: sqlite3.Connection = Depends(get_db)
+) -> list[LowStockEntry]:
+    if location_id is not None:
+        row = conn.execute(
+            "SELECT id FROM locations WHERE id = ?", (location_id,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"location {location_id} not found")
+    return reports.low_stock(conn, location_id=location_id)
 
 
 @router.get("/reports/movements-summary")
@@ -298,8 +311,11 @@ def get_stats(conn: sqlite3.Connection = Depends(get_db)) -> dict:
 
 @router.get("/search", response_model=list[Item])
 def search_items(
-    q: str = Query(..., min_length=1),
+    q: str = Query(..., min_length=1, max_length=100),
     limit: int = Query(50, ge=1, le=500),
     conn: sqlite3.Connection = Depends(get_db),
 ) -> list[Item]:
+    q = q.strip()
+    if not q:
+        raise HTTPException(status_code=422, detail="q must not be blank")
     return search.search_items(conn, q, limit=limit)

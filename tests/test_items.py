@@ -88,6 +88,37 @@ def test_list_items_filter_active(client, item):
     assert inactive_page["total"] == 1
 
 
+def test_list_items_filter_sku_exact_match(client, item):
+    client.post("/items", json={"sku": "WIDGET-10", "name": "Other"})
+    body = client.get("/items", params={"sku": "WIDGET-1"}).json()
+    assert [i["sku"] for i in body["items"]] == ["WIDGET-1"]
+    assert body["total"] == 1
+
+
+def test_list_items_filter_sku_unknown_returns_empty_list(client, item):
+    r = client.get("/items", params={"sku": "NOPE"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["items"] == []
+    assert body["total"] == 0
+
+
+def test_list_items_filter_sku_combines_with_active(client, item):
+    client.post("/items", json={"sku": "GADGET-1", "name": "Gadget"})
+    client.put("/items/2", json={"active": False})
+    # matching sku but wrong active state -> empty
+    body = client.get("/items", params={"sku": "GADGET-1", "active": "true"}).json()
+    assert body["items"] == []
+    assert body["total"] == 0
+    # matching sku and matching active state -> single result
+    body = client.get("/items", params={"sku": "GADGET-1", "active": "false"}).json()
+    assert [i["sku"] for i in body["items"]] == ["GADGET-1"]
+    assert body["total"] == 1
+    # active-only filter still works alongside a sku filter elsewhere
+    body = client.get("/items", params={"sku": "WIDGET-1", "active": "true"}).json()
+    assert [i["sku"] for i in body["items"]] == ["WIDGET-1"]
+
+
 def test_list_items_envelope_shape(client):
     for n in range(3):
         client.post("/items", json={"sku": f"E{n}", "name": f"E{n}"})
@@ -320,3 +351,69 @@ def test_get_item_by_sku_does_not_shadow_get_by_id(client, item):
     r = client.get(f"/items/{item['id']}")
     assert r.status_code == 200
     assert r.json()["id"] == item["id"]
+
+
+# --- PUT /items/{id} reorder_level (T004) --------------------------------------
+
+
+def test_update_item_reorder_level_persists_and_returns(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_level": 12})
+    assert r.status_code == 200
+    assert r.json()["reorder_level"] == 12
+    # persisted, not just echoed
+    assert client.get(f"/items/{item['id']}").json()["reorder_level"] == 12
+
+
+def test_update_item_reorder_level_with_other_fields(client, item):
+    r = client.put(
+        f"/items/{item['id']}",
+        json={"reorder_level": 7, "name": "Renamed", "unit_price": 3.75},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["reorder_level"] == 7
+    assert body["name"] == "Renamed"
+    assert body["unit_price"] == 3.75
+    stored = client.get(f"/items/{item['id']}").json()
+    assert stored["reorder_level"] == 7
+    assert stored["name"] == "Renamed"
+    assert stored["unit_price"] == 3.75
+
+
+def test_update_item_omitting_reorder_level_keeps_stored_value(client, item):
+    assert item["reorder_level"] == 5
+    r = client.put(f"/items/{item['id']}", json={"name": "No RP change"})
+    assert r.status_code == 200
+    assert r.json()["reorder_level"] == 5
+    assert client.get(f"/items/{item['id']}").json()["reorder_level"] == 5
+
+
+# --- reorder_level validation (T009) --------------------------------------------
+
+
+def test_create_item_negative_reorder_level_returns_422(client):
+    r = client.post(
+        "/items", json={"sku": "NEG-1", "name": "Negative", "reorder_level": -1}
+    )
+    assert r.status_code == 422
+
+
+def test_create_item_zero_reorder_level_is_allowed(client):
+    r = client.post(
+        "/items", json={"sku": "ZERO-1", "name": "Zero", "reorder_level": 0}
+    )
+    assert r.status_code == 201
+    assert r.json()["reorder_level"] == 0
+
+
+def test_update_item_negative_reorder_level_returns_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_level": -3})
+    assert r.status_code == 422
+    # stored value unchanged
+    assert client.get(f"/items/{item['id']}").json()["reorder_level"] == 5
+
+
+def test_update_item_zero_reorder_level_is_allowed(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_level": 0})
+    assert r.status_code == 200
+    assert r.json()["reorder_level"] == 0
