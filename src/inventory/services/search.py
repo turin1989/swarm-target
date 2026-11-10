@@ -7,11 +7,14 @@ from inventory.models import Item
 
 def search_items(conn: sqlite3.Connection, q: str, limit: int = 50) -> list[Item]:
     """Substring match on sku, name or description."""
-    pattern = f"*{q}*"
+    escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    pattern = f"%{escaped}%"
     rows = conn.execute(
         """
         SELECT * FROM items
-        WHERE sku GLOB ? OR name GLOB ? OR description GLOB ?
+        WHERE sku LIKE ? ESCAPE '\\'
+           OR name LIKE ? ESCAPE '\\'
+           OR description LIKE ? ESCAPE '\\'
         ORDER BY name
         LIMIT ?
         """,
