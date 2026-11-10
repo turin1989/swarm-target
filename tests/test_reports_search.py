@@ -234,3 +234,29 @@ def test_search_sorted_by_name_and_limited(client):
 def test_search_requires_query(client):
     assert client.get("/search").status_code == 422
     assert client.get("/search", params={"q": ""}).status_code == 422
+
+
+def test_search_by_description_substring(client):
+    client.post("/items", json={"sku": "D1", "name": "Alpha", "description": "a foo thing"})
+    client.post("/items", json={"sku": "D2", "name": "Beta", "description": "a bar thing"})
+    r = client.get("/search", params={"q": "foo"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["D1"]
+
+
+def test_search_no_duplicates_when_all_fields_match(client):
+    client.post(
+        "/items",
+        json={"sku": "FOO-1", "name": "foo item", "description": "the foo description"},
+    )
+    r = client.get("/search", params={"q": "foo"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["FOO-1"]
+
+
+def test_search_with_description_matches_sorted_by_name(client):
+    client.post("/items", json={"sku": "M1", "name": "Zeta", "description": "foo in desc"})
+    client.post("/items", json={"sku": "M2", "name": "Alpha foo", "description": ""})
+    client.post("/items", json={"sku": "M3", "name": "Middle", "description": "also foo here"})
+    names = [i["name"] for i in client.get("/search", params={"q": "foo"}).json()]
+    assert names == ["Alpha foo", "Middle", "Zeta"]
