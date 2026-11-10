@@ -41,7 +41,13 @@ CREATE TABLE IF NOT EXISTS movements (
     note TEXT NOT NULL DEFAULT '',
     reference TEXT
 );
+
+CREATE TABLE IF NOT EXISTS schema_version (
+    version INTEGER NOT NULL
+);
 """
+
+SCHEMA_VERSION = 1
 
 
 def connect(path: str) -> sqlite3.Connection:
@@ -55,7 +61,23 @@ def init_db(path: str) -> None:
     conn = connect(path)
     try:
         conn.executescript(SCHEMA)
+        row = conn.execute("SELECT version FROM schema_version").fetchone()
+        if row is None:
+            conn.execute(
+                "INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,)
+            )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def get_schema_version(path: str) -> int:
+    conn = connect(path)
+    try:
+        row = conn.execute("SELECT version FROM schema_version").fetchone()
+        if row is None:
+            raise RuntimeError("schema_version table has no recorded version")
+        return int(row["version"])
     finally:
         conn.close()
 
