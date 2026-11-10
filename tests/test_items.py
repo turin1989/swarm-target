@@ -259,3 +259,38 @@ def test_get_item_by_sku_does_not_shadow_get_item_by_id(client, item):
     # item sub-resources remain reachable
     assert client.get(f"/items/{item['id']}/stock").status_code == 200
     assert client.get(f"/items/{item['id']}/movements").status_code == 200
+
+
+# --- X-Total-Count header (T037) -------------------------------------------------
+
+
+def test_list_items_total_count_empty(client):
+    r = client.get("/items")
+    assert r.status_code == 200
+    assert r.headers["X-Total-Count"] == "0"
+
+
+def test_list_items_total_count_ignores_limit_and_offset(client):
+    for i in range(5):
+        assert client.post("/items", json={"sku": f"TC-{i}", "name": f"Item {i}"}).status_code == 201
+    r = client.get("/items", params={"limit": 2, "offset": 3})
+    assert r.status_code == 200
+    assert len(r.json()) == 2
+    assert r.headers["X-Total-Count"] == "5"
+
+
+def test_list_items_total_count_respects_filters(client):
+    for i in range(3):
+        assert client.post("/items", json={"sku": f"ACT-{i}", "name": "Active"}).status_code == 201
+    r = client.post("/items", json={"sku": "INACT", "name": "Inactive"})
+    assert r.status_code == 201
+    inactive_id = r.json()["id"]
+    assert client.put(f"/items/{inactive_id}", json={"active": False}).status_code == 200
+
+    r = client.get("/items", params={"active": "true", "limit": 1})
+    assert r.status_code == 200
+    assert len(r.json()) == 1
+    assert r.headers["X-Total-Count"] == "3"
+
+    r = client.get("/items", params={"active": "false"})
+    assert r.headers["X-Total-Count"] == "1"
