@@ -256,16 +256,22 @@ def update_location(
 ) -> Location:
     _fetch_location(conn, location_id)
     updates = payload.model_dump(exclude_unset=True)
-    allowed = {"name", "active"}
+    allowed = {"name", "code", "active"}
     updates = {k: v for k, v in updates.items() if k in allowed and v is not None}
     if updates:
         if "active" in updates:
             updates["active"] = int(updates["active"])
         assignments = ", ".join(f"{k} = ?" for k in updates)
-        conn.execute(
-            f"UPDATE locations SET {assignments} WHERE id = ?",
-            [*updates.values(), location_id],
-        )
+        try:
+            conn.execute(
+                f"UPDATE locations SET {assignments} WHERE id = ?",
+                [*updates.values(), location_id],
+            )
+        except sqlite3.IntegrityError:
+            raise HTTPException(
+                status_code=409,
+                detail=f"location code {updates.get('code')!r} already exists",
+            )
     return _fetch_location(conn, location_id)
 
 
