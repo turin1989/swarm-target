@@ -335,10 +335,11 @@ def test_get_item_by_sku_does_not_shadow_get_item_by_id(client, item):
     assert r.status_code == 200
     assert r.json()["id"] == item["id"]
     # and a sku that collides with sub-resource names still resolves via by-sku
+    # (skus are normalised to upper-case on create, see T017)
     client.post("/items", json={"sku": "stock", "name": "Stocky"})
-    r = client.get("/items/by-sku/stock")
+    r = client.get("/items/by-sku/STOCK")
     assert r.status_code == 200
-    assert r.json()["sku"] == "stock"
+    assert r.json()["sku"] == "STOCK"
     # item sub-resources remain reachable
     assert client.get(f"/items/{item['id']}/stock").status_code == 200
     assert client.get(f"/items/{item['id']}/movements").status_code == 200
