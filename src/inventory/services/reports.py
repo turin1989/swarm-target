@@ -19,7 +19,13 @@ def low_stock(conn: sqlite3.Connection) -> list[LowStockEntry]:
         ORDER BY i.sku
         """
     ).fetchall()
-    return [LowStockEntry(**dict(r)) for r in rows]
+    return [
+        LowStockEntry(
+            **dict(r),
+            shortfall=max(0, r["reorder_point"] - r["total_qty"]),
+        )
+        for r in rows
+    ]
 
 
 def stats(conn: sqlite3.Connection) -> dict:
