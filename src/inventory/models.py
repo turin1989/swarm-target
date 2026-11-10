@@ -41,6 +41,13 @@ class Item(BaseModel):
     active: bool
 
 
+class ItemPage(BaseModel):
+    items: list[Item]
+    total: int = Field(..., ge=0)
+    limit: int = Field(..., ge=1)
+    offset: int = Field(..., ge=0)
+
+
 class LocationCreate(BaseModel):
     code: str = Field(
         ..., min_length=1, max_length=32, pattern=r"^[A-Z0-9][A-Z0-9-]{0,31}$"
