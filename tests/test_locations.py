@@ -13,7 +13,7 @@ def test_duplicate_location_code_returns_409(client, loc_a):
 def test_duplicate_location_code_detail_mentions_code(client, loc_a):
     r = client.post("/locations", json={"code": "WH-A", "name": "Another Warehouse"})
     assert r.status_code == 409, r.text
-    assert "WH-A" in r.json()["detail"]
+    assert "WH-A" in r.json()["error"]["message"]
 
 
 def test_duplicate_location_does_not_create_second_row(client, loc_a):
