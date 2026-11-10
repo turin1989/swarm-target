@@ -1,6 +1,7 @@
 """HTTP routes."""
 
 import sqlite3
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -42,13 +43,21 @@ def _fetch_item(conn: sqlite3.Connection, item_id: int) -> Item:
 
 @router.post("/items", response_model=Item, status_code=201)
 def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db)) -> Item:
+    created_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
         cur = conn.execute(
             """
-            INSERT INTO items (sku, name, description, unit_price, reorder_point)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO items (sku, name, description, unit_price, reorder_point, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (payload.sku, payload.name, payload.description, payload.unit_price, payload.reorder_point),
+            (
+                payload.sku,
+                payload.name,
+                payload.description,
+                payload.unit_price,
+                payload.reorder_point,
+                created_at,
+            ),
         )
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=409, detail=f"sku {payload.sku!r} already exists")
