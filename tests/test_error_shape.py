@@ -23,7 +23,8 @@ def test_404_location_shape(client):
 
 
 def test_404_via_stock_service_error(client):
-    # location_stock converts stock.StockError into an HTTPException
+    # NotFoundError from the stock service is mapped to an HTTPException
+    # by the app-level InventoryError handler
     r = client.get("/locations/999/stock")
     _assert_error_shape(r, 404, "not_found")
 

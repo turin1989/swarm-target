@@ -7,24 +7,24 @@ def _stock(client, item_id):
     return r.json()
 
 
-def _receive(client, item, loc, qty=10):
+def _receive(client, item, loc, quantity=10):
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": qty, "to_location_id": loc["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": quantity, "to_location_id": loc["id"]},
     )
     assert r.status_code == 201, r.text
     return r.json()
 
 
 def test_reverse_receive_creates_ship(client, item, loc_a):
-    original = _receive(client, item, loc_a, qty=10)
+    original = _receive(client, item, loc_a, quantity=10)
 
     r = client.post(f"/movements/{original['id']}/reverse")
     assert r.status_code == 201, r.text
     reversal = r.json()
     assert reversal["id"] != original["id"]
     assert reversal["kind"] == "ship"
-    assert reversal["qty"] == 10
+    assert reversal["quantity"] == 10
     assert reversal["from_location_id"] == loc_a["id"]
     assert reversal["to_location_id"] is None
     assert reversal["note"] == f"reversal of {original['id']}"
@@ -35,10 +35,10 @@ def test_reverse_receive_creates_ship(client, item, loc_a):
 
 
 def test_reverse_ship_creates_receive(client, item, loc_a):
-    _receive(client, item, loc_a, qty=10)
+    _receive(client, item, loc_a, quantity=10)
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "ship", "qty": 4, "from_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "ship", "quantity": 4, "from_location_id": loc_a["id"]},
     )
     assert r.status_code == 201, r.text
     original = r.json()
@@ -47,7 +47,7 @@ def test_reverse_ship_creates_receive(client, item, loc_a):
     assert r.status_code == 201, r.text
     reversal = r.json()
     assert reversal["kind"] == "receive"
-    assert reversal["qty"] == 4
+    assert reversal["quantity"] == 4
     assert reversal["to_location_id"] == loc_a["id"]
     assert reversal["from_location_id"] is None
     assert reversal["note"] == f"reversal of {original['id']}"
@@ -56,13 +56,13 @@ def test_reverse_ship_creates_receive(client, item, loc_a):
 
 
 def test_reverse_transfer_swaps_locations(client, item, loc_a, loc_b):
-    _receive(client, item, loc_a, qty=10)
+    _receive(client, item, loc_a, quantity=10)
     r = client.post(
         "/movements",
         json={
             "item_id": item["id"],
             "kind": "transfer",
-            "qty": 6,
+            "quantity": 6,
             "from_location_id": loc_a["id"],
             "to_location_id": loc_b["id"],
         },
@@ -74,18 +74,18 @@ def test_reverse_transfer_swaps_locations(client, item, loc_a, loc_b):
     assert r.status_code == 201, r.text
     reversal = r.json()
     assert reversal["kind"] == "transfer"
-    assert reversal["qty"] == 6
+    assert reversal["quantity"] == 6
     assert reversal["from_location_id"] == loc_b["id"]
     assert reversal["to_location_id"] == loc_a["id"]
     assert reversal["note"] == f"reversal of {original['id']}"
 
-    levels = {lvl["location_id"]: lvl["qty"] for lvl in _stock(client, item["id"])["levels"]}
+    levels = {lvl["location_id"]: lvl["quantity"] for lvl in _stock(client, item["id"])["levels"]}
     assert levels.get(loc_a["id"], 0) == 10
     assert levels.get(loc_b["id"], 0) == 0
 
 
 def test_reversal_is_persisted_and_retrievable(client, item, loc_a):
-    original = _receive(client, item, loc_a, qty=3)
+    original = _receive(client, item, loc_a, quantity=3)
     reversal = client.post(f"/movements/{original['id']}/reverse").json()
 
     r = client.get(f"/movements/{reversal['id']}")
