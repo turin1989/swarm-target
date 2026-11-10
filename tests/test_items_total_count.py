@@ -14,7 +14,7 @@ def test_total_count_empty(client):
     r = client.get("/items")
     assert r.status_code == 200
     assert r.headers["X-Total-Count"] == "0"
-    assert r.json() == []
+    assert r.json()["items"] == []
 
 
 def test_total_count_matches_all_items(client):
@@ -22,19 +22,19 @@ def test_total_count_matches_all_items(client):
     r = client.get("/items")
     assert r.status_code == 200
     assert r.headers["X-Total-Count"] == "3"
-    assert len(r.json()) == 3
+    assert len(r.json()["items"]) == 3
 
 
 def test_total_count_ignores_limit_and_offset(client):
     _make_items(client, 5)
     r = client.get("/items", params={"limit": 2, "offset": 1})
     assert r.status_code == 200
-    assert len(r.json()) == 2
+    assert len(r.json()["items"]) == 2
     assert r.headers["X-Total-Count"] == "5"
 
     r = client.get("/items", params={"offset": 10})
     assert r.status_code == 200
-    assert r.json() == []
+    assert r.json()["items"] == []
     assert r.headers["X-Total-Count"] == "5"
 
 
@@ -44,7 +44,7 @@ def test_total_count_respects_active_filter(client):
 
     r = client.get("/items", params={"active": "true", "limit": 1})
     assert r.status_code == 200
-    assert len(r.json()) == 1
+    assert len(r.json()["items"]) == 1
     assert r.headers["X-Total-Count"] == "2"
 
     r = client.get("/items", params={"active": "false", "limit": 1})

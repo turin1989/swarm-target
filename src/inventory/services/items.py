@@ -1,9 +1,15 @@
 """Item persistence helpers."""
 
 import sqlite3
+from datetime import datetime, timezone
 from typing import Optional
 
 from inventory.models import Item, ItemCreate, ItemUpdate
+
+
+def utc_now_iso() -> str:
+    """Current UTC time as an ISO-8601 string, e.g. 2026-01-02T03:04:05Z."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def row_to_item(row: sqlite3.Row) -> Item:
@@ -26,10 +32,17 @@ def create_item(conn: sqlite3.Connection, payload: ItemCreate) -> Item:
     """
     cur = conn.execute(
         """
-        INSERT INTO items (sku, name, description, unit_price, reorder_point)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO items (sku, name, description, unit_price, reorder_point, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (payload.sku, payload.name, payload.description, payload.unit_price, payload.reorder_point),
+        (
+            payload.sku,
+            payload.name,
+            payload.description,
+            payload.unit_price,
+            payload.reorder_point,
+            utc_now_iso(),
+        ),
     )
     item = get_item(conn, cur.lastrowid)
     assert item is not None

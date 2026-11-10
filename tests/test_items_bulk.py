@@ -19,7 +19,7 @@ def test_bulk_create_returns_201_and_items(client):
     assert all(i["active"] is True for i in body)
     assert all("id" in i for i in body)
     # items are persisted
-    assert [i["sku"] for i in client.get("/items").json()] == ["B-1", "B-2"]
+    assert [i["sku"] for i in client.get("/items").json()["items"]] == ["B-1", "B-2"]
 
 
 def test_bulk_create_existing_sku_conflicts_and_creates_nothing(client, item):
@@ -33,7 +33,7 @@ def test_bulk_create_existing_sku_conflicts_and_creates_nothing(client, item):
     )
     assert r.status_code == 409
     # atomic: nothing from the batch was created, not even NEW-1
-    skus = [i["sku"] for i in client.get("/items").json()]
+    skus = [i["sku"] for i in client.get("/items").json()["items"]]
     assert skus == [item["sku"]]
 
 
@@ -46,19 +46,19 @@ def test_bulk_create_duplicate_sku_within_payload_conflicts_and_creates_nothing(
         ],
     )
     assert r.status_code == 409
-    assert client.get("/items").json() == []
+    assert client.get("/items").json()["items"] == []
 
 
 def test_bulk_create_empty_list_422(client):
     r = client.post("/items/bulk", json=[])
     assert r.status_code == 422
-    assert client.get("/items").json() == []
+    assert client.get("/items").json()["items"] == []
 
 
 def test_bulk_create_invalid_item_422(client):
     r = client.post("/items/bulk", json=[{"sku": "OK-1", "name": "Ok"}, {"name": "missing sku"}])
     assert r.status_code == 422
-    assert client.get("/items").json() == []
+    assert client.get("/items").json()["items"] == []
 
 
 def test_bulk_create_does_not_break_single_create(client):
