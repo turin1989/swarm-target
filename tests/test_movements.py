@@ -184,6 +184,53 @@ def test_movement_note_at_max_length_ok(client, item, loc_a):
     assert r.json()["note"] == note
 
 
+@pytest.mark.parametrize(
+    "kind,payload",
+    [
+        ("receive", {"to_location_id": 1}),
+        ("ship", {"from_location_id": 1}),
+        ("transfer", {"from_location_id": 1, "to_location_id": 2}),
+    ],
+)
+def test_movement_for_inactive_item_409(client, item, loc_a, loc_b, kind, payload):
+    """Any movement for an inactive item -> 409 with 'inactive' in the detail."""
+    # Build up some stock while the item is still active.
+    _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])
+    before = client.get(f"/items/{item['id']}/stock").json()
+
+    r = client.put(f"/items/{item['id']}", json={"active": False})
+    assert r.status_code == 200, r.text
+    assert r.json()["active"] is False
+
+    r = _move(client, item_id=item["id"], kind=kind, qty=1, **payload)
+    assert r.status_code == 409
+    body = r.json()
+    assert body["error"]["code"] == "conflict"
+    assert "inactive" in body["error"]["message"]
+
+    # Stock levels are unchanged.
+    assert client.get(f"/items/{item['id']}/stock").json() == before
+
+    # No movement record was persisted for the rejected request.
+    movements = client.get("/movements").json()
+    assert len(movements) == 1
+    assert movements[0]["kind"] == "receive"
+
+
+def test_movement_allowed_after_reactivation(client, item, loc_a):
+    """Re-activating an item lifts the movement ban."""
+    client.put(f"/items/{item['id']}", json={"active": False})
+    assert (
+        _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
+        .status_code
+        == 409
+    )
+    client.put(f"/items/{item['id']}", json={"active": True})
+    r = _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
+    assert r.status_code == 201
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 1
+
+
 def test_list_movements_pagination(client, item, loc_a):
     for _ in range(4):
         _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
