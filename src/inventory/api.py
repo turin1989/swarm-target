@@ -41,7 +41,11 @@ def _fetch_item(conn: sqlite3.Connection, item_id: int) -> Item:
 def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db)) -> Item:
     try:
         return items_service.create_item(conn, payload)
-    except sqlite3.IntegrityError:
+    except sqlite3.IntegrityError as exc:
+        if "barcode" in str(exc):
+            raise HTTPException(
+                status_code=409, detail=f"barcode {payload.barcode!r} already exists"
+            )
         raise HTTPException(status_code=409, detail=f"sku {payload.sku!r} already exists")
 
 
@@ -50,6 +54,7 @@ def list_items(
     response: Response,
     active: Optional[bool] = None,
     sku: Optional[str] = None,
+    barcode: Optional[str] = None,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     conn: sqlite3.Connection = Depends(get_db),
@@ -62,6 +67,9 @@ def list_items(
     if sku is not None:
         conditions.append("sku = ?")
         where_params.append(sku)
+    if barcode is not None:
+        conditions.append("barcode = ?")
+        where_params.append(barcode)
     where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
     total = conn.execute(f"SELECT COUNT(*) FROM items{where}", where_params).fetchone()[0]
     response.headers["X-Total-Count"] = str(total)

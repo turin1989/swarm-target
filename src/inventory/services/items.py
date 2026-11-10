@@ -34,13 +34,13 @@ def get_item_by_sku(conn: sqlite3.Connection, sku: str) -> Item | None:
 def create_item(conn: sqlite3.Connection, payload: ItemCreate) -> Item:
     """Insert a new item and return the persisted record.
 
-    Raises sqlite3.IntegrityError if the sku already exists.
+    Raises sqlite3.IntegrityError if the sku or barcode already exists.
     """
     created_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     cur = conn.execute(
         """
-        INSERT INTO items (sku, name, description, unit_price, reorder_point, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO items (sku, name, description, unit_price, reorder_point, created_at, barcode)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         (
             payload.sku,
@@ -49,6 +49,7 @@ def create_item(conn: sqlite3.Connection, payload: ItemCreate) -> Item:
             payload.unit_price,
             payload.reorder_point,
             created_at,
+            payload.barcode,
         ),
     )
     item = get_item(conn, cur.lastrowid)
