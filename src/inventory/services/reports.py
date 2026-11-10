@@ -34,6 +34,28 @@ def low_stock(
     return [LowStockEntry(**dict(r)) for r in rows]
 
 
+def movements_summary(conn: sqlite3.Connection) -> dict[str, dict[str, int]]:
+    """Count and total quantity of movements grouped by kind.
+
+    Every known movement kind is present in the result; kinds with no
+    movements report zeros.
+    """
+    summary: dict[str, dict[str, int]] = {
+        kind: {"count": 0, "qty": 0} for kind in ("receive", "ship", "transfer")
+    }
+    rows = conn.execute(
+        """
+        SELECT kind, COUNT(*) AS count, COALESCE(SUM(qty), 0) AS qty
+        FROM movements
+        GROUP BY kind
+        """
+    ).fetchall()
+    for row in rows:
+        if row["kind"] in summary:
+            summary[row["kind"]] = {"count": row["count"], "qty": row["qty"]}
+    return summary
+
+
 def inventory_value(conn: sqlite3.Connection, location_id: int | None = None) -> float:
     """Total value of stock on hand (sum of qty * unit_price).
 
