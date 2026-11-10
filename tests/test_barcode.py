@@ -23,7 +23,9 @@ def test_duplicate_barcode_conflicts_409(client):
     assert r1.status_code == 201
     r2 = client.post("/items", json={"sku": "BC-2", "name": "Two", "barcode": "DUP-123"})
     assert r2.status_code == 409
-    assert "DUP-123" in r2.json()["detail"]
+    body = r2.json()
+    assert body["error"]["code"] == "conflict"
+    assert "DUP-123" in body["error"]["message"]
     # no partial insert
     skus = [i["sku"] for i in client.get("/items").json()]
     assert skus == ["BC-1"]
@@ -70,4 +72,6 @@ def test_barcode_filter_combines_with_active(client):
 def test_duplicate_sku_still_reports_sku_conflict(client, item):
     r = client.post("/items", json={"sku": item["sku"], "name": "Dup", "barcode": "UNIQUE-X"})
     assert r.status_code == 409
-    assert "sku" in r.json()["detail"]
+    body = r.json()
+    assert body["error"]["code"] == "conflict"
+    assert "sku" in body["error"]["message"]

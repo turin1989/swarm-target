@@ -88,7 +88,9 @@ def test_transfer_same_location_rejected(client, item, loc_a):
         to_location_id=loc_a["id"],
     )
     assert r.status_code == 400
-    assert "same location" in r.json()["detail"]
+    body = r.json()
+    assert body["error"]["code"] == "bad_request"
+    assert "same location" in body["error"]["message"]
     # no movement row is written for the rejected transfer
     movements = client.get("/movements").json()
     assert len(movements) == 1
@@ -103,7 +105,9 @@ def test_ship_more_than_on_hand_rejected_409(client, item, loc_a):
     _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
     r = _move(client, item_id=item["id"], kind="ship", qty=6, from_location_id=loc_a["id"])
     assert r.status_code == 409
-    assert "insufficient" in r.json()["detail"]
+    body = r.json()
+    assert body["error"]["code"] == "conflict"
+    assert "insufficient" in body["error"]["message"]
     # no movement row is written for the rejected ship
     movements = client.get("/movements").json()
     assert len(movements) == 1
@@ -117,7 +121,9 @@ def test_ship_more_than_on_hand_rejected_409(client, item, loc_a):
 def test_ship_from_empty_location_rejected_409(client, item, loc_a):
     r = _move(client, item_id=item["id"], kind="ship", qty=1, from_location_id=loc_a["id"])
     assert r.status_code == 409
-    assert "insufficient" in r.json()["detail"]
+    body = r.json()
+    assert body["error"]["code"] == "conflict"
+    assert "insufficient" in body["error"]["message"]
     assert client.get("/movements").json() == []
     assert client.get(f"/items/{item['id']}/stock").json()["total"] == 0
 
@@ -140,7 +146,9 @@ def test_transfer_more_than_source_stock_rejected_409(client, item, loc_a, loc_b
         to_location_id=loc_b["id"],
     )
     assert r.status_code == 409
-    assert "insufficient" in r.json()["detail"]
+    body = r.json()
+    assert body["error"]["code"] == "conflict"
+    assert "insufficient" in body["error"]["message"]
     # no movement row is written for the rejected transfer
     movements = client.get("/movements").json()
     assert len(movements) == 1
@@ -171,7 +179,9 @@ def test_stock_empty_for_new_item(client, item):
 def test_movement_requires_locations(client, item, loc_a, kind, payload):
     r = _move(client, item_id=item["id"], kind=kind, qty=1, **payload)
     assert r.status_code == 400
-    assert "required" in r.json()["detail"]
+    body = r.json()
+    assert body["error"]["code"] == "bad_request"
+    assert "required" in body["error"]["message"]
 
 
 def test_movement_unknown_location_404(client, item):
@@ -222,6 +232,91 @@ def test_list_movements_pagination(client, item, loc_a):
     assert [m["id"] for m in r.json()] == [3, 4]
 
 
+# --- adjust movements (T039) ---------------------------------------------------
+
+
+def test_adjust_sets_absolute_stock_from_empty(client, item, loc_a):
+    r = _move(client, item_id=item["id"], kind="adjust", qty=7, to_location_id=loc_a["id"])
+    assert r.status_code == 201
+    body = r.json()
+    assert body["kind"] == "adjust"
+    assert body["qty"] == 7
+    assert body["to_location_id"] == loc_a["id"]
+    assert body["from_location_id"] is None
+
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 7
+    assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "qty": 7}]
+
+
+def test_adjust_overwrites_existing_stock_not_a_delta(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])
+    r = _move(client, item_id=item["id"], kind="adjust", qty=3, to_location_id=loc_a["id"])
+    assert r.status_code == 201
+    s = client.get(f"/items/{item['id']}/stock").json()
+    # absolute set: 3, not 10 + 3
+    assert s["total"] == 3
+    assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "qty": 3}]
+
+
+def test_adjust_only_affects_target_location(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="adjust", qty=9, to_location_id=loc_b["id"])
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 14
+    assert s["levels"] == [
+        {"item_id": item["id"], "location_id": loc_a["id"], "qty": 5},
+        {"item_id": item["id"], "location_id": loc_b["id"], "qty": 9},
+    ]
+
+
+def test_adjust_requires_to_location(client, item, loc_a):
+    r = _move(client, item_id=item["id"], kind="adjust", qty=1)
+    assert r.status_code == 400
+    body = r.json()
+    assert body["error"]["code"] == "bad_request"
+    assert "required" in body["error"]["message"]
+    assert client.get("/movements").json() == []
+
+
+def test_adjust_rejects_from_location(client, item, loc_a, loc_b):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="adjust",
+        qty=1,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    assert r.status_code == 400
+    body = r.json()
+    assert body["error"]["code"] == "bad_request"
+    assert "from_location_id must be null" in body["error"]["message"]
+    # nothing is recorded and no stock changes
+    assert client.get("/movements").json() == []
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 0
+
+
+def test_adjust_is_recorded_with_kind_adjust(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="adjust", qty=4, to_location_id=loc_a["id"])
+    movements = client.get("/movements").json()
+    assert len(movements) == 1
+    m = movements[0]
+    assert m["kind"] == "adjust"
+    assert m["qty"] == 4
+    assert m["to_location_id"] == loc_a["id"]
+    assert m["from_location_id"] is None
+
+    # also visible in the per-item history
+    hist = client.get(f"/items/{item['id']}/movements").json()
+    assert [h["kind"] for h in hist] == ["adjust"]
+
+
+def test_adjust_unknown_location_404(client, item):
+    r = _move(client, item_id=item["id"], kind="adjust", qty=1, to_location_id=321)
+    assert r.status_code == 404
+
+
 # --- per-item movement history (T032) -----------------------------------------
 
 
@@ -264,7 +359,9 @@ def test_item_movements_pagination(client, item, loc_a):
 def test_item_movements_unknown_item_404(client):
     r = client.get("/items/999/movements")
     assert r.status_code == 404
-    assert "not found" in r.json()["detail"]
+    body = r.json()
+    assert body["error"]["code"] == "not_found"
+    assert "not found" in body["error"]["message"]
 
 
 def test_item_movements_invalid_pagination_422(client, item):

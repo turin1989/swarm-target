@@ -14,7 +14,9 @@ def _item(client, sku, name="Thing"):
 def test_unknown_location_404(client):
     r = client.get("/locations/999/stock")
     assert r.status_code == 404
-    assert "999" in r.json()["detail"]
+    body = r.json()
+    assert body["error"]["code"] == "not_found"
+    assert "999" in body["error"]["message"]
 
 
 def test_empty_location_returns_no_levels(client, loc_a):
