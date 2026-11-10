@@ -8,7 +8,7 @@ def _seed(client, sku, name, reorder, qty, loc, price=1.0):
     if qty:
         client.post(
             "/movements",
-            json={"item_id": item["id"], "kind": "receive", "qty": qty, "to_location_id": loc["id"]},
+            json={"item_id": item["id"], "kind": "receive", "quantity": qty, "to_location_id": loc["id"]},
         )
     return item
 
@@ -93,7 +93,7 @@ def test_low_stock_scoped_to_location_counts_only_that_locations_stock(client, l
     item = _seed(client, "SPLIT", "Split", reorder=5, qty=10, loc=loc_a)
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 2, "to_location_id": loc_b["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 2, "to_location_id": loc_b["id"]},
     )
     assert client.get("/reports/low-stock").json() == []
     r = client.get("/reports/low-stock", params={"location_id": loc_b["id"]})
@@ -137,7 +137,7 @@ def test_low_stock_without_location_param_unchanged(client, loc_a, loc_b):
     item = _seed(client, "LOW", "Low", reorder=5, qty=2, loc=loc_a)
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 1, "to_location_id": loc_b["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 1, "to_location_id": loc_b["id"]},
     )
     _seed(client, "OK", "Fine", reorder=5, qty=10, loc=loc_a)
     r = client.get("/reports/low-stock")
@@ -160,7 +160,7 @@ def test_inventory_value_filtered_by_location(client, loc_a, loc_b):
     # also receive some of item_a at loc_b to ensure per-location split
     client.post(
         "/movements",
-        json={"item_id": item_a["id"], "kind": "receive", "qty": 4, "to_location_id": loc_b["id"]},
+        json={"item_id": item_a["id"], "kind": "receive", "quantity": 4, "to_location_id": loc_b["id"]},
     )
     r = client.get("/reports/value", params={"location_id": loc_a["id"]})
     assert r.status_code == 200
