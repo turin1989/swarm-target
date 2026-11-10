@@ -12,10 +12,10 @@ def _assert_valid_created_at(value):
     datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
 
 
-def _receive(client, item, loc, qty=10):
+def _receive(client, item, loc, quantity=10):
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": qty, "to_location_id": loc["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": quantity, "to_location_id": loc["id"]},
     )
     assert r.status_code == 201, r.text
     return r.json()
@@ -47,7 +47,7 @@ def test_list_movements_returns_created_at(client, item, loc_a, loc_b):
         json={
             "item_id": item["id"],
             "kind": "transfer",
-            "qty": 3,
+            "quantity": 3,
             "from_location_id": loc_a["id"],
             "to_location_id": loc_b["id"],
         },

@@ -82,21 +82,30 @@ class Location(BaseModel):
     active: bool = True
 
 
+def _reject_qty(data):
+    """The field was renamed to quantity; the old name is rejected."""
+    if isinstance(data, dict) and "qty" in data:
+        raise ValueError("qty has been renamed to quantity")
+    return data
+
+
 class MovementCreate(BaseModel):
     item_id: int
     kind: MovementKind
-    qty: int = Field(..., gt=0)
+    quantity: int = Field(..., gt=0)
     from_location_id: Optional[int] = None
     to_location_id: Optional[int] = None
     note: str = Field("", max_length=500)
     reference: Optional[str] = Field(None, max_length=64)
+
+    _no_qty = model_validator(mode="before")(_reject_qty)
 
 
 class Movement(BaseModel):
     id: int
     item_id: int
     kind: MovementKind
-    qty: int
+    quantity: int
     from_location_id: Optional[int]
     to_location_id: Optional[int]
     note: str
@@ -107,7 +116,7 @@ class Movement(BaseModel):
 class StockLevel(BaseModel):
     item_id: int
     location_id: int
-    qty: int
+    quantity: int
 
 
 class ItemStock(BaseModel):

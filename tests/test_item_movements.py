@@ -19,19 +19,19 @@ def item2(client):
 @pytest.fixture()
 def history(client, item, item2, loc_a, loc_b):
     """Interleaved movements for two items; ids are sequential from 1."""
-    _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])  # 1
-    _move(client, item_id=item2["id"], kind="receive", qty=5, to_location_id=loc_a["id"])  # 2
-    _move(client, item_id=item["id"], kind="ship", qty=2, from_location_id=loc_a["id"])  # 3
+    _move(client, item_id=item["id"], kind="receive", quantity=10, to_location_id=loc_a["id"])  # 1
+    _move(client, item_id=item2["id"], kind="receive", quantity=5, to_location_id=loc_a["id"])  # 2
+    _move(client, item_id=item["id"], kind="ship", quantity=2, from_location_id=loc_a["id"])  # 3
     _move(
         client,
         item_id=item["id"],
         kind="transfer",
-        qty=3,
+        quantity=3,
         from_location_id=loc_a["id"],
         to_location_id=loc_b["id"],
     )  # 4
-    _move(client, item_id=item2["id"], kind="ship", qty=1, from_location_id=loc_a["id"])  # 5
-    _move(client, item_id=item["id"], kind="ship", qty=1, from_location_id=loc_a["id"])  # 6
+    _move(client, item_id=item2["id"], kind="ship", quantity=1, from_location_id=loc_a["id"])  # 5
+    _move(client, item_id=item["id"], kind="ship", quantity=1, from_location_id=loc_a["id"])  # 6
 
 
 def test_item_movements_ordered_by_id(client, item, history):
@@ -88,7 +88,7 @@ def test_item_movements_uses_stock_list_movements(client, item, loc_a, monkeypat
     """The endpoint must be implemented via stock.list_movements(conn, item_id=...)."""
     from inventory.services import stock
 
-    _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", quantity=1, to_location_id=loc_a["id"])
 
     calls = []
     original = stock.list_movements
