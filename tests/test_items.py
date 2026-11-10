@@ -355,3 +355,88 @@ def test_update_item_omitting_reorder_point_keeps_stored_value(client, item):
     assert r.status_code == 200
     assert r.json()["reorder_point"] == 5
     assert client.get(f"/items/{item['id']}").json()["reorder_point"] == 5
+
+
+# --- GET /items sort parameter (T021) --------------------------------------------
+
+
+def _make_sortable_items(client):
+    # insertion order: ids 1..3; skus/names deliberately out of order
+    client.post("/items", json={"sku": "B-SKU", "name": "charlie"})
+    client.post("/items", json={"sku": "C-SKU", "name": "alpha"})
+    client.post("/items", json={"sku": "A-SKU", "name": "bravo"})
+
+
+def test_list_items_default_sort_is_id(client):
+    _make_sortable_items(client)
+    r = client.get("/items")
+    assert r.status_code == 200
+    assert [i["id"] for i in r.json()["items"]] == [1, 2, 3]
+
+
+def test_list_items_sort_by_name_ascending(client):
+    _make_sortable_items(client)
+    r = client.get("/items", params={"sort": "name"})
+    assert r.status_code == 200
+    assert [i["name"] for i in r.json()["items"]] == ["alpha", "bravo", "charlie"]
+
+
+def test_list_items_sort_by_sku_ascending(client):
+    _make_sortable_items(client)
+    r = client.get("/items", params={"sort": "sku"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()["items"]] == ["A-SKU", "B-SKU", "C-SKU"]
+
+
+def test_list_items_sort_by_id_explicit(client):
+    _make_sortable_items(client)
+    r = client.get("/items", params={"sort": "id"})
+    assert r.status_code == 200
+    assert [i["id"] for i in r.json()["items"]] == [1, 2, 3]
+
+
+def test_list_items_sort_by_name_descending(client):
+    _make_sortable_items(client)
+    r = client.get("/items", params={"sort": "-name"})
+    assert r.status_code == 200
+    assert [i["name"] for i in r.json()["items"]] == ["charlie", "bravo", "alpha"]
+
+
+def test_list_items_sort_by_sku_descending(client):
+    _make_sortable_items(client)
+    r = client.get("/items", params={"sort": "-sku"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()["items"]] == ["C-SKU", "B-SKU", "A-SKU"]
+
+
+def test_list_items_sort_by_id_descending(client):
+    _make_sortable_items(client)
+    r = client.get("/items", params={"sort": "-id"})
+    assert r.status_code == 200
+    assert [i["id"] for i in r.json()["items"]] == [3, 2, 1]
+
+
+def test_list_items_sort_invalid_value_422(client):
+    _make_sortable_items(client)
+    assert client.get("/items", params={"sort": "price"}).status_code == 422
+    assert client.get("/items", params={"sort": "-price"}).status_code == 422
+    assert client.get("/items", params={"sort": "NAME"}).status_code == 422
+    assert client.get("/items", params={"sort": ""}).status_code == 422
+    assert client.get("/items", params={"sort": "id; DROP TABLE items"}).status_code == 422
+
+
+def test_list_items_sort_combines_with_pagination(client):
+    _make_sortable_items(client)
+    r = client.get("/items", params={"sort": "name", "limit": 2, "offset": 1})
+    assert r.status_code == 200
+    body = r.json()
+    assert [i["name"] for i in body["items"]] == ["bravo", "charlie"]
+    assert body["total"] == 3
+
+
+def test_list_items_sort_combines_with_active_filter(client):
+    _make_sortable_items(client)
+    client.put("/items/1", json={"active": False})  # "charlie"
+    r = client.get("/items", params={"sort": "-name", "active": "true"})
+    assert r.status_code == 200
+    assert [i["name"] for i in r.json()["items"]] == ["bravo", "alpha"]
