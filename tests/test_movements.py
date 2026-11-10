@@ -731,3 +731,143 @@ def test_init_db_adds_reference_column_to_existing_db(tmp_path):
     finally:
         conn.close()
     assert "reference" in cols
+
+
+# --- POST /movements/{id}/reverse (T045) -----------------------------------------
+
+
+def test_reverse_receive_creates_ship(client, item, loc_a):
+    original = _move(
+        client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"]
+    ).json()
+
+    r = client.post(f"/movements/{original['id']}/reverse")
+    assert r.status_code == 201
+    body = r.json()
+    assert body["id"] != original["id"]
+    assert body["kind"] == "ship"
+    assert body["qty"] == 10
+    assert body["from_location_id"] == loc_a["id"]
+    assert body["to_location_id"] is None
+    assert body["note"] == f"reversal of {original['id']}"
+
+    # Stock is back to zero.
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 0
+
+
+def test_reverse_ship_creates_receive(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])
+    original = _move(
+        client, item_id=item["id"], kind="ship", qty=4, from_location_id=loc_a["id"]
+    ).json()
+
+    r = client.post(f"/movements/{original['id']}/reverse")
+    assert r.status_code == 201
+    body = r.json()
+    assert body["kind"] == "receive"
+    assert body["qty"] == 4
+    assert body["to_location_id"] == loc_a["id"]
+    assert body["from_location_id"] is None
+    assert body["note"] == f"reversal of {original['id']}"
+
+    # Stock is restored to the pre-ship level.
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 10
+
+
+def test_reverse_transfer_swaps_locations(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=8, to_location_id=loc_a["id"])
+    original = _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=3,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    ).json()
+
+    r = client.post(f"/movements/{original['id']}/reverse")
+    assert r.status_code == 201
+    body = r.json()
+    assert body["kind"] == "transfer"
+    assert body["qty"] == 3
+    assert body["from_location_id"] == loc_b["id"]
+    assert body["to_location_id"] == loc_a["id"]
+    assert body["note"] == f"reversal of {original['id']}"
+
+    # Stock is back at the original location.
+    s = client.get(f"/items/{item['id']}/stock").json()
+    levels = {lvl["location_id"]: lvl["qty"] for lvl in s["levels"]}
+    assert levels[loc_a["id"]] == 8
+    assert levels[loc_b["id"]] == 0
+
+
+def test_reverse_unknown_movement_404(client):
+    r = client.post("/movements/999/reverse")
+    assert r.status_code == 404
+    assert client.get("/movements").json() == []
+
+
+def test_reverse_is_persisted_in_movement_list(client, item, loc_a):
+    original = _move(
+        client, item_id=item["id"], kind="receive", qty=2, to_location_id=loc_a["id"]
+    ).json()
+    reversal = client.post(f"/movements/{original['id']}/reverse").json()
+
+    movements = client.get("/movements").json()
+    assert [m["id"] for m in movements] == [original["id"], reversal["id"]]
+    assert movements[1]["note"] == f"reversal of {original['id']}"
+
+
+def test_reverse_receive_with_insufficient_stock_409(client, item, loc_a):
+    # Receive 5, then ship 3; reversing the receive would ship 5 > 2 on hand.
+    original = _move(
+        client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"]
+    ).json()
+    _move(client, item_id=item["id"], kind="ship", qty=3, from_location_id=loc_a["id"])
+
+    r = client.post(f"/movements/{original['id']}/reverse")
+    assert r.status_code == 409
+    assert "insufficient" in r.json()["detail"]
+    # Nothing was written.
+    assert len(client.get("/movements").json()) == 2
+
+
+def test_reverse_adjust_rejected(client, item, loc_a):
+    original = _move(
+        client, item_id=item["id"], kind="adjust", qty=5, to_location_id=loc_a["id"]
+    ).json()
+    r = client.post(f"/movements/{original['id']}/reverse")
+    assert r.status_code == 400
+    assert len(client.get("/movements").json()) == 1
+
+
+def test_reverse_movement_service_directly():
+    """stock.reverse_movement works at the service layer."""
+    import pytest as _pytest
+
+    from inventory.db import SCHEMA, connect
+    from inventory.models import MovementCreate
+    from inventory.services.stock import StockError, apply_movement, reverse_movement
+
+    conn = connect(":memory:")
+    conn.executescript(SCHEMA)
+    conn.execute(
+        "INSERT INTO items (sku, name, description, unit_price, reorder_point, active) "
+        "VALUES ('S1', 'Widget', '', 1.0, 0, 1)"
+    )
+    conn.execute("INSERT INTO locations (code, name) VALUES ('WH-A', 'Warehouse A')")
+    conn.execute("INSERT INTO locations (code, name) VALUES ('WH-B', 'Warehouse B')")
+
+    original = apply_movement(
+        conn, MovementCreate(item_id=1, kind="receive", qty=6, to_location_id=1)
+    )
+    reversal = reverse_movement(conn, original.id)
+    assert reversal.kind == "ship"
+    assert reversal.qty == 6
+    assert reversal.from_location_id == 1
+    assert reversal.to_location_id is None
+    assert reversal.note == f"reversal of {original.id}"
+
+    with _pytest.raises(StockError) as exc:
+        reverse_movement(conn, 999)
+    assert exc.value.status_code == 404
