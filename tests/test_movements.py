@@ -731,3 +731,18 @@ def test_init_db_adds_reference_column_to_existing_db(tmp_path):
     finally:
         conn.close()
     assert "reference" in cols
+
+
+def test_get_movement_by_id(client, item, loc_a):
+    created = _move(
+        client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"]
+    ).json()
+    r = client.get(f"/movements/{created['id']}")
+    assert r.status_code == 200
+    assert r.json() == created
+
+
+def test_get_movement_unknown_id_returns_404(client):
+    r = client.get("/movements/999")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "movement 999 not found"
