@@ -8,7 +8,7 @@ EMPTY = {
 
 
 def _move(client, item, kind, qty, from_loc=None, to_loc=None):
-    payload = {"item_id": item["id"], "kind": kind, "qty": qty}
+    payload = {"item_id": item["id"], "kind": kind, "quantity": qty}
     if from_loc is not None:
         payload["from_location_id"] = from_loc["id"]
     if to_loc is not None:

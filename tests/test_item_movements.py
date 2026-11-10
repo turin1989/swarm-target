@@ -11,14 +11,14 @@ def _seed(client, item, loc_a, loc_b):
         "/items",
         json={"sku": "GADGET-1", "name": "Gadget", "unit_price": 1.0, "reorder_level": 2},
     ).json()
-    _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])  # id 1
-    _move(client, item_id=item2["id"], kind="receive", qty=8, to_location_id=loc_a["id"])  # id 2
-    _move(client, item_id=item["id"], kind="ship", qty=2, from_location_id=loc_a["id"])  # id 3
+    _move(client, item_id=item["id"], kind="receive", quantity=10, to_location_id=loc_a["id"])  # id 1
+    _move(client, item_id=item2["id"], kind="receive", quantity=8, to_location_id=loc_a["id"])  # id 2
+    _move(client, item_id=item["id"], kind="ship", quantity=2, from_location_id=loc_a["id"])  # id 3
     _move(
         client,
         item_id=item["id"],
         kind="transfer",
-        qty=3,
+        quantity=3,
         from_location_id=loc_a["id"],
         to_location_id=loc_b["id"],
     )  # id 4
@@ -64,7 +64,7 @@ def test_item_movements_unknown_item_404(client):
 def test_item_movements_pagination(client, item, loc_a, loc_b):
     _seed(client, item, loc_a, loc_b)
     for _ in range(3):
-        _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
+        _move(client, item_id=item["id"], kind="receive", quantity=1, to_location_id=loc_a["id"])
 
     all_ids = [m["id"] for m in client.get(f"/items/{item['id']}/movements").json()]
     assert len(all_ids) == 6

@@ -8,7 +8,7 @@ def _seed(client, sku, name, reorder, qty, loc, price=1.0):
     if qty:
         client.post(
             "/movements",
-            json={"item_id": item["id"], "kind": "receive", "qty": qty, "to_location_id": loc["id"]},
+            json={"item_id": item["id"], "kind": "receive", "quantity": qty, "to_location_id": loc["id"]},
         )
     return item
 
@@ -78,7 +78,7 @@ def test_low_stock_scoped_to_location_counts_only_that_location(client, loc_a, l
     item = _seed(client, "SPLIT", "Split", reorder=5, qty=2, loc=loc_a)
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 10, "to_location_id": loc_b["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 10, "to_location_id": loc_b["id"]},
     )
     # Globally not low-stock.
     assert client.get("/reports/low-stock").json() == []
@@ -156,7 +156,7 @@ def test_low_stock_scoped_to_location_includes_shortfall(client, loc_a, loc_b):
     item = _seed(client, "SPLIT", "Split", reorder=5, qty=2, loc=loc_a)
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 10, "to_location_id": loc_b["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 10, "to_location_id": loc_b["id"]},
     )
     entries = client.get("/reports/low-stock", params={"location_id": loc_a["id"]}).json()
     assert [e["sku"] for e in entries] == ["SPLIT"]
@@ -185,7 +185,7 @@ def test_low_stock_without_location_param_unchanged(client, loc_a, loc_b):
     item = _seed(client, "SUM", "Sum", reorder=6, qty=3, loc=loc_a)
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 3, "to_location_id": loc_b["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 3, "to_location_id": loc_b["id"]},
     )
     entries = client.get("/reports/low-stock").json()
     assert [e["sku"] for e in entries] == ["SUM"]

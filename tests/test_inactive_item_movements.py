@@ -23,13 +23,13 @@ def _levels(client, item_id):
 def test_movement_for_inactive_item_rejected_409(client, item, loc_a, loc_b, kind):
     # Seed some stock while the item is still active so outbound kinds would
     # otherwise succeed.
-    r = _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])
+    r = _move(client, item_id=item["id"], kind="receive", quantity=10, to_location_id=loc_a["id"])
     assert r.status_code == 201, r.text
     before = _levels(client, item["id"])
 
     _deactivate(client, item["id"])
 
-    payload = {"item_id": item["id"], "kind": kind, "qty": 3}
+    payload = {"item_id": item["id"], "kind": kind, "quantity": 3}
     if kind in ("receive", "adjust"):
         payload["to_location_id"] = loc_a["id"]
     elif kind == "ship":
@@ -49,7 +49,7 @@ def test_movement_for_inactive_item_rejected_409(client, item, loc_a, loc_b, kin
 
 def test_no_movement_record_created_for_inactive_item(client, item, loc_a):
     _deactivate(client, item["id"])
-    r = _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
+    r = _move(client, item_id=item["id"], kind="receive", quantity=1, to_location_id=loc_a["id"])
     assert r.status_code == 409
     detail = r.json()["error"]["message"]
     assert "inactive" in detail
@@ -59,16 +59,16 @@ def test_no_movement_record_created_for_inactive_item(client, item, loc_a):
 def test_reactivated_item_accepts_movements_again(client, item, loc_a):
     _deactivate(client, item["id"])
     assert _move(
-        client, item_id=item["id"], kind="receive", qty=2, to_location_id=loc_a["id"]
+        client, item_id=item["id"], kind="receive", quantity=2, to_location_id=loc_a["id"]
     ).status_code == 409
 
     r = client.put(f"/items/{item['id']}", json={"active": True})
     assert r.status_code == 200
 
-    r = _move(client, item_id=item["id"], kind="receive", qty=2, to_location_id=loc_a["id"])
+    r = _move(client, item_id=item["id"], kind="receive", quantity=2, to_location_id=loc_a["id"])
     assert r.status_code == 201, r.text
     stock = _levels(client, item["id"])
     assert stock["total"] == 2
     assert stock["levels"] == [
-        {"item_id": item["id"], "location_id": loc_a["id"], "qty": 2}
+        {"item_id": item["id"], "location_id": loc_a["id"], "quantity": 2}
     ]

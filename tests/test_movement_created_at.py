@@ -19,7 +19,7 @@ def _parse_utc(value: str) -> datetime:
 
 def test_movement_response_includes_created_at(client, item, loc_a):
     before = datetime.now(timezone.utc)
-    r = _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    r = _move(client, item_id=item["id"], kind="receive", quantity=5, to_location_id=loc_a["id"])
     after = datetime.now(timezone.utc)
 
     assert r.status_code == 201
@@ -30,7 +30,7 @@ def test_movement_response_includes_created_at(client, item, loc_a):
 
 
 def test_created_at_persisted_in_movements_table(client, item, loc_a, tmp_path):
-    _move(client, item_id=item["id"], kind="receive", qty=3, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", quantity=3, to_location_id=loc_a["id"])
     conn = connect(str(tmp_path / "test.db"))
     try:
         row = conn.execute("SELECT created_at FROM movements WHERE id = 1").fetchone()
@@ -42,7 +42,7 @@ def test_created_at_persisted_in_movements_table(client, item, loc_a, tmp_path):
 
 def test_get_and_list_movements_include_created_at(client, item, loc_a):
     created = _move(
-        client, item_id=item["id"], kind="receive", qty=2, to_location_id=loc_a["id"]
+        client, item_id=item["id"], kind="receive", quantity=2, to_location_id=loc_a["id"]
     ).json()
 
     got = client.get(f"/movements/{created['id']}").json()
@@ -55,7 +55,7 @@ def test_get_and_list_movements_include_created_at(client, item, loc_a):
 
 def test_reverse_movement_gets_its_own_created_at(client, item, loc_a):
     original = _move(
-        client, item_id=item["id"], kind="receive", qty=4, to_location_id=loc_a["id"]
+        client, item_id=item["id"], kind="receive", quantity=4, to_location_id=loc_a["id"]
     ).json()
     reversal = client.post(f"/movements/{original['id']}/reverse").json()
     _parse_utc(reversal["created_at"])

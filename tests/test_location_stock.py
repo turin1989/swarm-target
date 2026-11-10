@@ -1,19 +1,19 @@
 """Tests for GET /locations/{id}/stock (task T014)."""
 
 
-def _receive(client, item_id, location_id, qty):
+def _receive(client, item_id, location_id, quantity):
     r = client.post(
         "/movements",
-        json={"item_id": item_id, "kind": "receive", "qty": qty, "to_location_id": location_id},
+        json={"item_id": item_id, "kind": "receive", "quantity": quantity, "to_location_id": location_id},
     )
     assert r.status_code == 201, r.text
     return r.json()
 
 
-def _ship(client, item_id, location_id, qty):
+def _ship(client, item_id, location_id, quantity):
     r = client.post(
         "/movements",
-        json={"item_id": item_id, "kind": "ship", "qty": qty, "from_location_id": location_id},
+        json={"item_id": item_id, "kind": "ship", "quantity": quantity, "from_location_id": location_id},
     )
     assert r.status_code == 201, r.text
     return r.json()
@@ -35,8 +35,8 @@ def test_location_stock_lists_levels_ordered_by_item_id(client, item, loc_a):
     body = r.json()
     assert body["location_id"] == loc_a["id"]
     assert body["levels"] == [
-        {"item_id": item["id"], "location_id": loc_a["id"], "qty": 3},
-        {"item_id": item2["id"], "location_id": loc_a["id"], "qty": 7},
+        {"item_id": item["id"], "location_id": loc_a["id"], "quantity": 3},
+        {"item_id": item2["id"], "location_id": loc_a["id"], "quantity": 7},
     ]
 
 
@@ -60,7 +60,7 @@ def test_location_stock_omits_zero_qty_levels(client, item, loc_a):
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["levels"] == [
-        {"item_id": item["id"], "location_id": loc_a["id"], "qty": 5}
+        {"item_id": item["id"], "location_id": loc_a["id"], "quantity": 5}
     ]
 
 
@@ -72,7 +72,7 @@ def test_location_stock_only_includes_that_location(client, item, loc_a, loc_b):
     assert r.status_code == 200, r.text
     assert r.json() == {
         "location_id": loc_b["id"],
-        "levels": [{"item_id": item["id"], "location_id": loc_b["id"], "qty": 9}],
+        "levels": [{"item_id": item["id"], "location_id": loc_b["id"], "quantity": 9}],
     }
 
 
