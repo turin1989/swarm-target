@@ -1,5 +1,7 @@
 """Item CRUD and listing."""
 
+import re
+
 
 def test_health(client):
     r = client.get("/health")
@@ -98,8 +100,6 @@ def test_delete_item_cascades_stock(client, item, loc_a):
 
 
 # --- created_at (T020) ---------------------------------------------------------
-
-import re
 
 ISO_8601_UTC = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
