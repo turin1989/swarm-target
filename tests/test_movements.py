@@ -115,6 +115,32 @@ def test_movement_invalid_kind_422(client, item, loc_a):
     assert r.status_code == 422
 
 
+def test_movement_note_too_long_422(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=1,
+        to_location_id=loc_a["id"],
+        note="x" * 501,
+    )
+    assert r.status_code == 422
+
+
+def test_movement_note_max_length_allowed(client, item, loc_a):
+    note = "x" * 500
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=1,
+        to_location_id=loc_a["id"],
+        note=note,
+    )
+    assert r.status_code == 201
+    assert r.json()["note"] == note
+
+
 def test_list_movements_pagination(client, item, loc_a):
     for _ in range(4):
         _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
