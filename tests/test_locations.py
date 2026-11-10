@@ -14,8 +14,8 @@ def test_create_location(client):
 def test_duplicate_location_code_returns_409(client, loc_a):
     r = client.post("/locations", json={"code": "WH-A", "name": "Another Warehouse"})
     assert r.status_code == 409, r.text
-    detail = r.json()["detail"]
-    assert "WH-A" in detail
+    message = r.json()["error"]["message"]
+    assert "WH-A" in message
 
 
 def test_duplicate_location_not_persisted(client, loc_a):
