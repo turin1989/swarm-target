@@ -25,7 +25,7 @@ def test_duplicate_barcode_conflicts_409(client):
     assert r2.status_code == 409
     assert "DUP-123" in r2.json()["error"]["message"]
     # no partial insert
-    skus = [i["sku"] for i in client.get("/items").json()]
+    skus = [i["sku"] for i in client.get("/items").json()["items"]]
     assert skus == ["BC-1"]
 
 
@@ -45,7 +45,7 @@ def test_get_items_filter_by_barcode(client):
 
     r = client.get("/items", params={"barcode": "BAR-2"})
     assert r.status_code == 200
-    body = r.json()
+    body = r.json()["items"]
     assert len(body) == 1
     assert body[0]["sku"] == "F-2"
     assert body[0]["barcode"] == "BAR-2"
@@ -55,15 +55,15 @@ def test_get_items_filter_by_unknown_barcode_returns_empty(client):
     client.post("/items", json={"sku": "F-1", "name": "One", "barcode": "BAR-1"})
     r = client.get("/items", params={"barcode": "NOPE"})
     assert r.status_code == 200
-    assert r.json() == []
+    assert r.json()["items"] == []
 
 
 def test_barcode_filter_combines_with_active(client):
     r = client.post("/items", json={"sku": "CA-1", "name": "One", "barcode": "COMBO"})
     item_id = r.json()["id"]
     client.put(f"/items/{item_id}", json={"active": False})
-    assert client.get("/items", params={"barcode": "COMBO", "active": "true"}).json() == []
-    found = client.get("/items", params={"barcode": "COMBO", "active": "false"}).json()
+    assert client.get("/items", params={"barcode": "COMBO", "active": "true"}).json()["items"] == []
+    found = client.get("/items", params={"barcode": "COMBO", "active": "false"}).json()["items"]
     assert [i["sku"] for i in found] == ["CA-1"]
 
 
