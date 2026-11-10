@@ -73,6 +73,38 @@ def test_update_item_name_and_price(client, item):
     assert r.json()["sku"] == item["sku"]
 
 
+def test_update_item_reorder_point(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": 12})
+    assert r.status_code == 200
+    assert r.json()["reorder_point"] == 12
+    # value is persisted
+    assert client.get(f"/items/{item['id']}").json()["reorder_point"] == 12
+
+
+def test_update_item_reorder_point_with_other_fields(client, item):
+    r = client.put(
+        f"/items/{item['id']}",
+        json={"reorder_point": 7, "name": "Renamed", "unit_price": 3.5},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["reorder_point"] == 7
+    assert body["name"] == "Renamed"
+    assert body["unit_price"] == 3.5
+    stored = client.get(f"/items/{item['id']}").json()
+    assert stored["reorder_point"] == 7
+    assert stored["name"] == "Renamed"
+    assert stored["unit_price"] == 3.5
+
+
+def test_update_item_omitting_reorder_point_preserves_it(client, item):
+    client.put(f"/items/{item['id']}", json={"reorder_point": 12})
+    r = client.put(f"/items/{item['id']}", json={"name": "Other"})
+    assert r.status_code == 200
+    assert r.json()["reorder_point"] == 12
+    assert client.get(f"/items/{item['id']}").json()["reorder_point"] == 12
+
+
 def test_update_item_deactivate(client, item):
     r = client.put(f"/items/{item['id']}", json={"active": False})
     assert r.json()["active"] is False
