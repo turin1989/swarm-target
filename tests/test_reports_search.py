@@ -125,6 +125,50 @@ def test_search_description_matches_keep_name_ordering(client):
     assert names == ["Alpha foo", "Mid", "Zeta"]
 
 
+def test_search_name_is_case_insensitive(client):
+    client.post("/items", json={"sku": "S1", "name": "Blue Widget"})
+    client.post("/items", json={"sku": "S2", "name": "Red Gadget"})
+    for q in ("widget", "WIDGET", "Widget", "wIdGeT"):
+        r = client.get("/search", params={"q": q})
+        assert r.status_code == 200
+        assert [i["sku"] for i in r.json()] == ["S1"], q
+
+
+def test_search_sku_is_case_insensitive(client):
+    client.post("/items", json={"sku": "BOLT-M8", "name": "Bolt"})
+    client.post("/items", json={"sku": "NUT-M8", "name": "Nut"})
+    for q in ("bolt", "BOLT", "Bolt"):
+        assert [i["sku"] for i in client.get("/search", params={"q": q}).json()] == ["BOLT-M8"], q
+
+
+def test_search_description_is_case_insensitive(client):
+    client.post(
+        "/items",
+        json={"sku": "D1", "name": "Hammer", "description": "Heavy FOO tool"},
+    )
+    client.post(
+        "/items",
+        json={"sku": "D2", "name": "Saw", "description": "cutting tool"},
+    )
+    assert [i["sku"] for i in client.get("/search", params={"q": "foo"}).json()] == ["D1"]
+
+
+def test_search_case_insensitive_keeps_name_ordering_and_limit(client):
+    for n, name in enumerate(["cable C", "CABLE A", "Cable B"]):
+        client.post("/items", json={"sku": f"C{n}", "name": name})
+    names = [i["name"] for i in client.get("/search", params={"q": "cAbLe", "limit": 2}).json()]
+    assert names == ["CABLE A", "Cable B"]
+
+
+def test_search_does_not_treat_percent_or_underscore_as_wildcards(client):
+    client.post("/items", json={"sku": "W1", "name": "100% Cotton"})
+    client.post("/items", json={"sku": "W2", "name": "100x Cotton"})
+    client.post("/items", json={"sku": "W_3", "name": "Underscore"})
+    client.post("/items", json={"sku": "WX3", "name": "NoUnderscore"})
+    assert [i["sku"] for i in client.get("/search", params={"q": "100%"}).json()] == ["W1"]
+    assert [i["sku"] for i in client.get("/search", params={"q": "W_3"}).json()] == ["W_3"]
+
+
 def test_search_requires_query(client):
     assert client.get("/search").status_code == 422
     assert client.get("/search", params={"q": ""}).status_code == 422
