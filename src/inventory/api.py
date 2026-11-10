@@ -37,12 +37,18 @@ def _fetch_item(conn: sqlite3.Connection, item_id: int) -> Item:
 # --- items -------------------------------------------------------------------
 
 
+def _item_conflict_detail(exc: sqlite3.IntegrityError, payload: ItemCreate) -> str:
+    if "barcode" in str(exc):
+        return f"barcode {payload.barcode!r} already exists"
+    return f"sku {payload.sku!r} already exists"
+
+
 @router.post("/items", response_model=Item, status_code=201)
 def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db)) -> Item:
     try:
         return items_service.create_item(conn, payload)
-    except sqlite3.IntegrityError:
-        raise HTTPException(status_code=409, detail=f"sku {payload.sku!r} already exists")
+    except sqlite3.IntegrityError as exc:
+        raise HTTPException(status_code=409, detail=_item_conflict_detail(exc, payload))
 
 
 _SORTABLE_ITEM_COLUMNS = {"id", "name", "sku"}
@@ -59,8 +65,8 @@ def create_items_bulk(
         for item in payload:
             cur = conn.execute(
                 """
-                INSERT INTO items (sku, name, description, unit_price, reorder_point, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO items (sku, name, description, unit_price, reorder_point, created_at, barcode)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     item.sku,
@@ -69,12 +75,13 @@ def create_items_bulk(
                     item.unit_price,
                     item.reorder_point,
                     items_service.utc_now_iso(),
+                    item.barcode,
                 ),
             )
             created_ids.append(cur.lastrowid)
-    except sqlite3.IntegrityError:
+    except sqlite3.IntegrityError as exc:
         conn.rollback()
-        raise HTTPException(status_code=409, detail=f"sku {item.sku!r} already exists")
+        raise HTTPException(status_code=409, detail=_item_conflict_detail(exc, item))
     return [_fetch_item(conn, item_id) for item_id in created_ids]
 
 
@@ -83,6 +90,7 @@ def list_items(
     response: Response,
     active: Optional[bool] = None,
     sku: Optional[str] = None,
+    barcode: Optional[str] = None,
     sort: str = Query("id", pattern=r"^-?(id|name|sku)$"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -97,6 +105,9 @@ def list_items(
     if sku is not None:
         conditions.append("sku = ?")
         params.append(sku)
+    if barcode is not None:
+        conditions.append("barcode = ?")
+        params.append(barcode)
     where = ""
     if conditions:
         where = " WHERE " + " AND ".join(conditions)
