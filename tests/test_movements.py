@@ -344,3 +344,28 @@ def test_filter_movements_no_matches(client, item, mixed_movements):
     r = client.get("/movements", params={"item_id": 999})
     assert r.status_code == 200
     assert r.json() == []
+
+
+def test_note_at_max_length_accepted(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=1,
+        to_location_id=loc_a["id"],
+        note="n" * 500,
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["note"] == "n" * 500
+
+
+def test_note_over_max_length_rejected(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=1,
+        to_location_id=loc_a["id"],
+        note="n" * 501,
+    )
+    assert r.status_code == 422, r.text
