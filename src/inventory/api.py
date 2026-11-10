@@ -245,6 +245,11 @@ def low_stock_report(
     return reports.low_stock(conn, location_id=location_id)
 
 
+@router.get("/reports/movements-summary")
+def movements_summary_report(conn: sqlite3.Connection = Depends(get_db)) -> dict:
+    return reports.movements_summary(conn)
+
+
 @router.get("/reports/value")
 def inventory_value_report(conn: sqlite3.Connection = Depends(get_db)) -> dict:
     return {"value": reports.inventory_value(conn)}
