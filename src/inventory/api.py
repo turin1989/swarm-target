@@ -9,6 +9,7 @@ from inventory.db import get_db
 from inventory.models import (
     Item,
     ItemCreate,
+    ItemPage,
     ItemStock,
     ItemUpdate,
     Location,
@@ -64,15 +65,14 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
     return _fetch_item(conn, cur.lastrowid)
 
 
-@router.get("/items", response_model=list[Item])
+@router.get("/items", response_model=ItemPage)
 def list_items(
     active: Optional[bool] = None,
     barcode: Optional[str] = None,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     conn: sqlite3.Connection = Depends(get_db),
-) -> list[Item]:
-    sql = "SELECT * FROM items"
+) -> ItemPage:
     params: list = []
     conditions: list[str] = []
     if active is not None:
@@ -81,11 +81,18 @@ def list_items(
     if barcode is not None:
         conditions.append("barcode = ?")
         params.append(barcode)
-    if conditions:
-        sql += " WHERE " + " AND ".join(conditions)
-    sql += " ORDER BY id LIMIT ? OFFSET ?"
-    params += [limit, offset]
-    return [_row_to_item(r) for r in conn.execute(sql, params).fetchall()]
+    where = " WHERE " + " AND ".join(conditions) if conditions else ""
+    total = conn.execute(f"SELECT COUNT(*) FROM items{where}", params).fetchone()[0]
+    rows = conn.execute(
+        f"SELECT * FROM items{where} ORDER BY id LIMIT ? OFFSET ?",
+        [*params, limit, offset],
+    ).fetchall()
+    return ItemPage(
+        items=[_row_to_item(r) for r in rows],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/items/{item_id}", response_model=Item)
