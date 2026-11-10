@@ -47,21 +47,53 @@ def test_list_items_ordered_by_id(client):
         client.post("/items", json={"sku": sku, "name": sku})
     r = client.get("/items")
     assert r.status_code == 200
-    assert [i["sku"] for i in r.json()] == ["C", "A", "B"]
+    assert [i["sku"] for i in r.json()["items"]] == ["C", "A", "B"]
 
 
 def test_list_items_limit(client):
     for n in range(5):
         client.post("/items", json={"sku": f"S{n}", "name": f"N{n}"})
     r = client.get("/items", params={"limit": 2})
-    assert [i["sku"] for i in r.json()] == ["S0", "S1"]
+    assert [i["sku"] for i in r.json()["items"]] == ["S0", "S1"]
 
 
 def test_list_items_filter_active(client, item):
     client.post("/items", json={"sku": "INACTIVE", "name": "Old"})
     client.put("/items/2", json={"active": False})
-    assert [i["sku"] for i in client.get("/items", params={"active": "true"}).json()] == ["WIDGET-1"]
-    assert [i["sku"] for i in client.get("/items", params={"active": "false"}).json()] == ["INACTIVE"]
+    active_page = client.get("/items", params={"active": "true"}).json()
+    inactive_page = client.get("/items", params={"active": "false"}).json()
+    assert [i["sku"] for i in active_page["items"]] == ["WIDGET-1"]
+    assert [i["sku"] for i in inactive_page["items"]] == ["INACTIVE"]
+    assert active_page["total"] == 1
+    assert inactive_page["total"] == 1
+
+
+def test_list_items_envelope_shape(client):
+    for n in range(3):
+        client.post("/items", json={"sku": f"E{n}", "name": f"E{n}"})
+    r = client.get("/items")
+    assert r.status_code == 200
+    body = r.json()
+    assert set(body.keys()) == {"items", "total", "limit", "offset"}
+    assert body["total"] == 3
+    assert body["limit"] == 100
+    assert body["offset"] == 0
+    assert len(body["items"]) == 3
+
+
+def test_list_items_total_ignores_pagination(client):
+    for n in range(5):
+        client.post("/items", json={"sku": f"P{n}", "name": f"P{n}"})
+    body = client.get("/items", params={"limit": 2, "offset": 1}).json()
+    assert body["total"] == 5
+    assert body["limit"] == 2
+    assert body["offset"] == 1
+    assert [i["sku"] for i in body["items"]] == ["P1", "P2"]
+
+
+def test_list_items_empty_page(client):
+    body = client.get("/items").json()
+    assert body == {"items": [], "total": 0, "limit": 100, "offset": 0}
 
 
 def test_update_item_name_and_price(client, item):
