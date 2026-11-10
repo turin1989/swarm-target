@@ -83,6 +83,18 @@ def _require_location(conn: sqlite3.Connection, location_id: int | None, field: 
     return location_id
 
 
+def _require_stock(
+    conn: sqlite3.Connection, item_id: int, location_id: int, quantity: int
+) -> None:
+    """Reject movements that would drive stock at ``location_id`` negative."""
+    on_hand = get_stock_level(conn, item_id, location_id)
+    if quantity > on_hand:
+        raise ConflictError(
+            f"insufficient stock for item {item_id} at location {location_id}: "
+            f"have {on_hand}, requested {quantity}"
+        )
+
+
 def _utc_now_iso() -> str:
     """Current UTC time as an ISO-8601 string (e.g. ``2026-11-10T12:34:56+00:00``)."""
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -106,12 +118,14 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
         _adjust(conn, m.item_id, to_id, m.quantity)
     elif m.kind == "ship":
         from_id = _require_location(conn, m.from_location_id, "from_location_id")
+        _require_stock(conn, m.item_id, from_id, m.quantity)
         _adjust(conn, m.item_id, from_id, -m.quantity)
     elif m.kind == "transfer":
         from_id = _require_location(conn, m.from_location_id, "from_location_id")
         to_id = _require_location(conn, m.to_location_id, "to_location_id")
         if from_id == to_id:
             raise ValidationError("cannot transfer to the same location")
+        _require_stock(conn, m.item_id, from_id, m.quantity)
         _adjust(conn, m.item_id, from_id, -m.quantity)
         _adjust(conn, m.item_id, to_id, m.quantity)
     elif m.kind == "adjust":
