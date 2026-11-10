@@ -266,3 +266,32 @@ def test_get_item_by_sku_does_not_shadow_get_by_id(client, item):
     r = client.get(f"/items/{item['id']}")
     assert r.status_code == 200
     assert r.json()["id"] == item["id"]
+
+def test_create_item_rejects_negative_reorder_point_422(client):
+    r = client.post("/items", json={"sku": "NRP-1", "name": "Nrp", "reorder_point": -1})
+    assert r.status_code == 422
+
+
+def test_update_item_rejects_negative_reorder_point_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": -3})
+    assert r.status_code == 422
+    # value unchanged
+    assert client.get(f"/items/{item['id']}").json()["reorder_level"] == item["reorder_level"]
+
+
+def test_create_item_rejects_negative_reorder_level_422(client):
+    r = client.post("/items", json={"sku": "NRL-1", "name": "Nrl", "reorder_level": -1})
+    assert r.status_code == 422
+
+
+def test_update_item_rejects_negative_reorder_level_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_level": -5})
+    assert r.status_code == 422
+    # value unchanged
+    assert client.get(f"/items/{item['id']}").json()["reorder_level"] == item["reorder_level"]
+
+
+def test_update_item_zero_reorder_level_not_rejected(client, item):
+    # zero is a valid (non-negative) value, so validation must not return 422
+    r = client.put(f"/items/{item['id']}", json={"reorder_level": 0})
+    assert r.status_code == 200
