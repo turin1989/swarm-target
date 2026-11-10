@@ -206,6 +206,36 @@ def get_location(location_id: int, conn: sqlite3.Connection = Depends(get_db)) -
     return Location(**dict(row))
 
 
+@router.delete("/locations/{location_id}", status_code=204)
+def delete_location(
+    location_id: int, conn: sqlite3.Connection = Depends(get_db)
+) -> Response:
+    row = conn.execute("SELECT * FROM locations WHERE id = ?", (location_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"location {location_id} not found")
+    holds_stock = conn.execute(
+        "SELECT 1 FROM stock_levels WHERE location_id = ? AND qty != 0 LIMIT 1",
+        (location_id,),
+    ).fetchone()
+    if holds_stock is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"location {location_id} still holds stock and cannot be deleted",
+        )
+    # Movement history references locations without ON DELETE; detach it so the
+    # location row can be removed while keeping the movement log intact.
+    conn.execute(
+        "UPDATE movements SET from_location_id = NULL WHERE from_location_id = ?",
+        (location_id,),
+    )
+    conn.execute(
+        "UPDATE movements SET to_location_id = NULL WHERE to_location_id = ?",
+        (location_id,),
+    )
+    conn.execute("DELETE FROM locations WHERE id = ?", (location_id,))
+    return Response(status_code=204)
+
+
 # --- movements ---------------------------------------------------------------
 
 
