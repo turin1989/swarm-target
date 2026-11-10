@@ -106,3 +106,4 @@ class LowStockEntry(BaseModel):
     name: str
     total_qty: int
     reorder_level: int
+    shortfall: int = Field(..., ge=0)

@@ -113,3 +113,52 @@ def test_adjust_cannot_be_reversed(client, item, loc_a):
     # stock untouched, no extra movement written
     assert client.get(f"/items/{item['id']}/stock").json()["total"] == 4
     assert len(client.get("/movements").json()) == 1
+
+
+def test_ship_more_than_adjusted_level_is_409(client, item, loc_a):
+    # the insufficient-stock guard (T005) sees the absolute level set by adjust
+    _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="adjust", qty=2, to_location_id=loc_a["id"])
+    r = _move(client, item_id=item["id"], kind="ship", qty=3, from_location_id=loc_a["id"])
+    assert r.status_code == 409
+    assert "insufficient" in r.json()["error"]["message"]
+
+
+def test_ship_within_adjusted_level_succeeds(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="adjust", qty=4, to_location_id=loc_a["id"])
+    r = _move(client, item_id=item["id"], kind="ship", qty=4, from_location_id=loc_a["id"])
+    assert r.status_code == 201
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 0
+
+
+def test_transfer_after_adjust_credits_destination(client, item, loc_a, loc_b):
+    # transfer must debit the source and credit the destination of the adjusted stock
+    _move(client, item_id=item["id"], kind="adjust", qty=6, to_location_id=loc_a["id"])
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=4,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    assert r.status_code == 201
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 6
+    levels = {lv["location_id"]: lv["qty"] for lv in s["levels"]}
+    assert levels == {loc_a["id"]: 2, loc_b["id"]: 4}
+
+
+def test_transfer_more_than_adjusted_level_is_409(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="adjust", qty=1, to_location_id=loc_a["id"])
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=2,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    assert r.status_code == 409
+    assert "insufficient" in r.json()["error"]["message"]
