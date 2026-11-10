@@ -1,0 +1,42 @@
+"""Tests for X-Request-ID echo/generation on all responses."""
+
+import uuid
+
+
+def test_echoes_provided_request_id(client):
+    r = client.get("/health", headers={"X-Request-ID": "my-custom-id-123"})
+    assert r.status_code == 200
+    assert r.headers["X-Request-ID"] == "my-custom-id-123"
+
+
+def test_generates_uuid4_when_missing(client):
+    r = client.get("/health")
+    assert r.status_code == 200
+    rid = r.headers["X-Request-ID"]
+    parsed = uuid.UUID(rid)
+    assert parsed.version == 4
+    assert str(parsed) == rid
+
+
+def test_generated_ids_are_unique_per_request(client):
+    first = client.get("/health").headers["X-Request-ID"]
+    second = client.get("/health").headers["X-Request-ID"]
+    assert first != second
+
+
+def test_echoes_request_id_on_404_error(client):
+    r = client.get("/items/999999", headers={"X-Request-ID": "err-id-404"})
+    assert r.status_code == 404
+    assert r.headers["X-Request-ID"] == "err-id-404"
+
+
+def test_generates_request_id_on_404_error(client):
+    r = client.get("/items/999999")
+    assert r.status_code == 404
+    assert uuid.UUID(r.headers["X-Request-ID"]).version == 4
+
+
+def test_echoes_request_id_on_validation_error(client):
+    r = client.post("/items", json={}, headers={"X-Request-ID": "err-id-422"})
+    assert r.status_code == 422
+    assert r.headers["X-Request-ID"] == "err-id-422"
