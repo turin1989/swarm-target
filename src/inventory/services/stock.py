@@ -128,10 +128,20 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
     created_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     cur = conn.execute(
         """
-        INSERT INTO movements (item_id, kind, qty, from_location_id, to_location_id, note, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO movements
+            (item_id, kind, qty, from_location_id, to_location_id, note, reference, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (m.item_id, m.kind, m.qty, m.from_location_id, m.to_location_id, m.note, created_at),
+        (
+            m.item_id,
+            m.kind,
+            m.qty,
+            m.from_location_id,
+            m.to_location_id,
+            m.note,
+            m.reference,
+            created_at,
+        ),
     )
     return get_movement(conn, cur.lastrowid)
 
