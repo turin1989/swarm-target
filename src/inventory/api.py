@@ -225,8 +225,16 @@ def low_stock_report(
 
 
 @router.get("/reports/value")
-def inventory_value_report(conn: sqlite3.Connection = Depends(get_db)) -> dict:
-    return {"value": reports.inventory_value(conn)}
+def inventory_value_report(
+    location_id: Optional[int] = None, conn: sqlite3.Connection = Depends(get_db)
+) -> dict:
+    if location_id is not None:
+        row = conn.execute(
+            "SELECT id FROM locations WHERE id = ?", (location_id,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"location {location_id} not found")
+    return {"value": reports.inventory_value(conn, location_id=location_id)}
 
 
 @router.get("/search", response_model=list[Item])
