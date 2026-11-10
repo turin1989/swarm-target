@@ -40,7 +40,13 @@ CREATE TABLE IF NOT EXISTS movements (
     note TEXT NOT NULL DEFAULT '',
     reference TEXT
 );
+
+CREATE TABLE IF NOT EXISTS schema_version (
+    version INTEGER NOT NULL
+);
 """
+
+SCHEMA_VERSION = 1
 
 
 def connect(path: str) -> sqlite3.Connection:
@@ -70,6 +76,23 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_items_barcode ON items(barcode)"
         )
+    row = conn.execute("SELECT version FROM schema_version").fetchone()
+    if row is None:
+        conn.execute(
+            "INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,)
+        )
+
+
+def get_schema_version(path: str) -> int:
+    """Return the schema version recorded in the database at *path*."""
+    conn = connect(path)
+    try:
+        row = conn.execute("SELECT version FROM schema_version").fetchone()
+        if row is None:
+            raise RuntimeError("schema_version table has no recorded version")
+        return int(row["version"])
+    finally:
+        conn.close()
 
 
 def get_db(request: Request) -> Iterator[sqlite3.Connection]:
