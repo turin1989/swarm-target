@@ -66,3 +66,46 @@ def test_locations_code_column_is_unique_in_schema(tmp_path):
             raise AssertionError("expected IntegrityError for duplicate location code")
     finally:
         conn.close()
+
+
+# --- T034: location code format validation ------------------------------------
+
+
+def test_valid_codes_accepted(client):
+    for code in ["WH-A", "A", "0", "WH-1-SHELF-2", "X" * 32, "9-ZONE"]:
+        r = client.post("/locations", json={"code": code, "name": f"Loc {code}"})
+        assert r.status_code == 201, f"{code!r}: {r.text}"
+        assert r.json()["code"] == code
+
+
+def test_lowercase_code_rejected_422(client):
+    r = client.post("/locations", json={"code": "wh-a", "name": "Lowercase"})
+    assert r.status_code == 422, r.text
+
+
+def test_code_starting_with_hyphen_rejected_422(client):
+    r = client.post("/locations", json={"code": "-WH", "name": "Leading hyphen"})
+    assert r.status_code == 422, r.text
+
+
+def test_code_with_invalid_characters_rejected_422(client):
+    for code in ["WH_A", "WH A", "WH.A", "WH/A", "WHÄ"]:
+        r = client.post("/locations", json={"code": code, "name": "Bad chars"})
+        assert r.status_code == 422, f"{code!r}: {r.text}"
+
+
+def test_code_longer_than_32_chars_rejected_422(client):
+    r = client.post("/locations", json={"code": "A" * 33, "name": "Too long"})
+    assert r.status_code == 422, r.text
+
+
+def test_empty_code_rejected_422(client):
+    r = client.post("/locations", json={"code": "", "name": "Empty"})
+    assert r.status_code == 422, r.text
+
+
+def test_invalid_code_does_not_create_location(client):
+    client.post("/locations", json={"code": "bad-code", "name": "Invalid"})
+    r = client.get("/locations")
+    assert r.status_code == 200
+    assert all(loc["code"] != "bad-code" for loc in r.json())
