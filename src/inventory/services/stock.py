@@ -110,7 +110,7 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
             raise StockError("cannot transfer to the same location")
         _require_available(conn, m.item_id, from_id, m.qty)
         _adjust(conn, m.item_id, from_id, -m.qty)
-        _adjust(conn, m.item_id, from_id, m.qty)
+        _adjust(conn, m.item_id, to_id, m.qty)
     elif m.kind == "adjust":
         if m.from_location_id is not None:
             raise StockError("from_location_id must be null for adjust movements")

@@ -77,6 +77,66 @@ def test_transfer_is_recorded(client, item, loc_a, loc_b):
     assert movements[1]["kind"] == "transfer"
 
 
+def test_transfer_moves_stock_between_locations(client, item, loc_a, loc_b):
+    """T003: transfer debits from_location and credits to_location."""
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=2,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    assert r.status_code == 201
+
+    s = client.get(f"/items/{item['id']}/stock").json()
+    # total stock is unchanged by the transfer
+    assert s["total"] == 5
+    # source decreased by 2, destination increased by 2; both locations visible
+    assert s["levels"] == [
+        {"item_id": item["id"], "location_id": loc_a["id"], "qty": 3},
+        {"item_id": item["id"], "location_id": loc_b["id"], "qty": 2},
+    ]
+
+
+def test_transfer_entire_stock_empties_source(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=4, to_location_id=loc_a["id"])
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=4,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    assert r.status_code == 201
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 4
+    levels = {lvl["location_id"]: lvl["qty"] for lvl in s["levels"]}
+    assert levels[loc_a["id"]] == 0
+    assert levels[loc_b["id"]] == 4
+
+
+def test_repeated_transfers_accumulate_at_destination(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])
+    for _ in range(3):
+        r = _move(
+            client,
+            item_id=item["id"],
+            kind="transfer",
+            qty=2,
+            from_location_id=loc_a["id"],
+            to_location_id=loc_b["id"],
+        )
+        assert r.status_code == 201
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 10
+    levels = {lvl["location_id"]: lvl["qty"] for lvl in s["levels"]}
+    assert levels[loc_a["id"]] == 4
+    assert levels[loc_b["id"]] == 6
+
+
 def test_transfer_same_location_rejected(client, item, loc_a):
     _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
     r = _move(
