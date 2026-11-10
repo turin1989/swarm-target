@@ -26,7 +26,38 @@ def test_low_stock_lists_items_below_reorder_point(client, loc_a):
         "name": "Low",
         "total_qty": 2,
         "reorder_point": 5,
+        "shortfall": 3,
     }
+
+
+def test_low_stock_shortfall_is_reorder_point_minus_total_qty(client, loc_a):
+    _seed(client, "SF1", "s1", reorder=10, qty=4, loc=loc_a)
+    _seed(client, "SF2", "s2", reorder=7, qty=0, loc=loc_a)
+    entries = {e["sku"]: e for e in client.get("/reports/low-stock").json()}
+    assert entries["SF1"]["shortfall"] == 6
+    assert entries["SF2"]["shortfall"] == 7
+
+
+def test_low_stock_shortfall_never_negative(client, loc_a):
+    # Items at or above their reorder point are excluded from the report,
+    # so every reported shortfall must be strictly positive (never negative).
+    _seed(client, "NEG", "neg", reorder=5, qty=2, loc=loc_a)
+    _seed(client, "FULL", "full", reorder=5, qty=50, loc=loc_a)
+    entries = client.get("/reports/low-stock").json()
+    assert [e["sku"] for e in entries] == ["NEG"]
+    assert all(e["shortfall"] >= 0 for e in entries)
+
+
+def test_low_stock_entry_model_rejects_negative_shortfall():
+    import pytest as _pytest
+    from pydantic import ValidationError
+
+    from inventory.models import LowStockEntry
+
+    with _pytest.raises(ValidationError):
+        LowStockEntry(
+            item_id=1, sku="X", name="x", total_qty=10, reorder_point=5, shortfall=-5
+        )
 
 
 def test_low_stock_includes_items_with_no_stock(client, loc_a):
