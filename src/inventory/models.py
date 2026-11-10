@@ -2,7 +2,7 @@
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 MovementKind = Literal["receive", "ship", "transfer", "adjust"]
 
@@ -18,6 +18,15 @@ class ItemCreate(BaseModel):
     unit_price: float = 0.0
     reorder_level: int = Field(default=0, ge=0)
     barcode: Optional[str] = None
+
+    @field_validator("sku")
+    @classmethod
+    def normalise_sku(cls, value: str) -> str:
+        """Trim surrounding whitespace and upper-case the sku."""
+        value = value.strip().upper()
+        if not value:
+            raise ValueError("sku must not be blank")
+        return value
 
 
 class ItemUpdate(BaseModel):
