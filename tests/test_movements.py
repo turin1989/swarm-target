@@ -273,7 +273,9 @@ def test_adjust_only_affects_target_location(client, item, loc_a, loc_b):
 def test_adjust_requires_to_location(client, item, loc_a):
     r = _move(client, item_id=item["id"], kind="adjust", qty=1)
     assert r.status_code == 400
-    assert "required" in r.json()["detail"]
+    body = r.json()
+    assert body["error"]["code"] == "bad_request"
+    assert "required" in body["error"]["message"]
     assert client.get("/movements").json() == []
 
 
@@ -287,7 +289,9 @@ def test_adjust_rejects_from_location(client, item, loc_a, loc_b):
         to_location_id=loc_b["id"],
     )
     assert r.status_code == 400
-    assert "from_location_id must be null" in r.json()["detail"]
+    body = r.json()
+    assert body["error"]["code"] == "bad_request"
+    assert "from_location_id must be null" in body["error"]["message"]
     # nothing is recorded and no stock changes
     assert client.get("/movements").json() == []
     assert client.get(f"/items/{item['id']}/stock").json()["total"] == 0
