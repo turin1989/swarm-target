@@ -257,6 +257,13 @@ def create_movement(
     return stock.apply_movement(conn, payload)
 
 
+@router.post("/movements/{movement_id}/reverse", response_model=Movement, status_code=201)
+def reverse_movement(
+    movement_id: int, conn: sqlite3.Connection = Depends(get_db)
+) -> Movement:
+    return stock.reverse_movement(conn, movement_id)
+
+
 @router.get("/movements", response_model=list[Movement])
 def list_movements(
     limit: int = Query(100, ge=1, le=500),
