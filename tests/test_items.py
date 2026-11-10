@@ -618,3 +618,39 @@ def test_list_items_sort_combines_with_filters_and_pagination(client):
     body = r.json()
     assert body["total"] == 2
     assert [i["name"] for i in body["items"]] == ["Bravo"]
+
+
+# --- T008: unit_price must be non-negative ---------------------------------------
+
+
+def test_create_item_negative_unit_price_422(client):
+    r = client.post("/items", json={"sku": "NEGP-1", "name": "Neg Price", "unit_price": -0.01})
+    assert r.status_code == 422
+    # nothing was created
+    assert client.get("/items").json()["items"] == []
+
+
+def test_create_item_zero_unit_price_ok(client):
+    r = client.post("/items", json={"sku": "ZEROP-1", "name": "Zero Price", "unit_price": 0})
+    assert r.status_code == 201
+    assert r.json()["unit_price"] == 0
+
+
+def test_update_item_negative_unit_price_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"unit_price": -5.0})
+    assert r.status_code == 422
+    # item unchanged
+    assert client.get(f"/items/{item['id']}").json() == item
+
+
+def test_update_item_zero_unit_price_ok(client, item):
+    r = client.put(f"/items/{item['id']}", json={"unit_price": 0})
+    assert r.status_code == 200
+    assert r.json()["unit_price"] == 0
+    assert client.get(f"/items/{item['id']}").json()["unit_price"] == 0
+
+
+def test_update_item_positive_unit_price_still_ok(client, item):
+    r = client.put(f"/items/{item['id']}", json={"unit_price": 3.75})
+    assert r.status_code == 200
+    assert r.json()["unit_price"] == 3.75
