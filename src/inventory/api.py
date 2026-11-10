@@ -23,8 +23,18 @@ from inventory.models import (
 )
 from inventory.services import items as items_service
 from inventory.services import reports, search, stock
+from inventory.services.errors import InventoryError
 
 router = APIRouter()
+
+
+def inventory_error_to_http(exc: InventoryError) -> HTTPException:
+    """Single mapping point from service-layer errors to HTTP errors.
+
+    Routes let :class:`InventoryError` propagate; the application-level
+    exception handler uses this helper instead of per-route try/except.
+    """
+    return HTTPException(status_code=exc.status_code, detail=str(exc))
 
 
 def _fetch_item(conn: sqlite3.Connection, item_id: int) -> Item:
@@ -235,20 +245,14 @@ def location_stock(location_id: int, conn: sqlite3.Connection = Depends(get_db))
 def create_movement(
     payload: MovementCreate, conn: sqlite3.Connection = Depends(get_db)
 ) -> Movement:
-    try:
-        return stock.apply_movement(conn, payload)
-    except stock.StockError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    return stock.apply_movement(conn, payload)
 
 
 @router.post("/movements/{movement_id}/reverse", response_model=Movement, status_code=201)
 def reverse_movement(
     movement_id: int, conn: sqlite3.Connection = Depends(get_db)
 ) -> Movement:
-    try:
-        return stock.reverse_movement(conn, movement_id)
-    except stock.StockError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    return stock.reverse_movement(conn, movement_id)
 
 
 @router.get("/movements", response_model=list[Movement])
@@ -264,10 +268,7 @@ def list_movements(
 
 @router.get("/movements/{movement_id}", response_model=Movement)
 def get_movement(movement_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Movement:
-    try:
-        return stock.get_movement(conn, movement_id)
-    except stock.StockError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    return stock.get_movement(conn, movement_id)
 
 
 # --- reports & search --------------------------------------------------------
