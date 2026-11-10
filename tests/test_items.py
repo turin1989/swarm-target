@@ -265,6 +265,50 @@ def test_update_item_accepts_reorder_level_field(client, item):
     assert "reorder_level" in r.json()
 
 
+"""T009: negative reorder values are rejected on create/update with 422."""
+
+
+def test_create_item_with_negative_reorder_point_returns_422(client):
+    r = client.post(
+        "/items", json={"sku": "NEG-RP-1", "name": "Neg", "reorder_point": -1}
+    )
+    assert r.status_code == 422
+
+
+def test_update_item_with_negative_reorder_point_returns_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": -5})
+    assert r.status_code == 422
+    # value must not have leaked through under the renamed field
+    assert client.get(f"/items/{item['id']}").json()["reorder_level"] == 5
+
+
+def test_create_item_with_negative_reorder_level_returns_422(client):
+    r = client.post(
+        "/items", json={"sku": "NEG-RL-1", "name": "Neg", "reorder_level": -1}
+    )
+    assert r.status_code == 422
+
+
+def test_update_item_with_negative_reorder_level_returns_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_level": -3})
+    assert r.status_code == 422
+    assert client.get(f"/items/{item['id']}").json()["reorder_level"] == 5
+
+
+def test_create_item_with_zero_reorder_level_is_accepted(client):
+    r = client.post(
+        "/items", json={"sku": "ZERO-RL-1", "name": "Zero", "reorder_level": 0}
+    )
+    assert r.status_code == 201
+    assert r.json()["reorder_level"] == 0
+
+
+def test_update_item_with_zero_reorder_level_is_accepted(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_level": 0})
+    assert r.status_code == 200
+    assert r.json()["reorder_level"] == 0
+
+
 def test_get_item_exposes_reorder_level_not_reorder_point(client, item):
     body = client.get(f"/items/{item['id']}").json()
     assert body["reorder_level"] == 5
