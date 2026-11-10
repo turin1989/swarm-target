@@ -2,11 +2,14 @@
 
 import os
 
+import sqlite3
+
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
 from inventory import __version__
 from inventory.api import inventory_error_handler, router
-from inventory.db import init_db
+from inventory.db import connect, init_db
 from inventory.services.errors import InventoryError
 
 DEFAULT_DB_PATH = "inventory.db"
@@ -21,8 +24,21 @@ def create_app(db_path: str | None = None) -> FastAPI:
     app.add_exception_handler(InventoryError, inventory_error_handler)
 
     @app.get("/health")
-    def health() -> dict:
-        return {"status": "ok", "version": __version__}
+    def health() -> JSONResponse:
+        try:
+            conn = connect(app.state.db_path)
+            try:
+                conn.execute("SELECT 1")
+            finally:
+                conn.close()
+        except sqlite3.Error:
+            return JSONResponse(
+                status_code=503,
+                content={"status": "error", "version": __version__, "db": "error"},
+            )
+        return JSONResponse(
+            content={"status": "ok", "version": __version__, "db": "ok"}
+        )
 
     return app
 
