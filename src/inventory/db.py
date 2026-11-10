@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS items (
     description TEXT NOT NULL DEFAULT '',
     unit_price REAL NOT NULL DEFAULT 0,
     reorder_level INTEGER NOT NULL DEFAULT 0,
-    active INTEGER NOT NULL DEFAULT 1
+    active INTEGER NOT NULL DEFAULT 1,
+    barcode TEXT
 );
 
 CREATE TABLE IF NOT EXISTS locations (
@@ -79,6 +80,17 @@ def init_db(path: str) -> None:
             conn.execute(
                 "ALTER TABLE locations ADD COLUMN active INTEGER NOT NULL DEFAULT 1"
             )
+        # Lightweight migration: older databases lack the items.barcode column.
+        item_columns = [
+            r["name"] for r in conn.execute("PRAGMA table_info(items)").fetchall()
+        ]
+        if "barcode" not in item_columns:
+            conn.execute("ALTER TABLE items ADD COLUMN barcode TEXT")
+        # Unique when not null (SQLite unique indexes ignore NULLs). Created
+        # here (after the migration) so the column is guaranteed to exist.
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_items_barcode ON items(barcode)"
+        )
         row = conn.execute("SELECT version FROM schema_version").fetchone()
         if row is None:
             conn.execute(

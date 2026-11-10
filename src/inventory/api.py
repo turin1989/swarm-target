@@ -84,13 +84,24 @@ def create_items_bulk(
         try:
             cur = conn.execute(
                 """
-                INSERT INTO items (sku, name, description, unit_price, reorder_level)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO items (sku, name, description, unit_price, reorder_level, barcode)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (entry.sku, entry.name, entry.description, entry.unit_price, entry.reorder_level),
+                (
+                    entry.sku,
+                    entry.name,
+                    entry.description,
+                    entry.unit_price,
+                    entry.reorder_level,
+                    entry.barcode,
+                ),
             )
-        except sqlite3.IntegrityError:
+        except sqlite3.IntegrityError as exc:
             conn.rollback()
+            if "barcode" in str(exc):
+                raise HTTPException(
+                    status_code=409, detail=f"barcode {entry.barcode!r} already exists"
+                )
             raise HTTPException(status_code=409, detail=f"sku {entry.sku!r} already exists")
         created_ids.append(cur.lastrowid)
     return [_fetch_item(conn, item_id) for item_id in created_ids]
@@ -104,6 +115,7 @@ def list_items(
     response: Response,
     active: Optional[bool] = None,
     sku: Optional[str] = None,
+    barcode: Optional[str] = None,
     sort: str = Query("id", pattern=r"^-?(id|name|sku)$"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -117,6 +129,9 @@ def list_items(
     if sku is not None:
         conditions.append("sku = ?")
         where_params.append(sku)
+    if barcode is not None:
+        conditions.append("barcode = ?")
+        where_params.append(barcode)
     where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
     direction = "ASC"
     if sort.startswith("-"):

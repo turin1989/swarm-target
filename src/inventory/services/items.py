@@ -28,13 +28,13 @@ def get_item_by_sku(conn: sqlite3.Connection, sku: str) -> Optional[Item]:
 def create_item(conn: sqlite3.Connection, payload: ItemCreate) -> Item:
     """Insert a new item and return the persisted record.
 
-    Raises :class:`ConflictError` if the SKU already exists.
+    Raises :class:`ConflictError` if the SKU or barcode already exists.
     """
     try:
         cur = conn.execute(
             """
-            INSERT INTO items (sku, name, description, unit_price, reorder_level)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO items (sku, name, description, unit_price, reorder_level, barcode)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
                 payload.sku,
@@ -42,9 +42,12 @@ def create_item(conn: sqlite3.Connection, payload: ItemCreate) -> Item:
                 payload.description,
                 payload.unit_price,
                 payload.reorder_level,
+                payload.barcode,
             ),
         )
-    except sqlite3.IntegrityError:
+    except sqlite3.IntegrityError as exc:
+        if "barcode" in str(exc):
+            raise ConflictError(f"barcode {payload.barcode!r} already exists")
         raise ConflictError(f"sku {payload.sku!r} already exists")
     item = get_item(conn, cur.lastrowid)
     assert item is not None  # just inserted
