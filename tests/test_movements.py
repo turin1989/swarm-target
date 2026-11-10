@@ -144,7 +144,7 @@ def test_transfer_to_same_location_rejected(client, item, loc_a):
         to_location_id=loc_a["id"],
     )
     assert r.status_code == 400
-    assert "same location" in r.json()["detail"]
+    assert "same location" in r.json()["error"]["message"]
 
     # No movement row was written and stock is unchanged.
     movements = client.get("/movements").json()
@@ -172,7 +172,7 @@ def test_stock_empty_for_new_item(client, item):
 def test_movement_requires_locations(client, item, loc_a, kind, payload):
     r = _move(client, item_id=item["id"], kind=kind, qty=1, **payload)
     assert r.status_code == 400
-    assert "required" in r.json()["detail"]
+    assert "required" in r.json()["error"]["message"]
 
 
 def test_movement_unknown_location_404(client, item):
@@ -242,7 +242,7 @@ def test_ship_more_than_on_hand_409(client, item, loc_a):
 
     r = _move(client, item_id=item["id"], kind="ship", qty=6, from_location_id=loc_a["id"])
     assert r.status_code == 409
-    assert "insufficient" in r.json()["detail"]
+    assert "insufficient" in r.json()["error"]["message"]
 
     # No movement row was written and stock levels are unchanged.
     assert len(client.get("/movements").json()) == 1
@@ -252,7 +252,7 @@ def test_ship_more_than_on_hand_409(client, item, loc_a):
 def test_ship_with_no_stock_at_all_409(client, item, loc_a):
     r = _move(client, item_id=item["id"], kind="ship", qty=1, from_location_id=loc_a["id"])
     assert r.status_code == 409
-    assert "insufficient" in r.json()["detail"]
+    assert "insufficient" in r.json()["error"]["message"]
     assert client.get("/movements").json() == []
     assert client.get(f"/items/{item['id']}/stock").json()["total"] == 0
 
@@ -277,7 +277,7 @@ def test_transfer_more_than_source_stock_409(client, item, loc_a, loc_b):
         to_location_id=loc_b["id"],
     )
     assert r.status_code == 409
-    assert "insufficient" in r.json()["detail"]
+    assert "insufficient" in r.json()["error"]["message"]
 
     # No movement row was written and stock levels are unchanged.
     assert len(client.get("/movements").json()) == 1
@@ -297,7 +297,7 @@ def test_transfer_checks_source_not_destination(client, item, loc_a, loc_b):
         to_location_id=loc_b["id"],
     )
     assert r.status_code == 409
-    assert "insufficient" in r.json()["detail"]
+    assert "insufficient" in r.json()["error"]["message"]
 
 
 def test_transfer_exactly_source_stock_succeeds(client, item, loc_a, loc_b):
@@ -367,7 +367,7 @@ def test_movement_for_inactive_item_409(client, item, loc_a, loc_b, kind, payloa
 
     r = _move(client, item_id=item["id"], kind=kind, qty=3, **payload)
     assert r.status_code == 409
-    assert "inactive" in r.json()["detail"]
+    assert "inactive" in r.json()["error"]["message"]
 
     # Stock levels are unchanged and no movement was recorded.
     after = client.get(f"/items/{item['id']}/stock").json()
@@ -453,7 +453,7 @@ def test_adjust_only_affects_target_location(client, item, loc_a, loc_b):
 def test_adjust_requires_to_location(client, item, loc_a):
     r = _move(client, item_id=item["id"], kind="adjust", qty=5)
     assert r.status_code == 400
-    assert "required" in r.json()["detail"]
+    assert "required" in r.json()["error"]["message"]
     assert client.get("/movements").json() == []
 
 
@@ -467,7 +467,7 @@ def test_adjust_rejects_from_location(client, item, loc_a, loc_b):
         to_location_id=loc_b["id"],
     )
     assert r.status_code == 400
-    assert "from_location_id" in r.json()["detail"]
+    assert "from_location_id" in r.json()["error"]["message"]
     assert client.get("/movements").json() == []
     assert client.get(f"/items/{item['id']}/stock").json()["total"] == 0
 
