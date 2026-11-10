@@ -12,8 +12,9 @@ CREATE TABLE IF NOT EXISTS items (
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     unit_price REAL NOT NULL DEFAULT 0,
-    reorder_point INTEGER NOT NULL DEFAULT 0,
+    reorder_level INTEGER NOT NULL DEFAULT 0,
     active INTEGER NOT NULL DEFAULT 1,
+    barcode TEXT UNIQUE,
     created_at TEXT NOT NULL
 );
 
@@ -37,9 +38,16 @@ CREATE TABLE IF NOT EXISTS movements (
     qty INTEGER NOT NULL,
     from_location_id INTEGER REFERENCES locations(id),
     to_location_id INTEGER REFERENCES locations(id),
-    note TEXT NOT NULL DEFAULT ''
+    note TEXT NOT NULL DEFAULT '',
+    reference TEXT
+);
+
+CREATE TABLE IF NOT EXISTS schema_version (
+    version INTEGER NOT NULL
 );
 """
+
+SCHEMA_VERSION = 1
 
 
 def connect(path: str) -> sqlite3.Connection:
@@ -53,7 +61,23 @@ def init_db(path: str) -> None:
     conn = connect(path)
     try:
         conn.executescript(SCHEMA)
+        row = conn.execute("SELECT version FROM schema_version").fetchone()
+        if row is None:
+            conn.execute(
+                "INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,)
+            )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def get_schema_version(path: str) -> int:
+    conn = connect(path)
+    try:
+        row = conn.execute("SELECT version FROM schema_version").fetchone()
+        if row is None:
+            raise RuntimeError("schema_version table has no recorded version")
+        return int(row["version"])
     finally:
         conn.close()
 

@@ -3,7 +3,7 @@
 import sqlite3
 
 from inventory.models import Movement, MovementCreate, StockLevel
-from inventory.services.errors import NotFoundError, ValidationError
+from inventory.services.errors import ConflictError, NotFoundError, ValidationError
 
 
 def get_stock_level(conn: sqlite3.Connection, item_id: int, location_id: int) -> int:
@@ -64,9 +64,11 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
     if m.qty <= 0:
         raise ValidationError("qty must be a positive integer", status_code=422)
 
-    item = conn.execute("SELECT id FROM items WHERE id = ?", (m.item_id,)).fetchone()
+    item = conn.execute("SELECT id, active FROM items WHERE id = ?", (m.item_id,)).fetchone()
     if item is None:
         raise NotFoundError(f"item {m.item_id} not found")
+    if not item["active"]:
+        raise ConflictError(f"item {m.item_id} is inactive")
 
     if m.kind == "receive":
         to_id = _require_location(conn, m.to_location_id, "to_location_id")
@@ -76,9 +78,9 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
         _adjust(conn, m.item_id, from_id, -m.qty)
     elif m.kind == "transfer":
         from_id = _require_location(conn, m.from_location_id, "from_location_id")
-        _require_location(conn, m.to_location_id, "to_location_id")
+        to_id = _require_location(conn, m.to_location_id, "to_location_id")
         _adjust(conn, m.item_id, from_id, -m.qty)
-        _adjust(conn, m.item_id, from_id, m.qty)
+        _adjust(conn, m.item_id, to_id, m.qty)
     elif m.kind == "adjust":
         if m.from_location_id is not None:
             raise ValidationError("from_location_id must be null for adjust movements")
@@ -89,10 +91,10 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
 
     cur = conn.execute(
         """
-        INSERT INTO movements (item_id, kind, qty, from_location_id, to_location_id, note)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO movements (item_id, kind, qty, from_location_id, to_location_id, note, reference)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (m.item_id, m.kind, m.qty, m.from_location_id, m.to_location_id, m.note),
+        (m.item_id, m.kind, m.qty, m.from_location_id, m.to_location_id, m.note, m.reference),
     )
     return get_movement(conn, cur.lastrowid)
 

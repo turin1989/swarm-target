@@ -70,6 +70,28 @@ def test_get_movement_missing_raises_not_found(client):
         conn.close()
 
 
+def test_apply_movement_inactive_item_raises_conflict(client, item, loc_a):
+    from inventory.db import connect
+    from inventory.models import MovementCreate
+
+    r = client.put(f"/items/{item['id']}", json={"active": False})
+    assert r.status_code == 200, r.text
+
+    conn = connect(client.app.state.db_path)
+    try:
+        with pytest.raises(ConflictError) as exc_info:
+            stock.apply_movement(
+                conn,
+                MovementCreate(
+                    item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"]
+                ),
+            )
+    finally:
+        conn.close()
+    assert exc_info.value.status_code == 409
+    assert "inactive" in str(exc_info.value)
+
+
 def test_apply_movement_missing_location_field_raises_validation(client, item):
     from inventory.db import connect
     from inventory.models import MovementCreate

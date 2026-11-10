@@ -15,7 +15,7 @@ def test_create_item_returns_201_and_fields(client):
     assert body["sku"] == "A-1"
     assert body["name"] == "Alpha"
     assert body["unit_price"] == 1.25
-    assert body["reorder_point"] == 0
+    assert body["reorder_level"] == 0
     assert body["active"] is True
 
 
@@ -81,6 +81,68 @@ def test_list_items_filter_active(client, item):
     client.put("/items/2", json={"active": False})
     assert [i["sku"] for i in client.get("/items", params={"active": "true"}).json()] == ["WIDGET-1"]
     assert [i["sku"] for i in client.get("/items", params={"active": "false"}).json()] == ["INACTIVE"]
+
+
+def test_list_items_filter_sku_exact_match(client, item):
+    client.post("/items", json={"sku": "WIDGET-2", "name": "Other Widget"})
+    r = client.get("/items", params={"sku": "WIDGET-1"})
+    assert r.status_code == 200
+    body = r.json()
+    assert [i["sku"] for i in body] == ["WIDGET-1"]
+    assert body[0] == item
+
+
+def test_list_items_filter_sku_is_exact_not_partial(client, item):
+    client.post("/items", json={"sku": "WIDGET-10", "name": "Bigger Widget"})
+    r = client.get("/items", params={"sku": "WIDGET-1"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["WIDGET-1"]
+    # a partial sku matches nothing
+    r = client.get("/items", params={"sku": "WIDGET"})
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_list_items_filter_sku_unknown_returns_empty_list(client, item):
+    r = client.get("/items", params={"sku": "NO-SUCH-SKU"})
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_list_items_filter_sku_combines_with_active(client, item):
+    client.post("/items", json={"sku": "WIDGET-2", "name": "Other Widget"})
+    # deactivate WIDGET-1
+    client.put(f"/items/{item['id']}", json={"active": False})
+
+    r = client.get("/items", params={"sku": "WIDGET-1", "active": "true"})
+    assert r.status_code == 200
+    assert r.json() == []
+
+    r = client.get("/items", params={"sku": "WIDGET-1", "active": "false"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["WIDGET-1"]
+
+
+def test_list_items_filter_sku_combines_with_barcode(client, item):
+    client.post("/items", json={"sku": "WIDGET-2", "name": "Other Widget", "barcode": "BC-2"})
+    client.post("/items", json={"sku": "WIDGET-3", "name": "Third Widget", "barcode": "BC-3"})
+
+    # matching sku + barcode pair returns the item
+    r = client.get("/items", params={"sku": "WIDGET-2", "barcode": "BC-2"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["WIDGET-2"]
+
+    # mismatched sku/barcode pair returns nothing (filters are ANDed)
+    r = client.get("/items", params={"sku": "WIDGET-2", "barcode": "BC-3"})
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_list_items_x_total_count_respects_sku_filter(client, item):
+    client.post("/items", json={"sku": "WIDGET-2", "name": "Other Widget"})
+    r = client.get("/items", params={"sku": "WIDGET-1"})
+    assert r.status_code == 200
+    assert r.headers["X-Total-Count"] == "1"
 
 
 def test_update_item_name_and_price(client, item):
@@ -156,6 +218,88 @@ def test_delete_item_allowed_after_stock_returns_to_zero(client, item, loc_a):
     )
     assert client.delete(f"/items/{item['id']}").status_code == 204
     assert client.get(f"/items/{item['id']}").status_code == 404
+
+
+"""Renamed field: reorder_point -> reorder_level (T049)."""
+
+
+def test_create_item_accepts_reorder_level(client):
+    r = client.post(
+        "/items", json={"sku": "RL-1", "name": "Renamed", "reorder_level": 7}
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["reorder_level"] == 7
+    assert "reorder_point" not in body
+
+
+def test_create_item_with_reorder_point_returns_422(client):
+    r = client.post(
+        "/items", json={"sku": "RP-1", "name": "Legacy", "reorder_point": 7}
+    )
+    assert r.status_code == 422
+
+
+def test_update_item_with_reorder_point_returns_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": 9})
+    assert r.status_code == 422
+
+
+def test_update_item_accepts_reorder_level_field(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_level": 9})
+    assert r.status_code == 200
+    assert "reorder_level" in r.json()
+
+
+def test_get_item_exposes_reorder_level_not_reorder_point(client, item):
+    body = client.get(f"/items/{item['id']}").json()
+    assert body["reorder_level"] == 5
+    assert "reorder_point" not in body
+
+
+def test_create_item_with_reorder_level_and_barcode_together(client):
+    """T049 rename combined with T025 barcode: both fields work in one payload."""
+    r = client.post(
+        "/items",
+        json={
+            "sku": "RLBC-1",
+            "name": "Both",
+            "reorder_level": 3,
+            "barcode": "RLBC-0001",
+        },
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["reorder_level"] == 3
+    assert body["barcode"] == "RLBC-0001"
+    assert "reorder_point" not in body
+
+
+def test_create_item_with_barcode_and_legacy_reorder_point_returns_422(client):
+    r = client.post(
+        "/items",
+        json={
+            "sku": "RLBC-2",
+            "name": "Legacy",
+            "reorder_point": 3,
+            "barcode": "RLBC-0002",
+        },
+    )
+    assert r.status_code == 422
+
+
+def test_items_table_column_renamed_in_schema(tmp_path):
+    from inventory import db
+
+    path = str(tmp_path / "schema.db")
+    db.init_db(path)
+    conn = db.connect(path)
+    try:
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(items)").fetchall()]
+    finally:
+        conn.close()
+    assert "reorder_level" in cols
+    assert "reorder_point" not in cols
 
 
 def test_get_item_by_sku(client, item):
