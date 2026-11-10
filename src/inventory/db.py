@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS items (
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     unit_price REAL NOT NULL DEFAULT 0,
-    reorder_point INTEGER NOT NULL DEFAULT 0,
+    reorder_level INTEGER NOT NULL DEFAULT 0,
     active INTEGER NOT NULL DEFAULT 1
 );
 
@@ -65,6 +65,14 @@ def init_db(path: str) -> None:
         }
         if "reference" not in movement_columns:
             conn.execute("ALTER TABLE movements ADD COLUMN reference TEXT")
+        # Migrate databases created before reorder_point was renamed to reorder_level.
+        item_columns = {
+            r["name"] for r in conn.execute("PRAGMA table_info(items)").fetchall()
+        }
+        if "reorder_point" in item_columns and "reorder_level" not in item_columns:
+            conn.execute(
+                "ALTER TABLE items RENAME COLUMN reorder_point TO reorder_level"
+            )
         row = conn.execute("SELECT version FROM schema_version").fetchone()
         if row is None:
             conn.execute(

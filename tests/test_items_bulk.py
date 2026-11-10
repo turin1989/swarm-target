@@ -5,7 +5,7 @@ def test_bulk_create_returns_201_and_items(client):
     r = client.post(
         "/items/bulk",
         json=[
-            {"sku": "B-1", "name": "Bulk One", "unit_price": 1.5, "reorder_point": 2},
+            {"sku": "B-1", "name": "Bulk One", "unit_price": 1.5, "reorder_level": 2},
             {"sku": "B-2", "name": "Bulk Two"},
         ],
     )
@@ -14,7 +14,7 @@ def test_bulk_create_returns_201_and_items(client):
     assert [i["sku"] for i in body] == ["B-1", "B-2"]
     assert body[0]["name"] == "Bulk One"
     assert body[0]["unit_price"] == 1.5
-    assert body[0]["reorder_point"] == 2
+    assert body[0]["reorder_level"] == 2
     assert body[1]["name"] == "Bulk Two"
     assert all(i["active"] is True for i in body)
     assert all("id" in i for i in body)

@@ -58,10 +58,10 @@ def create_items_bulk(
         for item in payload:
             cur = conn.execute(
                 """
-                INSERT INTO items (sku, name, description, unit_price, reorder_point)
+                INSERT INTO items (sku, name, description, unit_price, reorder_level)
                 VALUES (?, ?, ?, ?, ?)
                 """,
-                (item.sku, item.name, item.description, item.unit_price, item.reorder_point),
+                (item.sku, item.name, item.description, item.unit_price, item.reorder_level),
             )
             created_ids.append(cur.lastrowid)
     except sqlite3.IntegrityError:

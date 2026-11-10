@@ -31,7 +31,7 @@ def test_404_via_stock_service_error(client):
 def test_409_conflict_shape(client, item):
     r = client.post(
         "/items",
-        json={"sku": item["sku"], "name": "Dup", "unit_price": 1.0, "reorder_point": 0},
+        json={"sku": item["sku"], "name": "Dup", "unit_price": 1.0, "reorder_level": 0},
     )
     _assert_error_shape(r, 409, "conflict")
     assert item["sku"] in r.json()["error"]["message"]
