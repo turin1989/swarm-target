@@ -171,7 +171,7 @@ def test_create_item_with_legacy_reorder_point_returns_422(client):
     assert r.status_code == 422
     assert r.json()["error"]["code"] == "validation_error"
     # nothing was created
-    assert client.get("/items").json() == []
+    assert client.get("/items").json()["items"] == []
 
 
 def test_update_item_with_legacy_reorder_point_returns_422(client, item):
