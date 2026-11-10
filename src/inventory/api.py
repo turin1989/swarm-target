@@ -5,7 +5,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
-from inventory.db import get_db
+from inventory.db import get_db, utc_now_iso
 from inventory.models import (
     Item,
     ItemCreate,
@@ -43,10 +43,17 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
     try:
         cur = conn.execute(
             """
-            INSERT INTO items (sku, name, description, unit_price, reorder_point)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO items (sku, name, description, unit_price, reorder_point, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (payload.sku, payload.name, payload.description, payload.unit_price, payload.reorder_point),
+            (
+                payload.sku,
+                payload.name,
+                payload.description,
+                payload.unit_price,
+                payload.reorder_point,
+                utc_now_iso(),
+            ),
         )
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=409, detail=f"sku {payload.sku!r} already exists")

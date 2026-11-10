@@ -95,3 +95,60 @@ def test_delete_item_cascades_stock(client, item, loc_a):
     )
     client.delete(f"/items/{item['id']}")
     assert client.get("/movements").json() == []
+
+
+# --- created_at (T020) ---------------------------------------------------------
+
+import re
+
+ISO_8601_UTC = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+
+
+def test_create_item_sets_created_at_iso8601_utc(client):
+    r = client.post("/items", json={"sku": "TS-1", "name": "Timestamped"})
+    assert r.status_code == 201
+    created_at = r.json()["created_at"]
+    assert ISO_8601_UTC.match(created_at), created_at
+
+
+def test_created_at_returned_by_every_item_endpoint(client, item):
+    assert ISO_8601_UTC.match(item["created_at"])
+
+    # GET /items/{id}
+    r = client.get(f"/items/{item['id']}")
+    assert r.json()["created_at"] == item["created_at"]
+
+    # GET /items
+    r = client.get("/items")
+    assert all(ISO_8601_UTC.match(i["created_at"]) for i in r.json())
+
+    # PUT /items/{id}
+    r = client.put(f"/items/{item['id']}", json={"name": "Renamed"})
+    assert r.json()["created_at"] == item["created_at"]
+
+    # GET /search
+    r = client.get("/search", params={"q": "WIDGET"})
+    assert r.status_code == 200
+    assert [i["created_at"] for i in r.json()] == [item["created_at"]]
+
+
+def test_created_at_cannot_be_set_by_client_on_create(client):
+    r = client.post(
+        "/items",
+        json={"sku": "NO-SET", "name": "NoSet", "created_at": "1999-01-01T00:00:00Z"},
+    )
+    assert r.status_code == 201
+    assert r.json()["created_at"] != "1999-01-01T00:00:00Z"
+    assert ISO_8601_UTC.match(r.json()["created_at"])
+
+
+def test_created_at_ignored_on_put(client, item):
+    r = client.put(
+        f"/items/{item['id']}",
+        json={"name": "Changed", "created_at": "1999-01-01T00:00:00Z"},
+    )
+    assert r.status_code == 200
+    assert r.json()["name"] == "Changed"
+    assert r.json()["created_at"] == item["created_at"]
+    # Still unchanged on a fresh read
+    assert client.get(f"/items/{item['id']}").json()["created_at"] == item["created_at"]
