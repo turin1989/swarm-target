@@ -8,7 +8,7 @@ from inventory.models import LowStockEntry
 def low_stock(
     conn: sqlite3.Connection, location_id: int | None = None
 ) -> list[LowStockEntry]:
-    """Active items whose total stock is below their reorder point.
+    """Active items whose total stock is at or below their reorder point.
 
     When ``location_id`` is given, only stock at that location counts towards
     ``total_qty``; otherwise stock is summed across all locations.
@@ -26,7 +26,7 @@ def low_stock(
         {join}
         WHERE i.active = 1
         GROUP BY i.id
-        HAVING total_qty < i.reorder_point
+        HAVING total_qty <= i.reorder_point
         ORDER BY i.sku
         """,
         params,
