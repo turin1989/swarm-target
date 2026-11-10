@@ -3,7 +3,8 @@
 import sqlite3
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import JSONResponse
 
 from inventory.db import get_db
 from inventory.models import (
@@ -18,8 +19,15 @@ from inventory.models import (
     MovementCreate,
 )
 from inventory.services import reports, search, stock
+from inventory.services.errors import InventoryError
 
 router = APIRouter()
+
+
+def inventory_error_handler(request: Request, exc: InventoryError) -> JSONResponse:
+    """Map any InventoryError to its HTTP response in one place."""
+    http_exc = HTTPException(status_code=exc.status_code, detail=str(exc))
+    return JSONResponse(status_code=http_exc.status_code, content={"detail": http_exc.detail})
 
 
 def _row_to_item(row: sqlite3.Row) -> Item:
@@ -142,10 +150,7 @@ def get_location(location_id: int, conn: sqlite3.Connection = Depends(get_db)) -
 def create_movement(
     payload: MovementCreate, conn: sqlite3.Connection = Depends(get_db)
 ) -> Movement:
-    try:
-        return stock.apply_movement(conn, payload)
-    except stock.StockError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    return stock.apply_movement(conn, payload)
 
 
 @router.get("/movements", response_model=list[Movement])
