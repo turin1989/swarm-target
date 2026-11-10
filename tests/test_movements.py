@@ -228,6 +228,68 @@ def test_adjust_non_positive_qty_422(client, item, loc_a):
     assert client.get(f"/items/{item['id']}/stock").json()["total"] == 5
 
 
+def test_movement_reference_stored_and_returned(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=5,
+        to_location_id=loc_a["id"],
+        reference="PO-12345",
+    )
+    assert r.status_code == 201
+    assert r.json()["reference"] == "PO-12345"
+
+    # returned on GET as well
+    movements = client.get("/movements").json()
+    assert movements[0]["reference"] == "PO-12345"
+
+
+def test_movement_reference_defaults_to_none(client, item, loc_a):
+    r = _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    assert r.status_code == 201
+    assert r.json()["reference"] is None
+    assert client.get("/movements").json()[0]["reference"] is None
+
+
+def test_movement_reference_accepts_explicit_null(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=5,
+        to_location_id=loc_a["id"],
+        reference=None,
+    )
+    assert r.status_code == 201
+    assert r.json()["reference"] is None
+
+
+def test_movement_reference_max_64_chars(client, item, loc_a):
+    ok = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=1,
+        to_location_id=loc_a["id"],
+        reference="R" * 64,
+    )
+    assert ok.status_code == 201
+    assert ok.json()["reference"] == "R" * 64
+
+    too_long = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=1,
+        to_location_id=loc_a["id"],
+        reference="R" * 65,
+    )
+    assert too_long.status_code == 422
+    # the rejected movement is not stored
+    assert len(client.get("/movements").json()) == 1
+
+
 def test_list_movements_pagination(client, item, loc_a):
     for _ in range(4):
         _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
