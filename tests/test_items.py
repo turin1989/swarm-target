@@ -83,6 +83,53 @@ def test_list_items_filter_active(client, item):
     assert [i["sku"] for i in client.get("/items", params={"active": "false"}).json()] == ["INACTIVE"]
 
 
+def test_list_items_filter_sku_exact_match(client, item):
+    client.post("/items", json={"sku": "WIDGET-2", "name": "Other Widget"})
+    r = client.get("/items", params={"sku": "WIDGET-1"})
+    assert r.status_code == 200
+    body = r.json()
+    assert [i["sku"] for i in body] == ["WIDGET-1"]
+    assert body[0] == item
+
+
+def test_list_items_filter_sku_is_exact_not_partial(client, item):
+    client.post("/items", json={"sku": "WIDGET-10", "name": "Bigger Widget"})
+    r = client.get("/items", params={"sku": "WIDGET-1"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["WIDGET-1"]
+    # a partial sku matches nothing
+    r = client.get("/items", params={"sku": "WIDGET"})
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_list_items_filter_sku_unknown_returns_empty_list(client, item):
+    r = client.get("/items", params={"sku": "NO-SUCH-SKU"})
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_list_items_filter_sku_combines_with_active(client, item):
+    client.post("/items", json={"sku": "WIDGET-2", "name": "Other Widget"})
+    # deactivate WIDGET-1
+    client.put(f"/items/{item['id']}", json={"active": False})
+
+    r = client.get("/items", params={"sku": "WIDGET-1", "active": "true"})
+    assert r.status_code == 200
+    assert r.json() == []
+
+    r = client.get("/items", params={"sku": "WIDGET-1", "active": "false"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["WIDGET-1"]
+
+
+def test_list_items_x_total_count_respects_sku_filter(client, item):
+    client.post("/items", json={"sku": "WIDGET-2", "name": "Other Widget"})
+    r = client.get("/items", params={"sku": "WIDGET-1"})
+    assert r.status_code == 200
+    assert r.headers["X-Total-Count"] == "1"
+
+
 def test_update_item_name_and_price(client, item):
     r = client.put(f"/items/{item['id']}", json={"name": "Renamed", "unit_price": 9.99})
     assert r.status_code == 200
