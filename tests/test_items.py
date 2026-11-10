@@ -230,8 +230,40 @@ def test_delete_item_cascades_stock(client, item, loc_a):
         "/movements",
         json={"item_id": item["id"], "kind": "receive", "qty": 3, "to_location_id": loc_a["id"]},
     )
-    client.delete(f"/items/{item['id']}")
+    # Stock must be back to zero before the item may be deleted.
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "ship", "qty": 3, "from_location_id": loc_a["id"]},
+    )
+    r = client.delete(f"/items/{item['id']}")
+    assert r.status_code == 204
     assert client.get("/movements").json() == []
+
+
+def test_delete_item_with_stock_409(client, item, loc_a):
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "qty": 3, "to_location_id": loc_a["id"]},
+    )
+    r = client.delete(f"/items/{item['id']}")
+    assert r.status_code == 409
+    assert "3" in r.json()["detail"]
+    # The item must still exist.
+    assert client.get(f"/items/{item['id']}").status_code == 200
+
+
+def test_delete_item_after_stock_shipped_out(client, item, loc_a):
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "qty": 2, "to_location_id": loc_a["id"]},
+    )
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "ship", "qty": 2, "from_location_id": loc_a["id"]},
+    )
+    r = client.delete(f"/items/{item['id']}")
+    assert r.status_code == 204
+    assert client.get(f"/items/{item['id']}").status_code == 404
 
 
 def test_get_item_by_sku(client, item):
