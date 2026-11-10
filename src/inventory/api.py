@@ -9,6 +9,7 @@ from inventory.db import get_db
 from inventory.models import (
     Item,
     ItemCreate,
+    ItemPage,
     ItemStock,
     ItemUpdate,
     Location,
@@ -67,7 +68,7 @@ def create_items_bulk(
     return [_fetch_item(conn, item_id) for item_id in created_ids]
 
 
-@router.get("/items", response_model=list[Item])
+@router.get("/items", response_model=ItemPage)
 def list_items(
     active: Optional[bool] = None,
     sku: Optional[str] = None,
@@ -75,8 +76,7 @@ def list_items(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     conn: sqlite3.Connection = Depends(get_db),
-) -> list[Item]:
-    sql = "SELECT * FROM items"
+) -> ItemPage:
     params: list = []
     conditions: list[str] = []
     if active is not None:
@@ -85,8 +85,10 @@ def list_items(
     if sku is not None:
         conditions.append("sku = ?")
         params.append(sku)
+    where = ""
     if conditions:
-        sql += " WHERE " + " AND ".join(conditions)
+        where = " WHERE " + " AND ".join(conditions)
+    total = conn.execute(f"SELECT COUNT(*) FROM items{where}", params).fetchone()[0]
     direction = "ASC"
     column = sort
     if column.startswith("-"):
@@ -94,9 +96,14 @@ def list_items(
         column = column[1:]
     if column not in _SORTABLE_ITEM_COLUMNS:  # defence in depth; pattern already enforces
         raise HTTPException(status_code=422, detail=f"invalid sort field {sort!r}")
-    sql += f" ORDER BY {column} {direction} LIMIT ? OFFSET ?"
-    params += [limit, offset]
-    return [items_service.row_to_item(r) for r in conn.execute(sql, params).fetchall()]
+    sql = f"SELECT * FROM items{where} ORDER BY {column} {direction} LIMIT ? OFFSET ?"
+    rows = conn.execute(sql, params + [limit, offset]).fetchall()
+    return ItemPage(
+        items=[items_service.row_to_item(r) for r in rows],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/items/by-sku/{sku}", response_model=Item)
