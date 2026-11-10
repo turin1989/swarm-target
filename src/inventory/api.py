@@ -43,7 +43,7 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
     try:
         cur = conn.execute(
             """
-            INSERT INTO items (sku, name, description, unit_price, reorder_point, barcode)
+            INSERT INTO items (sku, name, description, unit_price, reorder_level, barcode)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
@@ -51,7 +51,7 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
                 payload.name,
                 payload.description,
                 payload.unit_price,
-                payload.reorder_point,
+                payload.reorder_level,
                 payload.barcode,
             ),
         )

@@ -15,7 +15,7 @@ def client(tmp_path):
 def item(client):
     r = client.post(
         "/items",
-        json={"sku": "WIDGET-1", "name": "Widget", "unit_price": 2.5, "reorder_point": 5},
+        json={"sku": "WIDGET-1", "name": "Widget", "unit_price": 2.5, "reorder_level": 5},
     )
     assert r.status_code == 201, r.text
     return r.json()

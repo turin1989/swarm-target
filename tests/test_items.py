@@ -15,7 +15,7 @@ def test_create_item_returns_201_and_fields(client):
     assert body["sku"] == "A-1"
     assert body["name"] == "Alpha"
     assert body["unit_price"] == 1.25
-    assert body["reorder_point"] == 0
+    assert body["reorder_level"] == 0
     assert body["active"] is True
 
 
@@ -99,6 +99,94 @@ def test_delete_item_cascades_stock(client, item, loc_a):
     assert client.get("/movements").json() == []
 
 
+# --- reorder_level (renamed from reorder_point) ---------------------------------
+
+
+def test_create_item_accepts_reorder_level(client):
+    r = client.post("/items", json={"sku": "RL-1", "name": "Reorderable", "reorder_level": 7})
+    assert r.status_code == 201
+    body = r.json()
+    assert body["reorder_level"] == 7
+    assert "reorder_point" not in body
+    # persisted and returned on GET
+    body = client.get(f"/items/{body['id']}").json()
+    assert body["reorder_level"] == 7
+    assert "reorder_point" not in body
+
+
+def test_create_item_with_legacy_reorder_point_returns_422(client):
+    r = client.post("/items", json={"sku": "RP-1", "name": "Legacy", "reorder_point": 7})
+    assert r.status_code == 422
+    assert r.json()["error"]["code"] == "validation_error"
+    # nothing was created
+    assert client.get("/items").json() == []
+
+
+def test_update_item_with_legacy_reorder_point_returns_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": 9})
+    assert r.status_code == 422
+    assert r.json()["error"]["code"] == "validation_error"
+    # item unchanged
+    assert client.get(f"/items/{item['id']}").json() == item
+
+
+def test_update_item_accepts_reorder_level_field(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_level": 9})
+    assert r.status_code == 200
+    assert "reorder_point" not in r.json()
+
+
+def test_items_table_uses_reorder_level_column(tmp_path):
+    from inventory import db as db_module
+
+    path = str(tmp_path / "schema.db")
+    db_module.init_db(path)
+    conn = db_module.connect(path)
+    try:
+        cols = {row["name"] for row in conn.execute("PRAGMA table_info(items)")}
+    finally:
+        conn.close()
+    assert "reorder_level" in cols
+    assert "reorder_point" not in cols
+
+
+def test_legacy_reorder_point_column_is_migrated(tmp_path):
+    import sqlite3
+
+    from inventory import db as db_module
+
+    path = str(tmp_path / "legacy.db")
+    conn = sqlite3.connect(path)
+    conn.execute(
+        """
+        CREATE TABLE items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sku TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            unit_price REAL NOT NULL DEFAULT 0,
+            reorder_point INTEGER NOT NULL DEFAULT 0,
+            active INTEGER NOT NULL DEFAULT 1,
+            barcode TEXT UNIQUE
+        )
+        """
+    )
+    conn.execute("INSERT INTO items (sku, name, reorder_point) VALUES ('OLD-1', 'Old', 4)")
+    conn.commit()
+    conn.close()
+
+    db_module.init_db(path)
+    conn = db_module.connect(path)
+    try:
+        cols = {row["name"] for row in conn.execute("PRAGMA table_info(items)")}
+        row = conn.execute("SELECT reorder_level FROM items WHERE sku = 'OLD-1'").fetchone()
+    finally:
+        conn.close()
+    assert "reorder_level" in cols
+    assert "reorder_point" not in cols
+    assert row["reorder_level"] == 4
+
+
 # --- barcode -------------------------------------------------------------------
 
 
@@ -122,7 +210,7 @@ def test_duplicate_barcode_conflicts(client):
     assert r.status_code == 201
     r = client.post("/items", json={"sku": "BC-2", "name": "Two", "barcode": "DUP-CODE"})
     assert r.status_code == 409
-    assert "barcode" in r.json()["detail"]
+    assert "barcode" in r.json()["error"]["message"]
 
 
 def test_multiple_items_without_barcode_allowed(client):
