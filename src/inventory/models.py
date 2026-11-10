@@ -58,7 +58,7 @@ class MovementCreate(BaseModel):
     qty: int = Field(..., gt=0)
     from_location_id: Optional[int] = None
     to_location_id: Optional[int] = None
-    note: str = ""
+    note: str = Field("", max_length=500)
 
 
 class Movement(BaseModel):

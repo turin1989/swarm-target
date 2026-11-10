@@ -39,7 +39,8 @@ def test_get_item(client, item):
 def test_get_missing_item_404(client):
     r = client.get("/items/999")
     assert r.status_code == 404
-    assert "not found" in r.json()["detail"]
+    assert "not found" in r.json()["error"]["message"]
+    assert r.json()["error"]["code"] == "not_found"
 
 
 def test_list_items_ordered_by_id(client):
@@ -154,14 +155,17 @@ def test_delete_item(client, item):
 def test_delete_missing_item_404_with_detail(client):
     r = client.delete("/items/999")
     assert r.status_code == 404
-    assert r.json()["detail"] == "item 999 not found"
+    assert r.json()["error"] == {"code": "not_found", "message": "item 999 not found"}
 
 
 def test_delete_item_twice_second_is_404(client, item):
     assert client.delete(f"/items/{item['id']}").status_code == 204
     r = client.delete(f"/items/{item['id']}")
     assert r.status_code == 404
-    assert r.json()["detail"] == f"item {item['id']} not found"
+    assert r.json()["error"] == {
+        "code": "not_found",
+        "message": f"item {item['id']} not found",
+    }
 
 
 def test_delete_item_cascades_stock(client, item, loc_a):
@@ -185,8 +189,9 @@ def test_delete_item_with_stock_409(client, item, loc_a):
     )
     r = client.delete(f"/items/{item['id']}")
     assert r.status_code == 409
-    # detail mentions the remaining quantity
-    assert "7" in r.json()["detail"]
+    # error message mentions the remaining quantity
+    assert r.json()["error"]["code"] == "conflict"
+    assert "7" in r.json()["error"]["message"]
     # item is untouched
     assert client.get(f"/items/{item['id']}").status_code == 200
 
@@ -199,7 +204,8 @@ def test_delete_item_with_stock_409_detail_sums_locations(client, item, loc_a, l
         )
     r = client.delete(f"/items/{item['id']}")
     assert r.status_code == 409
-    assert "5" in r.json()["detail"]
+    assert r.json()["error"]["code"] == "conflict"
+    assert "5" in r.json()["error"]["message"]
 
 
 def test_delete_item_after_stock_shipped_out_succeeds(client, item, loc_a):
@@ -271,3 +277,27 @@ def test_update_item_zero_unit_price_ok(client, item):
     r = client.put(f"/items/{item['id']}", json={"unit_price": 0})
     assert r.status_code == 200
     assert r.json()["unit_price"] == 0
+
+
+def test_get_item_by_sku(client, item):
+    r = client.get(f"/items/by-sku/{item['sku']}")
+    assert r.status_code == 200
+    assert r.json() == item
+
+
+def test_get_item_by_sku_same_shape_as_get_by_id(client, item):
+    by_sku = client.get(f"/items/by-sku/{item['sku']}").json()
+    by_id = client.get(f"/items/{item['id']}").json()
+    assert by_sku == by_id
+
+
+def test_get_item_by_sku_unknown_404(client):
+    r = client.get("/items/by-sku/NOPE-99")
+    assert r.status_code == 404
+    assert r.json()["error"]["message"] == "sku NOPE-99 not found"
+
+
+def test_get_item_by_sku_does_not_shadow_get_by_id(client, item):
+    r = client.get(f"/items/{item['id']}")
+    assert r.status_code == 200
+    assert r.json()["id"] == item["id"]

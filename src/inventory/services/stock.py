@@ -60,6 +60,17 @@ def _adjust(conn: sqlite3.Connection, item_id: int, location_id: int, delta: int
     )
 
 
+def _require_available(
+    conn: sqlite3.Connection, item_id: int, location_id: int, qty: int
+) -> None:
+    available = get_stock_level(conn, item_id, location_id)
+    if qty > available:
+        raise StockError(
+            f"insufficient stock at location {location_id}: have {available}, need {qty}",
+            status_code=409,
+        )
+
+
 def _require_location(conn: sqlite3.Connection, location_id: int | None, field: str) -> int:
     if location_id is None:
         raise StockError(f"{field} is required for this movement kind")
@@ -83,14 +94,16 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
         _adjust(conn, m.item_id, to_id, m.qty)
     elif m.kind == "ship":
         from_id = _require_location(conn, m.from_location_id, "from_location_id")
+        _require_available(conn, m.item_id, from_id, m.qty)
         _adjust(conn, m.item_id, from_id, -m.qty)
     elif m.kind == "transfer":
         from_id = _require_location(conn, m.from_location_id, "from_location_id")
         to_id = _require_location(conn, m.to_location_id, "to_location_id")
         if from_id == to_id:
             raise StockError("cannot transfer to the same location")
+        _require_available(conn, m.item_id, from_id, m.qty)
         _adjust(conn, m.item_id, from_id, -m.qty)
-        _adjust(conn, m.item_id, from_id, m.qty)
+        _adjust(conn, m.item_id, to_id, m.qty)
     else:  # pragma: no cover - guarded by the Literal type
         raise StockError(f"unknown movement kind {m.kind!r}")
 
@@ -102,6 +115,28 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
         (m.item_id, m.kind, m.qty, m.from_location_id, m.to_location_id, m.note),
     )
     return get_movement(conn, cur.lastrowid)
+
+
+def reverse_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
+    """Create and apply a new movement that undoes an existing one."""
+    original = get_movement(conn, movement_id)
+
+    if original.kind == "receive":
+        kind = "ship"
+    elif original.kind == "ship":
+        kind = "receive"
+    else:  # transfer
+        kind = "transfer"
+
+    reversal = MovementCreate(
+        item_id=original.item_id,
+        kind=kind,
+        qty=original.qty,
+        from_location_id=original.to_location_id,
+        to_location_id=original.from_location_id,
+        note=f"reversal of {movement_id}",
+    )
+    return apply_movement(conn, reversal)
 
 
 def get_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:

@@ -72,6 +72,36 @@ def test_inventory_value(client, loc_a):
     assert client.get("/reports/value").json() == {"value": 16.0}
 
 
+def test_inventory_value_filtered_by_location(client, loc_a, loc_b):
+    _seed(client, "P1", "p1", reorder=0, qty=3, loc=loc_a, price=2.0)
+    _seed(client, "P2", "p2", reorder=0, qty=1, loc=loc_b, price=10.0)
+    assert client.get("/reports/value", params={"location_id": loc_a["id"]}).json() == {
+        "value": 6.0
+    }
+    assert client.get("/reports/value", params={"location_id": loc_b["id"]}).json() == {
+        "value": 10.0
+    }
+
+
+def test_inventory_value_without_location_unchanged(client, loc_a, loc_b):
+    _seed(client, "P1", "p1", reorder=0, qty=3, loc=loc_a, price=2.0)
+    _seed(client, "P2", "p2", reorder=0, qty=1, loc=loc_b, price=10.0)
+    assert client.get("/reports/value").json() == {"value": 16.0}
+
+
+def test_inventory_value_unknown_location_returns_404(client, loc_a):
+    _seed(client, "P1", "p1", reorder=0, qty=3, loc=loc_a, price=2.0)
+    r = client.get("/reports/value", params={"location_id": 999})
+    assert r.status_code == 404
+
+
+def test_inventory_value_location_with_no_stock_is_zero(client, loc_a, loc_b):
+    _seed(client, "P1", "p1", reorder=0, qty=3, loc=loc_a, price=2.0)
+    assert client.get("/reports/value", params={"location_id": loc_b["id"]}).json() == {
+        "value": 0.0
+    }
+
+
 def test_search_by_name_substring(client):
     client.post("/items", json={"sku": "S1", "name": "Blue Widget"})
     client.post("/items", json={"sku": "S2", "name": "Red Gadget"})
@@ -84,6 +114,29 @@ def test_search_by_sku(client):
     client.post("/items", json={"sku": "BOLT-M8", "name": "Bolt"})
     client.post("/items", json={"sku": "NUT-M8", "name": "Nut"})
     assert [i["sku"] for i in client.get("/search", params={"q": "BOLT"}).json()] == ["BOLT-M8"]
+
+
+def test_search_by_name_is_case_insensitive(client):
+    client.post("/items", json={"sku": "S1", "name": "Blue Widget"})
+    client.post("/items", json={"sku": "S2", "name": "Red Gadget"})
+    for q in ("widget", "WIDGET", "Widget"):
+        r = client.get("/search", params={"q": q})
+        assert r.status_code == 200
+        assert [i["sku"] for i in r.json()] == ["S1"], q
+
+
+def test_search_by_sku_is_case_insensitive(client):
+    client.post("/items", json={"sku": "BOLT-M8", "name": "Bolt"})
+    client.post("/items", json={"sku": "NUT-M8", "name": "Nut"})
+    for q in ("bolt", "BOLT", "Bolt"):
+        assert [i["sku"] for i in client.get("/search", params={"q": q}).json()] == ["BOLT-M8"], q
+
+
+def test_search_case_insensitive_keeps_ordering_and_limit(client):
+    for n, name in enumerate(["Cable C", "Cable A", "Cable B"]):
+        client.post("/items", json={"sku": f"C{n}", "name": name})
+    names = [i["name"] for i in client.get("/search", params={"q": "cable", "limit": 2}).json()]
+    assert names == ["Cable A", "Cable B"]
 
 
 def test_search_sorted_by_name_and_limited(client):
