@@ -59,7 +59,7 @@ def test_delete_unknown_location_returns_404(client):
 def test_delete_location_holding_stock_returns_409(client, item, loc_a):
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 7, "to_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 7, "to_location_id": loc_a["id"]},
     )
     assert r.status_code == 201, r.text
     r = client.delete(f"/locations/{loc_a['id']}")
@@ -72,12 +72,12 @@ def test_delete_location_with_zero_qty_stock_row_succeeds(client, item, loc_a):
     # receive then ship everything out: stock_levels row exists with qty == 0
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 4, "to_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 4, "to_location_id": loc_a["id"]},
     )
     assert r.status_code == 201, r.text
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "ship", "qty": 4, "from_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "ship", "quantity": 4, "from_location_id": loc_a["id"]},
     )
     assert r.status_code == 201, r.text
     r = client.delete(f"/locations/{loc_a['id']}")
@@ -88,10 +88,10 @@ def test_delete_location_with_zero_qty_stock_row_succeeds(client, item, loc_a):
 def test_delete_location_does_not_touch_other_locations_stock(client, item, loc_a, loc_b):
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 3, "to_location_id": loc_b["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 3, "to_location_id": loc_b["id"]},
     )
     assert r.status_code == 201, r.text
     r = client.delete(f"/locations/{loc_a['id']}")
     assert r.status_code == 204, r.text
     levels = client.get(f"/locations/{loc_b['id']}/stock").json()["levels"]
-    assert levels == [{"item_id": item["id"], "location_id": loc_b["id"], "qty": 3}]
+    assert levels == [{"item_id": item["id"], "location_id": loc_b["id"], "quantity": 3}]

@@ -4,7 +4,7 @@
 def _receive(client, item_id, location_id, qty):
     r = client.post(
         "/movements",
-        json={"item_id": item_id, "kind": "receive", "qty": qty, "to_location_id": location_id},
+        json={"item_id": item_id, "kind": "receive", "quantity": qty, "to_location_id": location_id},
     )
     assert r.status_code == 201, r.text
     return r.json()
@@ -41,9 +41,9 @@ def test_location_stock_lists_levels_ordered_by_item_id(client, loc_a, loc_b):
     assert body["location_id"] == loc_a["id"]
     expected = sorted(
         [
-            {"item_id": items[2]["id"], "location_id": loc_a["id"], "qty": 7},
-            {"item_id": items[0]["id"], "location_id": loc_a["id"], "qty": 3},
-            {"item_id": items[1]["id"], "location_id": loc_a["id"], "qty": 5},
+            {"item_id": items[2]["id"], "location_id": loc_a["id"], "quantity": 7},
+            {"item_id": items[0]["id"], "location_id": loc_a["id"], "quantity": 3},
+            {"item_id": items[1]["id"], "location_id": loc_a["id"], "quantity": 5},
         ],
         key=lambda lvl: lvl["item_id"],
     )
@@ -56,7 +56,7 @@ def test_location_stock_omits_zero_quantity_levels(client, item, loc_a):
     _receive(client, item["id"], loc_a["id"], 4)
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "ship", "qty": 4, "from_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "ship", "quantity": 4, "from_location_id": loc_a["id"]},
     )
     assert r.status_code == 201, r.text
 
