@@ -6,15 +6,15 @@ from inventory.models import Item
 
 
 def search_items(conn: sqlite3.Connection, q: str, limit: int = 50) -> list[Item]:
-    """Substring match on sku or name."""
+    """Substring match on sku, name or description."""
     pattern = f"*{q}*"
     rows = conn.execute(
         """
         SELECT * FROM items
-        WHERE sku GLOB ? OR name GLOB ?
+        WHERE sku GLOB ? OR name GLOB ? OR description GLOB ?
         ORDER BY name
         LIMIT ?
         """,
-        (pattern, pattern, limit),
+        (pattern, pattern, pattern, limit),
     ).fetchall()
     return [Item(**{**dict(r), "active": bool(r["active"])}) for r in rows]
