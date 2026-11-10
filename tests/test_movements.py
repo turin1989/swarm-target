@@ -321,6 +321,70 @@ def test_adjust_recorded_in_movements_list(client, item, loc_a):
     assert movements[0]["note"] == "count"
 
 
+# --- movements record created_at (T042) -----------------------------------------
+
+
+def test_movement_response_includes_created_at(client, item, loc_a):
+    from datetime import datetime, timezone
+
+    before = datetime.now(timezone.utc)
+    r = _move(client, item_id=item["id"], kind="receive", qty=3, to_location_id=loc_a["id"])
+    after = datetime.now(timezone.utc)
+
+    assert r.status_code == 201
+    body = r.json()
+    assert "created_at" in body
+    assert isinstance(body["created_at"], str)
+
+    # Parses as ISO-8601, is UTC, and falls within the request window.
+    ts = datetime.fromisoformat(body["created_at"])
+    assert ts.tzinfo is not None
+    assert ts.utcoffset().total_seconds() == 0
+    assert before <= ts <= after
+
+
+def test_movement_created_at_persisted_in_db(client, item, loc_a):
+    from datetime import datetime
+
+    _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
+
+    import sqlite3
+
+    db_path = client.app.state.db_path
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute("SELECT created_at FROM movements WHERE id = 1").fetchone()
+    finally:
+        conn.close()
+    assert row is not None
+    assert row["created_at"]
+    ts = datetime.fromisoformat(row["created_at"])
+    assert ts.tzinfo is not None and ts.utcoffset().total_seconds() == 0
+
+
+def test_list_and_get_movements_include_created_at(client, item, loc_a):
+    created = _move(
+        client, item_id=item["id"], kind="receive", qty=2, to_location_id=loc_a["id"]
+    ).json()
+
+    listed = client.get("/movements").json()
+    assert len(listed) == 1
+    assert listed[0]["created_at"] == created["created_at"]
+
+
+def test_each_movement_gets_its_own_created_at(client, item, loc_a):
+    from datetime import datetime
+
+    _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
+    movements = client.get("/movements").json()
+    assert len(movements) == 2
+    t1 = datetime.fromisoformat(movements[0]["created_at"])
+    t2 = datetime.fromisoformat(movements[1]["created_at"])
+    assert t1 <= t2
+
+
 # --- DELETE /locations/{id} (T013) --------------------------------------------
 
 
