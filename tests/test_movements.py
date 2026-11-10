@@ -162,6 +162,34 @@ def test_movement_for_inactive_item_409(client, item, loc_a, loc_b, kind, payloa
     assert len(client.get("/movements").json()) == 1
 
 
+def test_movement_note_too_long_422(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=1,
+        to_location_id=loc_a["id"],
+        note="x" * 501,
+    )
+    assert r.status_code == 422
+    # No movement was recorded.
+    assert client.get("/movements").json() == []
+
+
+def test_movement_note_at_limit_accepted(client, item, loc_a):
+    note = "x" * 500
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=1,
+        to_location_id=loc_a["id"],
+        note=note,
+    )
+    assert r.status_code == 201
+    assert r.json()["note"] == note
+
+
 def test_list_movements_pagination(client, item, loc_a):
     for _ in range(4):
         _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
