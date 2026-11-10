@@ -31,7 +31,13 @@ def low_stock(
         """,
         params,
     ).fetchall()
-    return [LowStockEntry(**dict(r)) for r in rows]
+    return [
+        LowStockEntry(
+            **dict(r),
+            shortfall=max(0, r["reorder_point"] - r["total_qty"]),
+        )
+        for r in rows
+    ]
 
 
 def inventory_value(
