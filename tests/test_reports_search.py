@@ -29,6 +29,25 @@ def test_low_stock_lists_items_below_reorder_point(client, loc_a):
     }
 
 
+def test_low_stock_includes_items_exactly_at_reorder_point(client, loc_a):
+    _seed(client, "EDGE", "Edge", reorder=5, qty=5, loc=loc_a)
+    _seed(client, "ABOVE", "Above", reorder=5, qty=6, loc=loc_a)
+    entries = client.get("/reports/low-stock").json()
+    assert [e["sku"] for e in entries] == ["EDGE"]
+    assert entries[0]["total_qty"] == 5
+    assert entries[0]["reorder_point"] == 5
+
+
+def test_low_stock_includes_zero_reorder_point_with_zero_stock(client, loc_a):
+    _seed(client, "ZERO", "Zero", reorder=0, qty=0, loc=loc_a)
+    assert [e["sku"] for e in client.get("/reports/low-stock").json()] == ["ZERO"]
+
+
+def test_low_stock_excludes_items_strictly_above_reorder_point(client, loc_a):
+    _seed(client, "PLENTY", "Plenty", reorder=3, qty=4, loc=loc_a)
+    assert client.get("/reports/low-stock").json() == []
+
+
 def test_low_stock_includes_items_with_no_stock(client, loc_a):
     _seed(client, "NONE", "Nothing", reorder=1, qty=0, loc=loc_a)
     assert [e["sku"] for e in client.get("/reports/low-stock").json()] == ["NONE"]
@@ -76,3 +95,26 @@ def test_search_sorted_by_name_and_limited(client):
 def test_search_requires_query(client):
     assert client.get("/search").status_code == 422
     assert client.get("/search", params={"q": ""}).status_code == 422
+
+
+def test_search_trims_surrounding_whitespace(client):
+    client.post("/items", json={"sku": "BOLT-M8", "name": "Bolt"})
+    trimmed = client.get("/search", params={"q": "Bolt"})
+    padded = client.get("/search", params={"q": "  Bolt "})
+    assert padded.status_code == 200
+    assert padded.json() == trimmed.json()
+    assert [i["sku"] for i in padded.json()] == ["BOLT-M8"]
+
+
+def test_search_query_too_long_returns_422(client):
+    assert client.get("/search", params={"q": "x" * 101}).status_code == 422
+
+
+def test_search_query_at_max_length_is_accepted(client):
+    r = client.get("/search", params={"q": "x" * 100})
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_search_whitespace_only_query_returns_422(client):
+    assert client.get("/search", params={"q": "   "}).status_code == 422

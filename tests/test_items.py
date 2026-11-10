@@ -154,3 +154,36 @@ def test_list_items_filter_barcode_combined_with_active(client):
     assert client.get("/items", params={"barcode": "CODE-1", "active": "true"}).json() == []
     r = client.get("/items", params={"barcode": "CODE-1", "active": "false"})
     assert [i["sku"] for i in r.json()] == ["F1"]
+
+
+# --- description length --------------------------------------------------------
+
+
+def test_create_item_description_too_long_422(client):
+    r = client.post(
+        "/items",
+        json={"sku": "LONG-1", "name": "Long", "description": "x" * 2001},
+    )
+    assert r.status_code == 422
+
+
+def test_create_item_description_at_limit_ok(client):
+    r = client.post(
+        "/items",
+        json={"sku": "LONG-2", "name": "Long", "description": "x" * 2000},
+    )
+    assert r.status_code == 201
+    assert r.json()["description"] == "x" * 2000
+
+
+def test_update_item_description_too_long_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"description": "x" * 2001})
+    assert r.status_code == 422
+    # item unchanged
+    assert client.get(f"/items/{item['id']}").json() == item
+
+
+def test_update_item_description_at_limit_ok(client, item):
+    r = client.put(f"/items/{item['id']}", json={"description": "x" * 2000})
+    assert r.status_code == 200
+    assert r.json()["description"] == "x" * 2000

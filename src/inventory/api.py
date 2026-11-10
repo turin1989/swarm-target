@@ -153,6 +153,30 @@ def get_location(location_id: int, conn: sqlite3.Connection = Depends(get_db)) -
     return Location(**dict(row))
 
 
+@router.delete("/locations/{location_id}", status_code=204)
+def delete_location(location_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Response:
+    row = conn.execute("SELECT id FROM locations WHERE id = ?", (location_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"location {location_id} not found")
+    holding = conn.execute(
+        "SELECT 1 FROM stock_levels WHERE location_id = ? AND qty != 0 LIMIT 1",
+        (location_id,),
+    ).fetchone()
+    if holding is not None:
+        raise HTTPException(
+            status_code=409, detail=f"location {location_id} holds stock and cannot be deleted"
+        )
+    # Detach movement history so the FK constraint allows the delete.
+    conn.execute(
+        "UPDATE movements SET from_location_id = NULL WHERE from_location_id = ?", (location_id,)
+    )
+    conn.execute(
+        "UPDATE movements SET to_location_id = NULL WHERE to_location_id = ?", (location_id,)
+    )
+    conn.execute("DELETE FROM locations WHERE id = ?", (location_id,))
+    return Response(status_code=204)
+
+
 # --- movements ---------------------------------------------------------------
 
 
@@ -190,8 +214,11 @@ def inventory_value_report(conn: sqlite3.Connection = Depends(get_db)) -> dict:
 
 @router.get("/search", response_model=list[Item])
 def search_items(
-    q: str = Query(..., min_length=1),
+    q: str = Query(..., min_length=1, max_length=100),
     limit: int = Query(50, ge=1, le=500),
     conn: sqlite3.Connection = Depends(get_db),
 ) -> list[Item]:
+    q = q.strip()
+    if not q:
+        raise HTTPException(status_code=422, detail="q must not be blank")
     return search.search_items(conn, q, limit=limit)
