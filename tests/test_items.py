@@ -15,7 +15,7 @@ def test_create_item_returns_201_and_fields(client):
     assert body["sku"] == "A-1"
     assert body["name"] == "Alpha"
     assert body["unit_price"] == 1.25
-    assert body["reorder_point"] == 0
+    assert body["reorder_level"] == 0
     assert body["active"] is True
 
 
@@ -110,29 +110,67 @@ def test_delete_item_cascades_stock(client, item, loc_a):
     assert client.get("/movements").json() == []
 
 
-def test_create_item_negative_reorder_point_422(client):
+def test_create_item_negative_reorder_level_422(client):
     r = client.post(
-        "/items", json={"sku": "NEG-1", "name": "Neg", "reorder_point": -1}
+        "/items", json={"sku": "NEG-1", "name": "Neg", "reorder_level": -1}
     )
     assert r.status_code == 422
 
 
-def test_create_item_zero_reorder_point_ok(client):
+def test_create_item_zero_reorder_level_ok(client):
     r = client.post(
-        "/items", json={"sku": "ZERO-RP", "name": "Zero", "reorder_point": 0}
+        "/items", json={"sku": "ZERO-RP", "name": "Zero", "reorder_level": 0}
     )
     assert r.status_code == 201
-    assert r.json()["reorder_point"] == 0
+    assert r.json()["reorder_level"] == 0
 
 
-def test_update_item_negative_reorder_point_422(client, item):
-    r = client.put(f"/items/{item['id']}", json={"reorder_point": -5})
+def test_update_item_negative_reorder_level_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_level": -5})
     assert r.status_code == 422
     # item unchanged
     assert client.get(f"/items/{item['id']}").json() == item
 
 
-def test_update_item_nonnegative_reorder_point_accepted(client, item):
-    # a non-negative reorder_point passes validation (no 422)
-    r = client.put(f"/items/{item['id']}", json={"reorder_point": 7})
+def test_update_item_nonnegative_reorder_level_accepted(client, item):
+    # a non-negative reorder_level passes validation (no 422)
+    r = client.put(f"/items/{item['id']}", json={"reorder_level": 7})
     assert r.status_code == 200
+
+
+def test_create_item_rejects_legacy_reorder_point_field_422(client):
+    r = client.post(
+        "/items", json={"sku": "OLD-1", "name": "Old", "reorder_point": 3}
+    )
+    assert r.status_code == 422
+
+
+def test_update_item_rejects_legacy_reorder_point_field_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": 3})
+    assert r.status_code == 422
+    # item unchanged
+    assert client.get(f"/items/{item['id']}").json() == item
+
+
+def test_item_response_exposes_reorder_level_not_reorder_point(client):
+    r = client.post(
+        "/items", json={"sku": "NEW-1", "name": "New", "reorder_level": 4}
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["reorder_level"] == 4
+    assert "reorder_point" not in body
+
+
+def test_items_table_column_is_reorder_level(tmp_path):
+    from inventory import db
+
+    path = str(tmp_path / "schema.db")
+    db.init_db(path)
+    conn = db.connect(path)
+    try:
+        columns = [row["name"] for row in conn.execute("PRAGMA table_info(items)")]
+    finally:
+        conn.close()
+    assert "reorder_level" in columns
+    assert "reorder_point" not in columns

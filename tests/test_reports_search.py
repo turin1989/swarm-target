@@ -3,7 +3,7 @@
 
 def _seed(client, sku, name, reorder, qty, loc, price=1.0):
     item = client.post(
-        "/items", json={"sku": sku, "name": name, "reorder_point": reorder, "unit_price": price}
+        "/items", json={"sku": sku, "name": name, "reorder_level": reorder, "unit_price": price}
     ).json()
     if qty:
         client.post(
@@ -13,7 +13,7 @@ def _seed(client, sku, name, reorder, qty, loc, price=1.0):
     return item
 
 
-def test_low_stock_lists_items_below_reorder_point(client, loc_a):
+def test_low_stock_lists_items_below_reorder_level(client, loc_a):
     _seed(client, "LOW", "Low", reorder=5, qty=2, loc=loc_a)
     _seed(client, "OK", "Fine", reorder=5, qty=10, loc=loc_a)
     r = client.get("/reports/low-stock")
@@ -25,26 +25,26 @@ def test_low_stock_lists_items_below_reorder_point(client, loc_a):
         "sku": "LOW",
         "name": "Low",
         "total_qty": 2,
-        "reorder_point": 5,
+        "reorder_level": 5,
     }
 
 
-def test_low_stock_includes_items_exactly_at_reorder_point(client, loc_a):
+def test_low_stock_includes_items_exactly_at_reorder_level(client, loc_a):
     _seed(client, "EXACT", "Exact", reorder=5, qty=5, loc=loc_a)
     r = client.get("/reports/low-stock")
     assert r.status_code == 200
     entries = r.json()
     assert [e["sku"] for e in entries] == ["EXACT"]
     assert entries[0]["total_qty"] == 5
-    assert entries[0]["reorder_point"] == 5
+    assert entries[0]["reorder_level"] == 5
 
 
-def test_low_stock_includes_zero_reorder_point_with_zero_stock(client, loc_a):
+def test_low_stock_includes_zero_reorder_level_with_zero_stock(client, loc_a):
     _seed(client, "ZERO", "Zero", reorder=0, qty=0, loc=loc_a)
     assert [e["sku"] for e in client.get("/reports/low-stock").json()] == ["ZERO"]
 
 
-def test_low_stock_excludes_items_strictly_above_reorder_point(client, loc_a):
+def test_low_stock_excludes_items_strictly_above_reorder_level(client, loc_a):
     _seed(client, "ABOVE", "Above", reorder=5, qty=6, loc=loc_a)
     _seed(client, "ZABOVE", "ZeroAbove", reorder=0, qty=1, loc=loc_a)
     assert client.get("/reports/low-stock").json() == []
@@ -146,3 +146,10 @@ def test_search_sorted_by_name_and_limited(client):
 def test_search_requires_query(client):
     assert client.get("/search").status_code == 422
     assert client.get("/search", params={"q": ""}).status_code == 422
+
+
+def test_low_stock_entry_exposes_reorder_level_not_reorder_point(client, loc_a):
+    _seed(client, "LVL", "Level", reorder=5, qty=1, loc=loc_a)
+    entries = client.get("/reports/low-stock").json()
+    assert entries[0]["reorder_level"] == 5
+    assert "reorder_point" not in entries[0]
