@@ -54,7 +54,7 @@ def update_item(
     if get_item(conn, item_id) is None:
         return None
     updates = payload.model_dump(exclude_unset=True)
-    allowed = {"name", "description", "unit_price", "active"}
+    allowed = {"name", "description", "unit_price", "reorder_level", "active"}
     updates = {k: v for k, v in updates.items() if k in allowed and v is not None}
     if updates:
         if "active" in updates:

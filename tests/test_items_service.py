@@ -71,6 +71,16 @@ def test_update_item_applies_changes(conn):
     assert updated.description == created.description
 
 
+def test_update_item_applies_reorder_level(conn):
+    created = _make(conn)
+    updated = items_service.update_item(conn, created.id, ItemUpdate(reorder_level=9))
+    assert updated is not None
+    assert updated.reorder_level == 9
+    # unchanged fields are preserved
+    assert updated.name == created.name
+    assert updated.unit_price == created.unit_price
+
+
 def test_update_item_missing_returns_none(conn):
     assert items_service.update_item(conn, 9999, ItemUpdate(name="x")) is None
 
