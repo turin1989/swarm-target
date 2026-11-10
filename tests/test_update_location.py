@@ -5,7 +5,12 @@ def test_update_location_name(client, loc_a):
     r = client.put(f"/locations/{loc_a['id']}", json={"name": "Main Warehouse"})
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body == {"id": loc_a["id"], "code": loc_a["code"], "name": "Main Warehouse"}
+    assert body == {
+        "id": loc_a["id"],
+        "code": loc_a["code"],
+        "name": "Main Warehouse",
+        "active": True,
+    }
     # change is persisted
     assert client.get(f"/locations/{loc_a['id']}").json()["name"] == "Main Warehouse"
 
@@ -23,7 +28,12 @@ def test_update_location_name_and_code(client, loc_a):
         f"/locations/{loc_a['id']}", json={"name": "Overflow", "code": "WH-X"}
     )
     assert r.status_code == 200, r.text
-    assert r.json() == {"id": loc_a["id"], "code": "WH-X", "name": "Overflow"}
+    assert r.json() == {
+        "id": loc_a["id"],
+        "code": "WH-X",
+        "name": "Overflow",
+        "active": True,
+    }
 
 
 def test_update_location_empty_payload_returns_unchanged(client, loc_a):

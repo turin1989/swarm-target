@@ -63,12 +63,14 @@ class LocationUpdate(BaseModel):
 
     code: Optional[str] = Field(default=None, pattern=r"^[A-Z0-9][A-Z0-9-]{0,31}$")
     name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    active: Optional[bool] = None
 
 
 class Location(BaseModel):
     id: int
     code: str
     name: str
+    active: bool
 
 
 class MovementCreate(BaseModel):

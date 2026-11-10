@@ -13,7 +13,7 @@ def test_create_and_list_locations(client, loc_a, loc_b):
     r = client.get("/locations")
     assert r.status_code == 200
     assert [loc["code"] for loc in r.json()] == ["WH-A", "WH-B"]
-    assert loc_a == {"id": 1, "code": "WH-A", "name": "Warehouse A"}
+    assert loc_a == {"id": 1, "code": "WH-A", "name": "Warehouse A", "active": True}
 
 
 def test_get_location(client, loc_a):
