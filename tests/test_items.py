@@ -15,7 +15,7 @@ def test_create_item_returns_201_and_fields(client):
     assert body["sku"] == "A-1"
     assert body["name"] == "Alpha"
     assert body["unit_price"] == 1.25
-    assert body["reorder_point"] == 0
+    assert body["reorder_level"] == 0
     assert body["active"] is True
 
 
@@ -189,3 +189,29 @@ def test_update_item_zero_unit_price_ok(client, item):
     r = client.put(f"/items/{item['id']}", json={"unit_price": 0})
     assert r.status_code == 200
     assert r.json()["unit_price"] == 0
+
+
+def test_create_item_accepts_reorder_level(client):
+    r = client.post("/items", json={"sku": "RL-1", "name": "Rl", "reorder_level": 7})
+    assert r.status_code == 201
+    body = r.json()
+    assert body["reorder_level"] == 7
+    assert "reorder_point" not in body
+
+
+def test_create_item_rejects_reorder_point_422(client):
+    r = client.post("/items", json={"sku": "RP-1", "name": "Rp", "reorder_point": 7})
+    assert r.status_code == 422
+
+
+def test_update_item_rejects_reorder_point_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": 9})
+    assert r.status_code == 422
+    # value unchanged
+    assert client.get(f"/items/{item['id']}").json()["reorder_level"] == item["reorder_level"]
+
+
+def test_get_item_exposes_reorder_level_not_reorder_point(client, item):
+    body = client.get(f"/items/{item['id']}").json()
+    assert body["reorder_level"] == 5
+    assert "reorder_point" not in body
