@@ -243,6 +243,16 @@ def create_movement(
         raise HTTPException(status_code=exc.status_code, detail=str(exc))
 
 
+@router.post("/movements/{movement_id}/reverse", response_model=Movement, status_code=201)
+def reverse_movement(
+    movement_id: int, conn: sqlite3.Connection = Depends(get_db)
+) -> Movement:
+    try:
+        return stock.reverse_movement(conn, movement_id)
+    except stock.StockError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+
+
 @router.get("/movements", response_model=list[Movement])
 def list_movements(
     limit: int = Query(100, ge=1, le=500),
