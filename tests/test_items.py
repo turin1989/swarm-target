@@ -504,3 +504,79 @@ def test_update_item_omitting_reorder_level_leaves_value_untouched(client, item)
     assert r.status_code == 200
     assert r.json()["reorder_level"] == 5
     assert client.get(f"/items/{item['id']}").json()["reorder_level"] == 5
+
+
+# --- T021: sort parameter for GET /items -----------------------------------------
+
+
+def _make_sortable_items(client):
+    # Insert out of order so sort behaviour is distinguishable from insert order.
+    client.post("/items", json={"sku": "M-2", "name": "Charlie"})  # id 1
+    client.post("/items", json={"sku": "M-3", "name": "Alpha"})  # id 2
+    client.post("/items", json={"sku": "M-1", "name": "Bravo"})  # id 3
+
+
+def test_list_items_default_sort_is_id_ascending(client):
+    _make_sortable_items(client)
+    r = client.get("/items")
+    assert r.status_code == 200
+    assert [i["id"] for i in r.json()["items"]] == [1, 2, 3]
+
+
+def test_list_items_sort_by_id_explicit(client):
+    _make_sortable_items(client)
+    r = client.get("/items", params={"sort": "id"})
+    assert r.status_code == 200
+    assert [i["id"] for i in r.json()["items"]] == [1, 2, 3]
+
+
+def test_list_items_sort_by_name_ascending(client):
+    _make_sortable_items(client)
+    r = client.get("/items", params={"sort": "name"})
+    assert r.status_code == 200
+    assert [i["name"] for i in r.json()["items"]] == ["Alpha", "Bravo", "Charlie"]
+
+
+def test_list_items_sort_by_sku_ascending(client):
+    _make_sortable_items(client)
+    r = client.get("/items", params={"sort": "sku"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()["items"]] == ["M-1", "M-2", "M-3"]
+
+
+def test_list_items_sort_by_name_descending(client):
+    _make_sortable_items(client)
+    r = client.get("/items", params={"sort": "-name"})
+    assert r.status_code == 200
+    assert [i["name"] for i in r.json()["items"]] == ["Charlie", "Bravo", "Alpha"]
+
+
+def test_list_items_sort_by_sku_descending(client):
+    _make_sortable_items(client)
+    r = client.get("/items", params={"sort": "-sku"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()["items"]] == ["M-3", "M-2", "M-1"]
+
+
+def test_list_items_sort_by_id_descending(client):
+    _make_sortable_items(client)
+    r = client.get("/items", params={"sort": "-id"})
+    assert r.status_code == 200
+    assert [i["id"] for i in r.json()["items"]] == [3, 2, 1]
+
+
+def test_list_items_invalid_sort_value_422(client):
+    _make_sortable_items(client)
+    for bad in ["price", "name; DROP TABLE items", "--name", "", "ID", "-unknown"]:
+        r = client.get("/items", params={"sort": bad})
+        assert r.status_code == 422, bad
+
+
+def test_list_items_sort_combines_with_filters_and_pagination(client):
+    _make_sortable_items(client)
+    client.put("/items/1", json={"active": False})
+    r = client.get("/items", params={"sort": "-name", "active": "true", "limit": 1})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 2
+    assert [i["name"] for i in body["items"]] == ["Bravo"]

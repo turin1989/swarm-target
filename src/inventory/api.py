@@ -56,15 +56,23 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
         raise HTTPException(status_code=409, detail=f"sku {payload.sku!r} already exists")
 
 
+_ITEM_SORT_COLUMNS = {"id", "name", "sku"}
+
+
 @router.get("/items", response_model=ItemPage)
 def list_items(
     active: Optional[bool] = None,
     sku: Optional[str] = None,
     barcode: Optional[str] = None,
+    sort: str = Query("id", pattern=r"^-?(id|name|sku)$"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     conn: sqlite3.Connection = Depends(get_db),
 ) -> ItemPage:
+    direction = "DESC" if sort.startswith("-") else "ASC"
+    sort_column = sort.lstrip("-")
+    if sort_column not in _ITEM_SORT_COLUMNS:  # defence in depth; pattern already enforces
+        raise HTTPException(status_code=422, detail=f"invalid sort field {sort!r}")
     params: list = []
     conditions: list[str] = []
     if active is not None:
@@ -79,7 +87,7 @@ def list_items(
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
     total = conn.execute(f"SELECT COUNT(*) FROM items{where}", params).fetchone()[0]
     rows = conn.execute(
-        f"SELECT * FROM items{where} ORDER BY id LIMIT ? OFFSET ?",
+        f"SELECT * FROM items{where} ORDER BY {sort_column} {direction} LIMIT ? OFFSET ?",
         [*params, limit, offset],
     ).fetchall()
     return ItemPage(
