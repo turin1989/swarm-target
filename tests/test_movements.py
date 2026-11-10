@@ -562,3 +562,81 @@ def test_list_movements_no_filters_returns_all(client, mixed_movements):
     r = client.get("/movements")
     assert r.status_code == 200
     assert [m["id"] for m in r.json()] == [1, 2, 3, 4, 5, 6]
+
+
+# --- movements rejected for inactive items (T041) --------------------------------
+
+
+@pytest.fixture
+def inactive_item(client, item, loc_a):
+    """An item with existing stock that has been deactivated."""
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    r = client.put(f"/items/{item['id']}", json={"active": False})
+    assert r.status_code == 200, r.text
+    assert r.json()["active"] is False
+    return r.json()
+
+
+@pytest.mark.parametrize(
+    "kind,locations",
+    [
+        ("receive", {"to_location_id": 1}),
+        ("ship", {"from_location_id": 1}),
+        ("transfer", {"from_location_id": 1, "to_location_id": 2}),
+        ("adjust", {"to_location_id": 1}),
+    ],
+)
+def test_movement_for_inactive_item_rejected_409(
+    client, inactive_item, loc_a, loc_b, kind, locations
+):
+    r = _move(client, item_id=inactive_item["id"], kind=kind, qty=1, **locations)
+    assert r.status_code == 409
+    body = r.json()
+    assert body["error"]["code"] == "conflict"
+    assert "inactive" in body["error"]["message"]
+
+
+def test_movement_for_inactive_item_leaves_stock_unchanged(
+    client, inactive_item, loc_a, loc_b
+):
+    before = client.get(f"/items/{inactive_item['id']}/stock").json()
+    assert before["total"] == 5
+
+    for kind, locations in [
+        ("receive", {"to_location_id": loc_a["id"]}),
+        ("ship", {"from_location_id": loc_a["id"]}),
+        (
+            "transfer",
+            {"from_location_id": loc_a["id"], "to_location_id": loc_b["id"]},
+        ),
+        ("adjust", {"to_location_id": loc_a["id"]}),
+    ]:
+        r = _move(client, item_id=inactive_item["id"], kind=kind, qty=3, **locations)
+        assert r.status_code == 409
+
+    after = client.get(f"/items/{inactive_item['id']}/stock").json()
+    assert after == before
+    assert after["total"] == 5
+    assert after["levels"] == [
+        {"item_id": inactive_item["id"], "location_id": loc_a["id"], "qty": 5}
+    ]
+
+
+def test_movement_for_inactive_item_writes_no_movement_row(client, inactive_item, loc_a):
+    r = _move(
+        client, item_id=inactive_item["id"], kind="receive", qty=1, to_location_id=loc_a["id"]
+    )
+    assert r.status_code == 409
+    movements = client.get("/movements").json()
+    assert len(movements) == 1  # only the original receive from the fixture
+    assert movements[0]["kind"] == "receive"
+
+
+def test_movement_allowed_again_after_reactivation(client, inactive_item, loc_a):
+    r = client.put(f"/items/{inactive_item['id']}", json={"active": True})
+    assert r.status_code == 200
+    r = _move(
+        client, item_id=inactive_item["id"], kind="receive", qty=2, to_location_id=loc_a["id"]
+    )
+    assert r.status_code == 201
+    assert client.get(f"/items/{inactive_item['id']}/stock").json()["total"] == 7
