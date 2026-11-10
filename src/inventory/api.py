@@ -84,8 +84,9 @@ def create_items_bulk(
         try:
             cur = conn.execute(
                 """
-                INSERT INTO items (sku, name, description, unit_price, reorder_level, barcode)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO items
+                    (sku, name, description, unit_price, reorder_level, barcode, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     entry.sku,
@@ -94,6 +95,7 @@ def create_items_bulk(
                     entry.unit_price,
                     entry.reorder_level,
                     entry.barcode,
+                    items_service.utc_now_iso(),
                 ),
             )
         except sqlite3.IntegrityError as exc:
