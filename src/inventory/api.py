@@ -15,6 +15,7 @@ from inventory.models import (
     Location,
     LocationCreate,
     LocationStock,
+    LocationUpdate,
     LowStockEntry,
     Movement,
     MovementCreate,
@@ -135,8 +136,15 @@ def create_location(
 
 
 @router.get("/locations", response_model=list[Location])
-def list_locations(conn: sqlite3.Connection = Depends(get_db)) -> list[Location]:
-    rows = conn.execute("SELECT * FROM locations ORDER BY id").fetchall()
+def list_locations(
+    active: Optional[bool] = None, conn: sqlite3.Connection = Depends(get_db)
+) -> list[Location]:
+    where = ""
+    params: list = []
+    if active is not None:
+        where = " WHERE active = ?"
+        params.append(int(active))
+    rows = conn.execute(f"SELECT * FROM locations{where} ORDER BY id", params).fetchall()
     return [Location(**dict(r)) for r in rows]
 
 
@@ -145,6 +153,25 @@ def get_location(location_id: int, conn: sqlite3.Connection = Depends(get_db)) -
     row = conn.execute("SELECT * FROM locations WHERE id = ?", (location_id,)).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail=f"location {location_id} not found")
+    return Location(**dict(row))
+
+
+@router.put("/locations/{location_id}", response_model=Location)
+def update_location(
+    location_id: int, payload: LocationUpdate, conn: sqlite3.Connection = Depends(get_db)
+) -> Location:
+    row = conn.execute("SELECT * FROM locations WHERE id = ?", (location_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"location {location_id} not found")
+    updates = payload.model_dump(exclude_unset=True)
+    if "name" in updates and updates["name"] is not None:
+        conn.execute("UPDATE locations SET name = ? WHERE id = ?", (updates["name"], location_id))
+    if "active" in updates and updates["active"] is not None:
+        conn.execute(
+            "UPDATE locations SET active = ? WHERE id = ?",
+            (int(updates["active"]), location_id),
+        )
+    row = conn.execute("SELECT * FROM locations WHERE id = ?", (location_id,)).fetchone()
     return Location(**dict(row))
 
 
