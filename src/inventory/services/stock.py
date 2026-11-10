@@ -29,6 +29,18 @@ def get_item_levels(conn: sqlite3.Connection, item_id: int) -> list[StockLevel]:
     return [StockLevel(**dict(r)) for r in rows]
 
 
+def get_location_levels(conn: sqlite3.Connection, location_id: int) -> list[StockLevel]:
+    rows = conn.execute(
+        """
+        SELECT item_id, location_id, qty FROM stock_levels
+        WHERE location_id = ? AND qty != 0
+        ORDER BY item_id
+        """,
+        (location_id,),
+    ).fetchall()
+    return [StockLevel(**dict(r)) for r in rows]
+
+
 def total_stock(conn: sqlite3.Connection, item_id: int) -> int:
     row = conn.execute(
         "SELECT COALESCE(SUM(qty), 0) AS total FROM stock_levels WHERE item_id = ?",
@@ -68,6 +80,9 @@ def _require_location(conn: sqlite3.Connection, location_id: int | None, field: 
 
 def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
     """Validate and apply a stock movement, returning the persisted record."""
+    if m.qty <= 0:
+        raise StockError("qty must be a positive integer", status_code=422)
+
     item = conn.execute("SELECT id FROM items WHERE id = ?", (m.item_id,)).fetchone()
     if item is None:
         raise StockError(f"item {m.item_id} not found", status_code=404)
@@ -80,9 +95,9 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
         _adjust(conn, m.item_id, from_id, -m.qty)
     elif m.kind == "transfer":
         from_id = _require_location(conn, m.from_location_id, "from_location_id")
-        _require_location(conn, m.to_location_id, "to_location_id")
+        to_id = _require_location(conn, m.to_location_id, "to_location_id")
         _adjust(conn, m.item_id, from_id, -m.qty)
-        _adjust(conn, m.item_id, from_id, m.qty)
+        _adjust(conn, m.item_id, to_id, m.qty)
     elif m.kind == "adjust":
         if m.from_location_id is not None:
             raise StockError("from_location_id must be null for adjust movements")

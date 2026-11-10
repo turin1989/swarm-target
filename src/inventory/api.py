@@ -13,6 +13,7 @@ from inventory.models import (
     ItemUpdate,
     Location,
     LocationCreate,
+    LocationStock,
     LowStockEntry,
     Movement,
     MovementCreate,
@@ -114,9 +115,12 @@ def item_stock(item_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Item
 def create_location(
     payload: LocationCreate, conn: sqlite3.Connection = Depends(get_db)
 ) -> Location:
-    cur = conn.execute(
-        "INSERT INTO locations (code, name) VALUES (?, ?)", (payload.code, payload.name)
-    )
+    try:
+        cur = conn.execute(
+            "INSERT INTO locations (code, name) VALUES (?, ?)", (payload.code, payload.name)
+        )
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=409, detail=f"location code {payload.code!r} already exists")
     row = conn.execute("SELECT * FROM locations WHERE id = ?", (cur.lastrowid,)).fetchone()
     return Location(**dict(row))
 
@@ -133,6 +137,19 @@ def get_location(location_id: int, conn: sqlite3.Connection = Depends(get_db)) -
     if row is None:
         raise HTTPException(status_code=404, detail=f"location {location_id} not found")
     return Location(**dict(row))
+
+
+@router.get("/locations/{location_id}/stock", response_model=LocationStock)
+def location_stock(
+    location_id: int, conn: sqlite3.Connection = Depends(get_db)
+) -> LocationStock:
+    row = conn.execute("SELECT id FROM locations WHERE id = ?", (location_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"location {location_id} not found")
+    return LocationStock(
+        location_id=location_id,
+        levels=stock.get_location_levels(conn, location_id),
+    )
 
 
 # --- movements ---------------------------------------------------------------
@@ -168,6 +185,11 @@ def low_stock_report(conn: sqlite3.Connection = Depends(get_db)) -> list[LowStoc
 @router.get("/reports/value")
 def inventory_value_report(conn: sqlite3.Connection = Depends(get_db)) -> dict:
     return {"value": reports.inventory_value(conn)}
+
+
+@router.get("/stats")
+def get_stats(conn: sqlite3.Connection = Depends(get_db)) -> dict:
+    return reports.stats(conn)
 
 
 @router.get("/search", response_model=list[Item])

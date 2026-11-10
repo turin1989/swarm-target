@@ -77,6 +77,27 @@ def test_transfer_is_recorded(client, item, loc_a, loc_b):
     assert movements[1]["kind"] == "transfer"
 
 
+def test_transfer_moves_stock_between_locations(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=2,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    assert r.status_code == 201
+
+    s = client.get(f"/items/{item['id']}/stock").json()
+    # total stock unchanged by a transfer
+    assert s["total"] == 5
+    levels = {lvl["location_id"]: lvl["qty"] for lvl in s["levels"]}
+    # source decreased by 2, destination increased by 2
+    assert levels[loc_a["id"]] == 3
+    assert levels[loc_b["id"]] == 2
+
+
 def test_stock_for_missing_item_404(client):
     assert client.get("/items/77/stock").status_code == 404
 
@@ -177,6 +198,34 @@ def test_adjust_is_recorded_in_movement_list(client, item, loc_a):
     assert len(movements) == 1
     assert movements[0]["kind"] == "adjust"
     assert movements[0]["qty"] == 4
+
+
+@pytest.mark.parametrize("qty", [0, -1, -10])
+def test_movement_non_positive_qty_422(client, item, loc_a, qty):
+    r = _move(client, item_id=item["id"], kind="receive", qty=qty, to_location_id=loc_a["id"])
+    assert r.status_code == 422
+    # no movement row is written
+    assert client.get("/movements").json() == []
+    # and stock is untouched
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 0
+
+
+@pytest.mark.parametrize("kind,locs", [
+    ("ship", {"from_location_id": 1}),
+    ("transfer", {"from_location_id": 1, "to_location_id": 2}),
+])
+def test_non_positive_qty_rejected_for_all_kinds(client, item, loc_a, loc_b, kind, locs):
+    r = _move(client, item_id=item["id"], kind=kind, qty=0, **locs)
+    assert r.status_code == 422
+    assert client.get("/movements").json() == []
+
+
+def test_adjust_non_positive_qty_422(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    r = _move(client, item_id=item["id"], kind="adjust", qty=0, to_location_id=loc_a["id"])
+    assert r.status_code == 422
+    # stock is untouched
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 5
 
 
 def test_list_movements_pagination(client, item, loc_a):
