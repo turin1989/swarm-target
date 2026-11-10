@@ -27,13 +27,13 @@ def _make(conn, sku="SVC-1", **kwargs) -> Item:
 
 
 def test_create_item_returns_item_model(conn):
-    item = _make(conn, unit_price=3.5, reorder_point=7, description="desc")
+    item = _make(conn, unit_price=3.5, reorder_level=7, description="desc")
     assert isinstance(item, Item)
     assert item.id == 1
     assert item.sku == "SVC-1"
     assert item.name == "Service Item"
     assert item.unit_price == 3.5
-    assert item.reorder_point == 7
+    assert item.reorder_level == 7
     assert item.description == "desc"
     assert item.active is True
     assert item.created_at  # set at insert time

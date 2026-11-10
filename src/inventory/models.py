@@ -2,17 +2,28 @@
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 MovementKind = Literal["receive", "ship", "transfer"]
 
 
-class ItemCreate(BaseModel):
+class _RejectsReorderPoint(BaseModel):
+    """Reject the retired ``reorder_point`` field (renamed to ``reorder_level``)."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_reorder_point(cls, values):
+        if isinstance(values, dict) and "reorder_point" in values:
+            raise ValueError("reorder_point has been renamed to reorder_level")
+        return values
+
+
+class ItemCreate(_RejectsReorderPoint):
     sku: str = Field(..., min_length=1, max_length=64)
     name: str = Field(..., min_length=1, max_length=200)
     description: str = Field("", max_length=2000)
     unit_price: float = Field(0.0, ge=0)
-    reorder_point: int = 0
+    reorder_level: int = 0
 
     @field_validator("sku")
     @classmethod
@@ -23,11 +34,11 @@ class ItemCreate(BaseModel):
         return normalised
 
 
-class ItemUpdate(BaseModel):
+class ItemUpdate(_RejectsReorderPoint):
     name: Optional[str] = None
     description: Optional[str] = Field(None, max_length=2000)
     unit_price: Optional[float] = Field(None, ge=0)
-    reorder_point: Optional[int] = None
+    reorder_level: Optional[int] = None
     active: Optional[bool] = None
 
 
@@ -37,7 +48,7 @@ class Item(BaseModel):
     name: str
     description: str
     unit_price: float
-    reorder_point: int
+    reorder_level: int
     active: bool
     created_at: str
 
@@ -107,5 +118,5 @@ class LowStockEntry(BaseModel):
     sku: str
     name: str
     total_qty: int
-    reorder_point: int
+    reorder_level: int
     shortfall: int = Field(..., ge=0)

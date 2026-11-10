@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS items (
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     unit_price REAL NOT NULL DEFAULT 0,
-    reorder_point INTEGER NOT NULL DEFAULT 0,
+    reorder_level INTEGER NOT NULL DEFAULT 0,
     active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
@@ -60,6 +60,10 @@ def init_db(path: str) -> None:
     conn = connect(path)
     try:
         conn.executescript(SCHEMA)
+        # Migration: rename items.reorder_point to items.reorder_level in older databases.
+        item_columns = {r["name"] for r in conn.execute("PRAGMA table_info(items)")}
+        if "reorder_point" in item_columns and "reorder_level" not in item_columns:
+            conn.execute("ALTER TABLE items RENAME COLUMN reorder_point TO reorder_level")
         # Migration: add locations.active to databases created before the column existed.
         location_columns = {r["name"] for r in conn.execute("PRAGMA table_info(locations)")}
         if "active" not in location_columns:

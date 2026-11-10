@@ -39,7 +39,7 @@ def create_item(conn: sqlite3.Connection, payload: ItemCreate) -> Item:
     created_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     cur = conn.execute(
         """
-        INSERT INTO items (sku, name, description, unit_price, reorder_point, created_at)
+        INSERT INTO items (sku, name, description, unit_price, reorder_level, created_at)
         VALUES (?, ?, ?, ?, ?, ?)
         """,
         (
@@ -47,7 +47,7 @@ def create_item(conn: sqlite3.Connection, payload: ItemCreate) -> Item:
             payload.name,
             payload.description,
             payload.unit_price,
-            payload.reorder_point,
+            payload.reorder_level,
             created_at,
         ),
     )
