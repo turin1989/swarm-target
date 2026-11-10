@@ -95,3 +95,27 @@ def test_delete_item_cascades_stock(client, item, loc_a):
     )
     client.delete(f"/items/{item['id']}")
     assert client.get("/movements").json() == []
+
+
+def test_create_item_negative_unit_price_rejected(client):
+    r = client.post("/items", json={"sku": "NEG-1", "name": "Neg", "unit_price": -0.01})
+    assert r.status_code == 422
+
+
+def test_create_item_zero_unit_price_accepted(client):
+    r = client.post("/items", json={"sku": "ZERO-1", "name": "Zero", "unit_price": 0})
+    assert r.status_code == 201
+    assert r.json()["unit_price"] == 0
+
+
+def test_update_item_negative_unit_price_rejected(client, item):
+    r = client.put(f"/items/{item['id']}", json={"unit_price": -5})
+    assert r.status_code == 422
+    # unchanged
+    assert client.get(f"/items/{item['id']}").json()["unit_price"] == item["unit_price"]
+
+
+def test_update_item_zero_unit_price_accepted(client, item):
+    r = client.put(f"/items/{item['id']}", json={"unit_price": 0})
+    assert r.status_code == 200
+    assert r.json()["unit_price"] == 0
