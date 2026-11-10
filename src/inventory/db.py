@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS movements (
     from_location_id INTEGER REFERENCES locations(id),
     to_location_id INTEGER REFERENCES locations(id),
     note TEXT NOT NULL DEFAULT '',
-    reference TEXT
+    reference TEXT,
+    created_at TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -75,6 +76,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE items ADD COLUMN barcode TEXT")
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_items_barcode ON items(barcode)"
+        )
+    movement_cols = {row["name"] for row in conn.execute("PRAGMA table_info(movements)")}
+    if "created_at" not in movement_cols:
+        conn.execute(
+            "ALTER TABLE movements ADD COLUMN created_at TEXT NOT NULL DEFAULT ''"
         )
     # Enforce unique location codes on databases created before the UNIQUE
     # constraint was added to the table definition.
