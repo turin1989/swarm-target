@@ -103,7 +103,7 @@ def update_item(
 ) -> Item:
     _fetch_item(conn, item_id)
     updates = payload.model_dump(exclude_unset=True)
-    allowed = {"name", "description", "unit_price", "active"}
+    allowed = {"name", "description", "unit_price", "reorder_point", "active"}
     updates = {k: v for k, v in updates.items() if k in allowed and v is not None}
     if updates:
         if "active" in updates:

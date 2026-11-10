@@ -225,3 +225,35 @@ def test_update_item_zero_unit_price_ok(client, item):
     r = client.put(f"/items/{item['id']}", json={"unit_price": 0})
     assert r.status_code == 200
     assert r.json()["unit_price"] == 0
+
+
+def test_update_item_reorder_point_persists(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": 12})
+    assert r.status_code == 200
+    assert r.json()["reorder_point"] == 12
+    # persisted, not just echoed
+    assert client.get(f"/items/{item['id']}").json()["reorder_point"] == 12
+
+
+def test_update_item_reorder_point_with_other_fields(client, item):
+    r = client.put(
+        f"/items/{item['id']}",
+        json={"reorder_point": 7, "name": "Renamed", "unit_price": 3.5},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["reorder_point"] == 7
+    assert body["name"] == "Renamed"
+    assert body["unit_price"] == 3.5
+    stored = client.get(f"/items/{item['id']}").json()
+    assert stored["reorder_point"] == 7
+    assert stored["name"] == "Renamed"
+    assert stored["unit_price"] == 3.5
+
+
+def test_update_item_omitting_reorder_point_keeps_stored_value(client, item):
+    client.put(f"/items/{item['id']}", json={"reorder_point": 9})
+    r = client.put(f"/items/{item['id']}", json={"name": "Other"})
+    assert r.status_code == 200
+    assert r.json()["reorder_point"] == 9
+    assert client.get(f"/items/{item['id']}").json()["reorder_point"] == 9
