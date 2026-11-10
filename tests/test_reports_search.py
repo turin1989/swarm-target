@@ -138,6 +138,34 @@ def test_search_sorted_by_name_and_limited(client):
     assert names == ["Cable A", "Cable B"]
 
 
+def test_search_by_name_is_case_insensitive(client):
+    client.post("/items", json={"sku": "S1", "name": "Blue Widget"})
+    client.post("/items", json={"sku": "S2", "name": "Red Gadget"})
+    lower = client.get("/search", params={"q": "widget"})
+    upper = client.get("/search", params={"q": "WIDGET"})
+    title = client.get("/search", params={"q": "Widget"})
+    assert lower.status_code == upper.status_code == title.status_code == 200
+    assert [i["sku"] for i in lower.json()] == ["S1"]
+    assert lower.json() == upper.json() == title.json()
+
+
+def test_search_by_sku_is_case_insensitive(client):
+    client.post("/items", json={"sku": "BOLT-M8", "name": "Bolt"})
+    client.post("/items", json={"sku": "NUT-M8", "name": "Nut"})
+    lower = client.get("/search", params={"q": "bolt-m8"})
+    upper = client.get("/search", params={"q": "BOLT-M8"})
+    mixed = client.get("/search", params={"q": "BoLt-M8"})
+    assert [i["sku"] for i in lower.json()] == ["BOLT-M8"]
+    assert lower.json() == upper.json() == mixed.json()
+
+
+def test_search_case_insensitive_keeps_order_and_limit(client):
+    for n, name in enumerate(["Cable C", "Cable A", "Cable B"]):
+        client.post("/items", json={"sku": f"C{n}", "name": name})
+    names = [i["name"] for i in client.get("/search", params={"q": "cable", "limit": 2}).json()]
+    assert names == ["Cable A", "Cable B"]
+
+
 def test_search_requires_query(client):
     assert client.get("/search").status_code == 422
     assert client.get("/search", params={"q": ""}).status_code == 422

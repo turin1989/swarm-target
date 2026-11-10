@@ -111,6 +111,12 @@ def update_item(
 
 @router.delete("/items/{item_id}", status_code=204)
 def delete_item(item_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Response:
+    remaining = stock.total_stock(conn, item_id)
+    if remaining > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"item {item_id} still has {remaining} units in stock",
+        )
     conn.execute("DELETE FROM items WHERE id = ?", (item_id,))
     return Response(status_code=204)
 
@@ -186,6 +192,14 @@ def create_movement(
 ) -> Movement:
     try:
         return stock.apply_movement(conn, payload)
+    except stock.StockError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+
+
+@router.get("/movements/{movement_id}", response_model=Movement)
+def get_movement(movement_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Movement:
+    try:
+        return stock.get_movement(conn, movement_id)
     except stock.StockError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc))
 
