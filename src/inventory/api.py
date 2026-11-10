@@ -71,8 +71,13 @@ def list_items(
     barcode: Optional[str] = None,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    sort: str = Query("id", pattern=r"^-?(id|name|sku)$"),
     conn: sqlite3.Connection = Depends(get_db),
 ) -> ItemPage:
+    if sort.startswith("-"):
+        order_by = f"{sort[1:]} DESC"
+    else:
+        order_by = f"{sort} ASC"
     conditions: list[str] = []
     where_params: list = []
     if active is not None:
@@ -88,7 +93,7 @@ def list_items(
     total = conn.execute(f"SELECT COUNT(*) FROM items{where}", where_params).fetchone()[0]
     response.headers["X-Total-Count"] = str(total)
     rows = conn.execute(
-        f"SELECT * FROM items{where} ORDER BY id LIMIT ? OFFSET ?",
+        f"SELECT * FROM items{where} ORDER BY {order_by} LIMIT ? OFFSET ?",
         [*where_params, limit, offset],
     ).fetchall()
     return ItemPage(
