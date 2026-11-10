@@ -53,6 +53,29 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
     return _fetch_item(conn, cur.lastrowid)
 
 
+@router.post("/items/bulk", response_model=list[Item], status_code=201)
+def create_items_bulk(
+    payload: list[ItemCreate], conn: sqlite3.Connection = Depends(get_db)
+) -> list[Item]:
+    if not payload:
+        raise HTTPException(status_code=422, detail="item list must not be empty")
+    created_ids: list[int] = []
+    try:
+        for item in payload:
+            cur = conn.execute(
+                """
+                INSERT INTO items (sku, name, description, unit_price, reorder_point)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (item.sku, item.name, item.description, item.unit_price, item.reorder_point),
+            )
+            created_ids.append(cur.lastrowid)
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        raise HTTPException(status_code=409, detail=f"sku {item.sku!r} already exists")
+    return [_fetch_item(conn, item_id) for item_id in created_ids]
+
+
 @router.get("/items", response_model=list[Item])
 def list_items(
     active: Optional[bool] = None,
