@@ -295,3 +295,54 @@ def test_list_movements_pagination(client, item, loc_a):
         _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
     r = client.get("/movements", params={"limit": 2, "offset": 2})
     assert [m["id"] for m in r.json()] == [3, 4]
+
+
+def test_movement_created_at_is_set_and_returned(client, item, loc_a):
+    from datetime import datetime, timezone
+
+    before = datetime.now(timezone.utc)
+    r = _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    after = datetime.now(timezone.utc)
+    assert r.status_code == 201
+    body = r.json()
+    assert "created_at" in body
+    # ISO-8601 UTC string parseable by fromisoformat
+    created = datetime.fromisoformat(body["created_at"])
+    assert created.tzinfo is not None
+    assert created.utcoffset().total_seconds() == 0
+    assert before <= created <= after
+
+
+def test_movement_created_at_returned_on_list(client, item, loc_a):
+    from datetime import datetime
+
+    r = _move(client, item_id=item["id"], kind="receive", qty=2, to_location_id=loc_a["id"])
+    assert r.status_code == 201
+    created_at = r.json()["created_at"]
+
+    movements = client.get("/movements").json()
+    assert movements[0]["created_at"] == created_at
+    assert datetime.fromisoformat(created_at).utcoffset().total_seconds() == 0
+
+
+def test_movement_created_at_for_all_kinds(client, item, loc_a, loc_b):
+    from datetime import datetime, timezone
+
+    responses = [
+        _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"]),
+        _move(client, item_id=item["id"], kind="ship", qty=1, from_location_id=loc_a["id"]),
+        _move(
+            client,
+            item_id=item["id"],
+            kind="transfer",
+            qty=2,
+            from_location_id=loc_a["id"],
+            to_location_id=loc_b["id"],
+        ),
+        _move(client, item_id=item["id"], kind="adjust", qty=3, to_location_id=loc_a["id"]),
+    ]
+    for r in responses:
+        assert r.status_code == 201
+        created = datetime.fromisoformat(r.json()["created_at"])
+        assert created.tzinfo is not None
+        assert created.utcoffset().total_seconds() == 0

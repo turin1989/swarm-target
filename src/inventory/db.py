@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS movements (
     from_location_id INTEGER REFERENCES locations(id),
     to_location_id INTEGER REFERENCES locations(id),
     note TEXT NOT NULL DEFAULT '',
-    reference TEXT
+    reference TEXT,
+    created_at TEXT NOT NULL
 );
 """
 
