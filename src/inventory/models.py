@@ -42,7 +42,7 @@ class ItemPage(BaseModel):
 
 
 class LocationCreate(BaseModel):
-    code: str = Field(..., min_length=1, max_length=32)
+    code: str = Field(..., min_length=1, max_length=32, pattern=r"^[A-Z0-9][A-Z0-9-]{0,31}$")
     name: str = Field(..., min_length=1, max_length=200)
 
 
