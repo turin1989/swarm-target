@@ -226,6 +226,12 @@ def item_movements(
 # --- locations ---------------------------------------------------------------
 
 
+def _row_to_location(row: sqlite3.Row) -> Location:
+    data = dict(row)
+    data["active"] = bool(data["active"])
+    return Location(**data)
+
+
 @router.post("/locations", response_model=Location, status_code=201)
 def create_location(
     payload: LocationCreate, conn: sqlite3.Connection = Depends(get_db)
@@ -234,13 +240,21 @@ def create_location(
         "INSERT INTO locations (code, name) VALUES (?, ?)", (payload.code, payload.name)
     )
     row = conn.execute("SELECT * FROM locations WHERE id = ?", (cur.lastrowid,)).fetchone()
-    return Location(**dict(row))
+    return _row_to_location(row)
 
 
 @router.get("/locations", response_model=list[Location])
-def list_locations(conn: sqlite3.Connection = Depends(get_db)) -> list[Location]:
-    rows = conn.execute("SELECT * FROM locations ORDER BY id").fetchall()
-    return [Location(**dict(r)) for r in rows]
+def list_locations(
+    active: Optional[bool] = None, conn: sqlite3.Connection = Depends(get_db)
+) -> list[Location]:
+    sql = "SELECT * FROM locations"
+    params: list = []
+    if active is not None:
+        sql += " WHERE active = ?"
+        params.append(int(active))
+    sql += " ORDER BY id"
+    rows = conn.execute(sql, params).fetchall()
+    return [_row_to_location(r) for r in rows]
 
 
 @router.get("/locations/{location_id}", response_model=Location)
@@ -248,7 +262,7 @@ def get_location(location_id: int, conn: sqlite3.Connection = Depends(get_db)) -
     row = conn.execute("SELECT * FROM locations WHERE id = ?", (location_id,)).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail=f"location {location_id} not found")
-    return Location(**dict(row))
+    return _row_to_location(row)
 
 
 @router.put("/locations/{location_id}", response_model=Location)
@@ -262,13 +276,15 @@ def update_location(
         k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None
     }
     if updates:
+        if "active" in updates:
+            updates["active"] = int(updates["active"])
         assignments = ", ".join(f"{k} = ?" for k in updates)
         conn.execute(
             f"UPDATE locations SET {assignments} WHERE id = ?",
             [*updates.values(), location_id],
         )
     row = conn.execute("SELECT * FROM locations WHERE id = ?", (location_id,)).fetchone()
-    return Location(**dict(row))
+    return _row_to_location(row)
 
 
 @router.get("/locations/{location_id}/stock", response_model=LocationStock)
