@@ -5,6 +5,7 @@ import sqlite3
 
 import pytest
 
+from inventory.models import MovementCreate
 from inventory.services import stock
 from inventory.services.errors import (
     ConflictError,
@@ -12,8 +13,6 @@ from inventory.services.errors import (
     NotFoundError,
     ValidationError,
 )
-from inventory.models import MovementCreate
-
 
 # --- the errors module itself --------------------------------------------------
 
