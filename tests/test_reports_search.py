@@ -169,6 +169,29 @@ def test_search_requires_query(client):
     assert client.get("/search", params={"q": ""}).status_code == 422
 
 
+def test_search_trims_leading_and_trailing_whitespace(client):
+    client.post("/items", json={"sku": "BOLT-M8", "name": "Bolt"})
+    client.post("/items", json={"sku": "NUT-M8", "name": "Nut"})
+    r = client.get("/search", params={"q": "  bolt "})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["BOLT-M8"]
+    # behaves exactly like the already-trimmed query
+    assert r.json() == client.get("/search", params={"q": "bolt"}).json()
+
+
+def test_search_query_longer_than_100_chars_returns_422(client):
+    client.post("/items", json={"sku": "S1", "name": "Bolt"})
+    assert client.get("/search", params={"q": "x" * 101}).status_code == 422
+    # exactly 100 characters is still accepted
+    assert client.get("/search", params={"q": "x" * 100}).status_code == 200
+
+
+def test_search_whitespace_only_query_returns_422(client):
+    client.post("/items", json={"sku": "S1", "name": "Bolt"})
+    for q in (" ", "   ", "\t", " \t "):
+        assert client.get("/search", params={"q": q}).status_code == 422, repr(q)
+
+
 def test_search_by_description_substring(client):
     client.post(
         "/items",
