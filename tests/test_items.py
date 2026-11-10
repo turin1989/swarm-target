@@ -79,8 +79,10 @@ def test_list_items_limit(client):
 def test_list_items_filter_active(client, item):
     client.post("/items", json={"sku": "INACTIVE", "name": "Old"})
     client.put("/items/2", json={"active": False})
-    assert [i["sku"] for i in client.get("/items", params={"active": "true"}).json()["items"]] == ["WIDGET-1"]
-    assert [i["sku"] for i in client.get("/items", params={"active": "false"}).json()["items"]] == ["INACTIVE"]
+    active = client.get("/items", params={"active": "true"}).json()["items"]
+    inactive = client.get("/items", params={"active": "false"}).json()["items"]
+    assert [i["sku"] for i in active] == ["WIDGET-1"]
+    assert [i["sku"] for i in inactive] == ["INACTIVE"]
 
 
 def test_list_items_filter_sku_exact_match(client, item):
