@@ -22,12 +22,18 @@ def low_stock(conn: sqlite3.Connection) -> list[LowStockEntry]:
     return [LowStockEntry(**dict(r)) for r in rows]
 
 
-def inventory_value(conn: sqlite3.Connection) -> float:
-    """Total value of stock on hand (sum of qty * unit_price)."""
-    row = conn.execute(
-        """
+def inventory_value(conn: sqlite3.Connection, location_id: int | None = None) -> float:
+    """Total value of stock on hand (sum of qty * unit_price).
+
+    If ``location_id`` is given, only stock held at that location is counted.
+    """
+    query = """
         SELECT COALESCE(SUM(s.qty * i.unit_price), 0) AS value
         FROM stock_levels s JOIN items i ON i.id = s.item_id
         """
-    ).fetchone()
+    params: list = []
+    if location_id is not None:
+        query += " WHERE s.location_id = ?"
+        params.append(location_id)
+    row = conn.execute(query, params).fetchone()
     return float(row["value"])
