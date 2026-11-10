@@ -30,6 +30,22 @@ def get_item_levels(conn: sqlite3.Connection, item_id: int) -> list[StockLevel]:
     return [_row_to_stock_level(r) for r in rows]
 
 
+def get_location_levels(conn: sqlite3.Connection, location_id: int) -> list[StockLevel]:
+    """All non-zero stock levels held at a location, ordered by item id."""
+    row = conn.execute("SELECT 1 FROM locations WHERE id = ?", (location_id,)).fetchone()
+    if row is None:
+        raise NotFoundError(f"location {location_id} not found")
+    rows = conn.execute(
+        """
+        SELECT item_id, location_id, qty FROM stock_levels
+        WHERE location_id = ? AND qty != 0
+        ORDER BY item_id
+        """,
+        (location_id,),
+    ).fetchall()
+    return [_row_to_stock_level(r) for r in rows]
+
+
 def total_stock(conn: sqlite3.Connection, item_id: int) -> int:
     row = conn.execute(
         "SELECT COALESCE(SUM(qty), 0) AS total FROM stock_levels WHERE item_id = ?",
