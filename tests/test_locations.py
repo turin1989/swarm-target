@@ -25,7 +25,9 @@ def test_duplicate_location_code_detail_mentions_code(client):
 
     dup = client.post("/locations", json={"code": "WH-X", "name": "Duplicate"})
     assert dup.status_code == 409, dup.text
-    assert "WH-X" in dup.json()["detail"]
+    body = dup.json()
+    assert body["error"]["code"] == "conflict"
+    assert "WH-X" in body["error"]["message"]
 
 
 def test_duplicate_does_not_create_extra_location(client):
