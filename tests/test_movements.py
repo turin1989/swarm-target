@@ -245,6 +245,100 @@ def test_list_movements_pagination(client, item, loc_a):
     assert [m["id"] for m in r.json()] == [3, 4]
 
 
+# --- optional reference on movements (T043) ------------------------------------
+
+
+def test_movement_with_reference_returned_on_post_and_get(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=3,
+        to_location_id=loc_a["id"],
+        reference="PO-12345",
+    )
+    assert r.status_code == 201
+    assert r.json()["reference"] == "PO-12345"
+
+    # also returned on GET
+    movements = client.get("/movements").json()
+    assert len(movements) == 1
+    assert movements[0]["reference"] == "PO-12345"
+
+
+def test_movement_reference_defaults_to_none(client, item, loc_a):
+    r = _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
+    assert r.status_code == 201
+    assert r.json()["reference"] is None
+    assert client.get("/movements").json()[0]["reference"] is None
+
+
+def test_movement_reference_explicit_null_accepted(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=1,
+        to_location_id=loc_a["id"],
+        reference=None,
+    )
+    assert r.status_code == 201
+    assert r.json()["reference"] is None
+
+
+def test_movement_reference_at_limit_accepted(client, item, loc_a):
+    ref = "P" * 64
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=1,
+        to_location_id=loc_a["id"],
+        reference=ref,
+    )
+    assert r.status_code == 201
+    assert r.json()["reference"] == ref
+
+
+def test_movement_reference_too_long_422(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=1,
+        to_location_id=loc_a["id"],
+        reference="P" * 65,
+    )
+    assert r.status_code == 422
+    # No movement was recorded.
+    assert client.get("/movements").json() == []
+
+
+def test_movement_reference_stored_in_db_column(client, item, loc_a, tmp_path):
+    """The reference is persisted in a dedicated column on the movements table."""
+    from inventory.db import SCHEMA, connect
+    from inventory.models import MovementCreate
+    from inventory.services.stock import apply_movement
+
+    conn = connect(":memory:")
+    conn.executescript(SCHEMA)
+    cols = [r["name"] for r in conn.execute("PRAGMA table_info(movements)").fetchall()]
+    assert "reference" in cols
+
+    conn.execute(
+        "INSERT INTO items (sku, name, description, unit_price, reorder_point, active) "
+        "VALUES ('S1', 'Widget', '', 1.0, 0, 1)"
+    )
+    conn.execute("INSERT INTO locations (code, name) VALUES ('WH-A', 'Warehouse A')")
+    m = apply_movement(
+        conn,
+        MovementCreate(item_id=1, kind="receive", qty=2, to_location_id=1, reference="PO-9"),
+    )
+    assert m.reference == "PO-9"
+    row = conn.execute("SELECT reference FROM movements WHERE id = ?", (m.id,)).fetchone()
+    assert row["reference"] == "PO-9"
+
+
 # --- DELETE /locations/{id} (T013) --------------------------------------------
 
 
