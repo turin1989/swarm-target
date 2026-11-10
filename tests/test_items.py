@@ -96,6 +96,37 @@ def test_list_items_empty_page(client):
     assert body == {"items": [], "total": 0, "limit": 100, "offset": 0}
 
 
+def test_list_items_x_total_count_header(client):
+    for n in range(3):
+        client.post("/items", json={"sku": f"H{n}", "name": f"H{n}"})
+    r = client.get("/items")
+    assert r.status_code == 200
+    assert r.headers["X-Total-Count"] == "3"
+
+
+def test_list_items_x_total_count_ignores_pagination(client):
+    for n in range(5):
+        client.post("/items", json={"sku": f"HP{n}", "name": f"HP{n}"})
+    r = client.get("/items", params={"limit": 2, "offset": 1})
+    assert len(r.json()["items"]) == 2
+    assert r.headers["X-Total-Count"] == "5"
+
+
+def test_list_items_x_total_count_respects_active_filter(client):
+    for n in range(4):
+        client.post("/items", json={"sku": f"HF{n}", "name": f"HF{n}"})
+    client.put("/items/1", json={"active": False})
+    r_active = client.get("/items", params={"active": "true", "limit": 1})
+    r_inactive = client.get("/items", params={"active": "false"})
+    assert r_active.headers["X-Total-Count"] == "3"
+    assert r_inactive.headers["X-Total-Count"] == "1"
+
+
+def test_list_items_x_total_count_empty(client):
+    r = client.get("/items")
+    assert r.headers["X-Total-Count"] == "0"
+
+
 def test_update_item_name_and_price(client, item):
     r = client.put(f"/items/{item['id']}", json={"name": "Renamed", "unit_price": 9.99})
     assert r.status_code == 200

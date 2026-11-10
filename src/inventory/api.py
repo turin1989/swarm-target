@@ -57,6 +57,7 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
 
 @router.get("/items", response_model=ItemPage)
 def list_items(
+    response: Response,
     active: Optional[bool] = None,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -68,6 +69,7 @@ def list_items(
         where = " WHERE active = ?"
         where_params.append(int(active))
     total = conn.execute(f"SELECT COUNT(*) FROM items{where}", where_params).fetchone()[0]
+    response.headers["X-Total-Count"] = str(total)
     rows = conn.execute(
         f"SELECT * FROM items{where} ORDER BY id LIMIT ? OFFSET ?",
         [*where_params, limit, offset],
