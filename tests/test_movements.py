@@ -115,6 +115,32 @@ def test_movement_invalid_kind_422(client, item, loc_a):
     assert r.status_code == 422
 
 
+@pytest.mark.parametrize(
+    "kind,payload",
+    [
+        ("receive", {"to_location_id": 1}),
+        ("ship", {"from_location_id": 1}),
+        ("transfer", {"from_location_id": 1, "to_location_id": 2}),
+    ],
+)
+def test_movement_for_inactive_item_409(client, item, loc_a, loc_b, kind, payload):
+    # Seed some stock while the item is still active, then deactivate it.
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    r = client.put(f"/items/{item['id']}", json={"active": False})
+    assert r.status_code == 200 and r.json()["active"] is False
+
+    before = client.get(f"/items/{item['id']}/stock").json()
+
+    r = _move(client, item_id=item["id"], kind=kind, qty=3, **payload)
+    assert r.status_code == 409
+    assert "inactive" in r.json()["detail"]
+
+    # Stock levels are unchanged and no movement was recorded.
+    after = client.get(f"/items/{item['id']}/stock").json()
+    assert after == before
+    assert len(client.get("/movements").json()) == 1
+
+
 def test_list_movements_pagination(client, item, loc_a):
     for _ in range(4):
         _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
