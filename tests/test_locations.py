@@ -26,6 +26,69 @@ def test_duplicate_location_not_persisted(client, loc_a):
     assert codes.count("WH-A") == 1
 
 
+def test_update_location_name_only(client, loc_a):
+    r = client.put(f"/locations/{loc_a['id']}", json={"name": "Renamed Warehouse"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["id"] == loc_a["id"]
+    assert body["name"] == "Renamed Warehouse"
+    assert body["code"] == "WH-A"  # unchanged
+
+
+def test_update_location_code_only(client, loc_a):
+    r = client.put(f"/locations/{loc_a['id']}", json={"code": "WH-Z"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["code"] == "WH-Z"
+    assert body["name"] == "Warehouse A"  # unchanged
+
+
+def test_update_location_name_and_code(client, loc_a):
+    r = client.put(
+        f"/locations/{loc_a['id']}", json={"code": "WH-Z", "name": "Zed Warehouse"}
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["code"] == "WH-Z"
+    assert body["name"] == "Zed Warehouse"
+
+
+def test_update_location_empty_payload_returns_location_unchanged(client, loc_a):
+    r = client.put(f"/locations/{loc_a['id']}", json={})
+    assert r.status_code == 200, r.text
+    assert r.json() == loc_a
+
+
+def test_update_location_is_persisted(client, loc_a):
+    client.put(f"/locations/{loc_a['id']}", json={"name": "Renamed Warehouse"})
+    r = client.get(f"/locations/{loc_a['id']}")
+    assert r.status_code == 200
+    assert r.json()["name"] == "Renamed Warehouse"
+
+
+def test_update_unknown_location_returns_404(client):
+    r = client.put("/locations/9999", json={"name": "Ghost"})
+    assert r.status_code == 404, r.text
+
+
+def test_update_location_duplicate_code_returns_409(client, loc_a, loc_b):
+    r = client.put(f"/locations/{loc_b['id']}", json={"code": "WH-A"})
+    assert r.status_code == 409, r.text
+
+
+def test_update_location_invalid_code_rejected(client, loc_a):
+    r = client.put(f"/locations/{loc_a['id']}", json={"code": "bad code!"})
+    assert r.status_code == 422, r.text
+
+
+def test_location_update_model_exists():
+    from inventory.models import LocationUpdate
+
+    update = LocationUpdate()
+    assert update.name is None
+    assert update.code is None
+
+
 def test_locations_code_column_is_unique_in_schema(tmp_path):
     path = str(tmp_path / "schema.db")
     db.init_db(path)
