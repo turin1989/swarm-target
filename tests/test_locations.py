@@ -204,3 +204,71 @@ def test_list_locations_without_filter_returns_all(client, loc_a, loc_b):
     r = client.get("/locations")
     assert r.status_code == 200
     assert {loc["id"] for loc in r.json()} == {loc_a["id"], loc_b["id"]}
+
+
+# --- T013: DELETE /locations/{id} ----------------------------------------------
+
+
+def _receive(client, item, loc, qty):
+    r = client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "qty": qty, "to_location_id": loc["id"]},
+    )
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def test_delete_location_returns_204_and_location_is_gone(client, loc_a):
+    r = client.delete(f"/locations/{loc_a['id']}")
+    assert r.status_code == 204, r.text
+
+    got = client.get(f"/locations/{loc_a['id']}")
+    assert got.status_code == 404
+
+    listed = client.get("/locations")
+    assert listed.status_code == 200
+    assert all(loc["id"] != loc_a["id"] for loc in listed.json())
+
+
+def test_delete_unknown_location_returns_404(client):
+    r = client.delete("/locations/9999")
+    assert r.status_code == 404, r.text
+
+
+def test_delete_location_with_stock_returns_409(client, item, loc_a):
+    _receive(client, item, loc_a, 5)
+
+    r = client.delete(f"/locations/{loc_a['id']}")
+    assert r.status_code == 409, r.text
+
+    # location still exists
+    got = client.get(f"/locations/{loc_a['id']}")
+    assert got.status_code == 200
+
+
+def test_delete_location_allowed_when_stock_level_is_zero(client, item, loc_a):
+    # Create a stock_levels row for loc_a, then bring its qty back to 0.
+    _receive(client, item, loc_a, 5)
+    r = client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "ship", "qty": 5, "from_location_id": loc_a["id"]},
+    )
+    assert r.status_code == 201, r.text
+
+    s = client.get(f"/locations/{loc_a['id']}/stock").json()
+    assert all(lvl["qty"] == 0 for lvl in s["levels"])
+
+    r = client.delete(f"/locations/{loc_a['id']}")
+    assert r.status_code == 204, r.text
+    assert client.get(f"/locations/{loc_a['id']}").status_code == 404
+
+
+def test_delete_location_409_only_for_that_location(client, item, loc_a, loc_b):
+    # stock in loc_a must not block deleting empty loc_b
+    _receive(client, item, loc_a, 3)
+
+    r = client.delete(f"/locations/{loc_b['id']}")
+    assert r.status_code == 204, r.text
+    assert client.get(f"/locations/{loc_b['id']}").status_code == 404
+    # loc_a with stock still refuses deletion
+    assert client.delete(f"/locations/{loc_a['id']}").status_code == 409
