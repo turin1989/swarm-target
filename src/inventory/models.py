@@ -13,6 +13,7 @@ class ItemCreate(BaseModel):
     description: str = Field("", max_length=2000)
     unit_price: float = Field(0.0, ge=0)
     reorder_point: int = 0
+    barcode: Optional[str] = Field(None, min_length=1, max_length=64)
 
 
 class ItemUpdate(BaseModel):
@@ -30,6 +31,7 @@ class Item(BaseModel):
     description: str
     unit_price: float
     reorder_point: int
+    barcode: Optional[str] = None
     active: bool
     created_at: str
 

@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS items (
     description TEXT NOT NULL DEFAULT '',
     unit_price REAL NOT NULL DEFAULT 0,
     reorder_point INTEGER NOT NULL DEFAULT 0,
+    barcode TEXT UNIQUE,
     active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
@@ -59,6 +60,14 @@ def init_db(path: str) -> None:
     conn = connect(path)
     try:
         conn.executescript(SCHEMA)
+        # Lightweight migration: add the barcode column to databases created
+        # before it existed (CREATE TABLE IF NOT EXISTS does not add columns).
+        columns = {r["name"] for r in conn.execute("PRAGMA table_info(items)")}
+        if "barcode" not in columns:
+            conn.execute("ALTER TABLE items ADD COLUMN barcode TEXT")
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_items_barcode ON items(barcode)"
+            )
         row = conn.execute("SELECT version FROM schema_version").fetchone()
         if row is None:
             conn.execute("INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,))
