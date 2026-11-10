@@ -91,6 +91,60 @@ def test_low_stock_sorted_by_sku(client, loc_a):
     assert [e["sku"] for e in client.get("/reports/low-stock").json()] == ["A", "Z"]
 
 
+def test_low_stock_scoped_to_location_counts_only_that_locations_stock(client, loc_a, loc_b):
+    # 10 units total (above reorder level of 5), but only 2 of them at loc_a.
+    item = _seed(client, "SPLIT", "Split", reorder=5, qty=2, loc=loc_a)
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "quantity": 8, "to_location_id": loc_b["id"]},
+    )
+
+    # Globally the item is fine, so it is absent without the parameter.
+    assert client.get("/reports/low-stock").json() == []
+
+    # Scoped to loc_a only the 2 units there count, so it is low on stock.
+    r = client.get("/reports/low-stock", params={"location_id": loc_a["id"]})
+    assert r.status_code == 200
+    entries = r.json()
+    assert [e["sku"] for e in entries] == ["SPLIT"]
+    assert entries[0]["total_qty"] == 2
+    assert entries[0]["shortfall"] == 3
+
+    # Scoped to loc_b the 8 units there exceed the reorder level.
+    assert client.get("/reports/low-stock", params={"location_id": loc_b["id"]}).json() == []
+
+
+def test_low_stock_scoped_includes_items_with_no_stock_at_location(client, loc_a, loc_b):
+    # All stock lives at loc_b; at loc_a the item has zero on hand.
+    _seed(client, "ELSEWHERE", "Elsewhere", reorder=3, qty=10, loc=loc_b)
+    entries = client.get("/reports/low-stock", params={"location_id": loc_a["id"]}).json()
+    assert [e["sku"] for e in entries] == ["ELSEWHERE"]
+    assert entries[0]["total_qty"] == 0
+    assert entries[0]["shortfall"] == 3
+
+
+def test_low_stock_unknown_location_returns_404(client, loc_a):
+    _seed(client, "LOW", "Low", reorder=5, qty=2, loc=loc_a)
+    r = client.get("/reports/low-stock", params={"location_id": 9999})
+    assert r.status_code == 404
+    assert r.json()["error"]["code"] == "not_found"
+
+
+def test_low_stock_without_location_param_unchanged(client, loc_a, loc_b):
+    # Totals are still summed across all locations when no location is given.
+    item = _seed(client, "SPREAD", "Spread", reorder=5, qty=2, loc=loc_a)
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "quantity": 1, "to_location_id": loc_b["id"]},
+    )
+    r = client.get("/reports/low-stock")
+    assert r.status_code == 200
+    entries = r.json()
+    assert [e["sku"] for e in entries] == ["SPREAD"]
+    assert entries[0]["total_qty"] == 3
+    assert entries[0]["shortfall"] == 2
+
+
 def test_inventory_value(client, loc_a):
     _seed(client, "P1", "p1", reorder=0, qty=3, loc=loc_a, price=2.0)
     _seed(client, "P2", "p2", reorder=0, qty=1, loc=loc_a, price=10.0)

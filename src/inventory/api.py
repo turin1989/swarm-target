@@ -264,8 +264,19 @@ def list_movements(
 
 
 @router.get("/reports/low-stock", response_model=list[LowStockEntry])
-def low_stock_report(conn: sqlite3.Connection = Depends(get_db)) -> list[LowStockEntry]:
-    return reports.low_stock(conn)
+def low_stock_report(
+    location_id: Optional[int] = Query(None),
+    conn: sqlite3.Connection = Depends(get_db),
+) -> list[LowStockEntry]:
+    if location_id is not None:
+        row = conn.execute(
+            "SELECT 1 FROM locations WHERE id = ?", (location_id,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(
+                status_code=404, detail=f"location {location_id} not found"
+            )
+    return reports.low_stock(conn, location_id=location_id)
 
 
 @router.get("/reports/value")

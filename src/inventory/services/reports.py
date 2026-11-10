@@ -5,19 +5,31 @@ import sqlite3
 from inventory.models import LowStockEntry
 
 
-def low_stock(conn: sqlite3.Connection) -> list[LowStockEntry]:
-    """Active items whose total stock across all locations is at or below their reorder level."""
+def low_stock(
+    conn: sqlite3.Connection, location_id: int | None = None
+) -> list[LowStockEntry]:
+    """Active items whose total stock is at or below their reorder level.
+
+    When ``location_id`` is given, only stock held at that location counts
+    towards ``total_qty``; otherwise stock across all locations is summed.
+    """
+    join_params: list = []
+    join_filter = ""
+    if location_id is not None:
+        join_filter = " AND s.location_id = ?"
+        join_params.append(location_id)
     rows = conn.execute(
-        """
+        f"""
         SELECT i.id AS item_id, i.sku, i.name, i.reorder_level,
                COALESCE(SUM(s.qty), 0) AS total_qty
         FROM items i
-        LEFT JOIN stock_levels s ON s.item_id = i.id
+        LEFT JOIN stock_levels s ON s.item_id = i.id{join_filter}
         WHERE i.active = 1
         GROUP BY i.id
         HAVING total_qty <= i.reorder_level
         ORDER BY i.sku
-        """
+        """,
+        join_params,
     ).fetchall()
     return [
         LowStockEntry(
