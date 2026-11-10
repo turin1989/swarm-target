@@ -187,3 +187,37 @@ def test_created_at_ignored_on_put(client, item):
     assert r.json()["created_at"] == item["created_at"]
     # Still unchanged on a fresh read
     assert client.get(f"/items/{item['id']}").json()["created_at"] == item["created_at"]
+
+
+def test_list_items_x_total_count_ignores_pagination(client):
+    for i in range(5):
+        r = client.post("/items", json={"sku": f"CNT-{i}", "name": f"Count {i}"})
+        assert r.status_code == 201
+    r = client.get("/items", params={"limit": 2, "offset": 1})
+    assert r.status_code == 200
+    assert len(r.json()) == 2
+    assert r.headers["X-Total-Count"] == "5"
+
+
+def test_list_items_x_total_count_respects_filters(client):
+    for i in range(4):
+        r = client.post("/items", json={"sku": f"FLT-{i}", "name": f"Filter {i}"})
+        assert r.status_code == 201
+    # Deactivate two items.
+    for item_id in (1, 2):
+        assert client.put(f"/items/{item_id}", json={"active": False}).status_code == 200
+
+    r = client.get("/items", params={"active": "true", "limit": 1})
+    assert r.status_code == 200
+    assert len(r.json()) == 1
+    assert r.headers["X-Total-Count"] == "2"
+
+    r = client.get("/items", params={"active": "false"})
+    assert r.headers["X-Total-Count"] == "2"
+
+
+def test_list_items_x_total_count_empty(client):
+    r = client.get("/items")
+    assert r.status_code == 200
+    assert r.json() == []
+    assert r.headers["X-Total-Count"] == "0"
