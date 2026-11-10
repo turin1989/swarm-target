@@ -69,17 +69,20 @@ def create_items_bulk(
 
 @router.get("/items", response_model=list[Item])
 def list_items(
+    response: Response,
     active: Optional[bool] = None,
     sort: str = Query("id", pattern=r"^-?(id|name|sku)$"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     conn: sqlite3.Connection = Depends(get_db),
 ) -> list[Item]:
-    sql = "SELECT * FROM items"
+    where = ""
     params: list = []
     if active is not None:
-        sql += " WHERE active = ?"
+        where = " WHERE active = ?"
         params.append(int(active))
+    total = conn.execute(f"SELECT COUNT(*) FROM items{where}", params).fetchone()[0]
+    response.headers["X-Total-Count"] = str(total)
     direction = "ASC"
     column = sort
     if column.startswith("-"):
@@ -87,7 +90,7 @@ def list_items(
         column = column[1:]
     if column not in _SORTABLE_ITEM_COLUMNS:  # defence in depth; pattern already enforces
         raise HTTPException(status_code=422, detail=f"invalid sort field {sort!r}")
-    sql += f" ORDER BY {column} {direction} LIMIT ? OFFSET ?"
+    sql = f"SELECT * FROM items{where} ORDER BY {column} {direction} LIMIT ? OFFSET ?"
     params += [limit, offset]
     return [items_service.row_to_item(r) for r in conn.execute(sql, params).fetchall()]
 
