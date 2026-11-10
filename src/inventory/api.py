@@ -19,6 +19,7 @@ from inventory.models import (
     LowStockEntry,
     Movement,
     MovementCreate,
+    MovementKind,
 )
 from inventory.services import items as items_service
 from inventory.services import reports, search, stock
@@ -297,11 +298,13 @@ def create_movement(
 
 @router.get("/movements", response_model=list[Movement])
 def list_movements(
+    item_id: Optional[int] = Query(None),
+    kind: Optional[MovementKind] = Query(None),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     conn: sqlite3.Connection = Depends(get_db),
 ) -> list[Movement]:
-    return stock.list_movements(conn, limit=limit, offset=offset)
+    return stock.list_movements(conn, item_id=item_id, kind=kind, limit=limit, offset=offset)
 
 
 # --- reports & search --------------------------------------------------------
