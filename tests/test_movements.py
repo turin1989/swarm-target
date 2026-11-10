@@ -126,7 +126,9 @@ def test_stock_empty_for_new_item(client, item):
 def test_movement_requires_locations(client, item, loc_a, kind, payload):
     r = _move(client, item_id=item["id"], kind=kind, qty=1, **payload)
     assert r.status_code == 400
-    assert "required" in r.json()["detail"]
+    body = r.json()
+    assert body["error"]["code"] == "bad_request"
+    assert "required" in body["error"]["message"]
 
 
 def test_movement_unknown_location_404(client, item):
@@ -208,7 +210,9 @@ def test_transfer_same_location_rejected(client, item, loc_a):
         to_location_id=loc_a["id"],
     )
     assert r.status_code == 400
-    assert "same location" in r.json()["detail"]
+    body = r.json()
+    assert body["error"]["code"] == "bad_request"
+    assert "same location" in body["error"]["message"]
 
     # no movement row was written for the rejected transfer
     movements = client.get("/movements").json()
