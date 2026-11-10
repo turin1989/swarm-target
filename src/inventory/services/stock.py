@@ -1,6 +1,7 @@
 """Stock level bookkeeping and movement application."""
 
 import sqlite3
+from datetime import datetime, timezone
 
 from inventory.models import Movement, MovementCreate, StockLevel
 
@@ -122,12 +123,13 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
     else:  # pragma: no cover - guarded by the Literal type
         raise StockError(f"unknown movement kind {m.kind!r}")
 
+    created_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     cur = conn.execute(
         """
-        INSERT INTO movements (item_id, kind, qty, from_location_id, to_location_id, note)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO movements (item_id, kind, qty, from_location_id, to_location_id, note, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (m.item_id, m.kind, m.qty, m.from_location_id, m.to_location_id, m.note),
+        (m.item_id, m.kind, m.qty, m.from_location_id, m.to_location_id, m.note, created_at),
     )
     return get_movement(conn, cur.lastrowid)
 
