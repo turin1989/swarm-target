@@ -3,7 +3,7 @@
 name: ci
 on:
   push:
-    branches: [main, integration, 'swarm/**']
+    branches: [main, integration, baseline, 'm5-*', 'swarm/**']
   pull_request:
 jobs:
   lint:
