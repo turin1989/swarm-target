@@ -40,6 +40,83 @@ def test_duplicate_does_not_create_extra_location(client):
     assert codes.count("WH-A") == 1
 
 
+# --- T012: PUT /locations/{id} -------------------------------------------------
+
+
+def _create_location(client, code="WH-A", name="Warehouse A"):
+    r = client.post("/locations", json={"code": code, "name": name})
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def test_update_location_name(client):
+    loc = _create_location(client)
+    r = client.put(f"/locations/{loc['id']}", json={"name": "Renamed Warehouse"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["id"] == loc["id"]
+    assert body["name"] == "Renamed Warehouse"
+    assert body["code"] == "WH-A"
+
+
+def test_update_location_code(client):
+    loc = _create_location(client)
+    r = client.put(f"/locations/{loc['id']}", json={"code": "WH-B"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["code"] == "WH-B"
+    assert body["name"] == "Warehouse A"
+
+
+def test_update_location_name_and_code(client):
+    loc = _create_location(client)
+    r = client.put(f"/locations/{loc['id']}", json={"code": "WH-Z", "name": "Zone Z"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["code"] == "WH-Z"
+    assert body["name"] == "Zone Z"
+
+
+def test_update_location_empty_body_is_noop(client):
+    loc = _create_location(client)
+    r = client.put(f"/locations/{loc['id']}", json={})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["code"] == loc["code"]
+    assert body["name"] == loc["name"]
+
+
+def test_update_location_is_persisted(client):
+    loc = _create_location(client)
+    client.put(f"/locations/{loc['id']}", json={"name": "Persisted Name"})
+    r = client.get(f"/locations/{loc['id']}")
+    assert r.status_code == 200
+    assert r.json()["name"] == "Persisted Name"
+
+
+def test_update_location_unknown_id_returns_404(client):
+    r = client.put("/locations/99999", json={"name": "Nope"})
+    assert r.status_code == 404, r.text
+
+
+def test_update_location_duplicate_code_returns_409(client):
+    _create_location(client, code="WH-A", name="Warehouse A")
+    loc_b = _create_location(client, code="WH-B", name="Warehouse B")
+    r = client.put(f"/locations/{loc_b['id']}", json={"code": "WH-A"})
+    assert r.status_code == 409, r.text
+
+
+def test_location_update_model_exists():
+    from inventory.models import LocationUpdate
+
+    upd = LocationUpdate()
+    assert upd.name is None
+    assert upd.code is None
+    upd = LocationUpdate(name="N", code="C")
+    assert upd.name == "N"
+    assert upd.code == "C"
+
+
 def test_locations_code_column_is_unique_in_schema(tmp_path):
     from inventory.db import init_db
 
