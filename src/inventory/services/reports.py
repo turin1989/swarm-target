@@ -56,12 +56,18 @@ def movements_summary(conn: sqlite3.Connection) -> dict[str, dict[str, int]]:
     return summary
 
 
-def inventory_value(conn: sqlite3.Connection) -> float:
-    """Total value of stock on hand (sum of qty * unit_price)."""
-    row = conn.execute(
-        """
+def inventory_value(conn: sqlite3.Connection, location_id: int | None = None) -> float:
+    """Total value of stock on hand (sum of qty * unit_price).
+
+    When ``location_id`` is given, only stock held at that location is summed.
+    """
+    sql = """
         SELECT COALESCE(SUM(s.qty * i.unit_price), 0) AS value
         FROM stock_levels s JOIN items i ON i.id = s.item_id
         """
-    ).fetchone()
+    params: list = []
+    if location_id is not None:
+        sql += " WHERE s.location_id = ?"
+        params.append(location_id)
+    row = conn.execute(sql, params).fetchone()
     return float(row["value"])

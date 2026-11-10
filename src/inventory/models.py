@@ -35,9 +35,21 @@ class Item(BaseModel):
     barcode: Optional[str] = None
 
 
+class ItemPage(BaseModel):
+    items: list[Item]
+    total: int
+    limit: int
+    offset: int
+
+
 class LocationCreate(BaseModel):
     code: str = Field(..., min_length=1, max_length=32)
     name: str = Field(..., min_length=1, max_length=200)
+
+
+class LocationUpdate(BaseModel):
+    code: Optional[str] = Field(default=None, min_length=1, max_length=32)
+    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
 
 
 class Location(BaseModel):
@@ -49,7 +61,7 @@ class Location(BaseModel):
 class MovementCreate(BaseModel):
     item_id: int
     kind: MovementKind
-    qty: int
+    qty: int = Field(..., gt=0)
     from_location_id: Optional[int] = None
     to_location_id: Optional[int] = None
     note: str = ""
