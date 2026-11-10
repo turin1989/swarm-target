@@ -467,6 +467,43 @@ def test_list_items_x_total_count_zero_when_empty(client):
     assert r.headers["X-Total-Count"] == "0"
 
 
+def test_update_reorder_level_persists_and_returns(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_level": 12})
+    assert r.status_code == 200
+    assert r.json()["reorder_level"] == 12
+    # persisted
+    assert client.get(f"/items/{item['id']}").json()["reorder_level"] == 12
+
+
+def test_update_reorder_level_with_other_fields(client, item):
+    r = client.put(
+        f"/items/{item['id']}",
+        json={"reorder_level": 7, "name": "Widget v2", "unit_price": 9.99},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["reorder_level"] == 7
+    assert body["name"] == "Widget v2"
+    assert body["unit_price"] == 9.99
+    stored = client.get(f"/items/{item['id']}").json()
+    assert stored["reorder_level"] == 7
+    assert stored["name"] == "Widget v2"
+    assert stored["unit_price"] == 9.99
+
+
+def test_update_without_reorder_level_leaves_it_untouched(client, item):
+    assert client.put(f"/items/{item['id']}", json={"reorder_level": 12}).status_code == 200
+    r = client.put(f"/items/{item['id']}", json={"name": "Renamed"})
+    assert r.status_code == 200
+    assert r.json()["reorder_level"] == 12
+    assert client.get(f"/items/{item['id']}").json()["reorder_level"] == 12
+
+
+def test_update_with_legacy_reorder_point_name_is_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": 12})
+    assert r.status_code == 422
+
+
 def test_create_item_negative_unit_price_422(client):
     r = client.post("/items", json={"sku": "NEG-1", "name": "Neg", "unit_price": -0.01})
     assert r.status_code == 422
@@ -489,3 +526,4 @@ def test_update_item_zero_unit_price_accepted(client, item):
     r = client.put(f"/items/{item['id']}", json={"unit_price": 0})
     assert r.status_code == 200
     assert r.json()["unit_price"] == 0
+
