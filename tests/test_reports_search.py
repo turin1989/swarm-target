@@ -149,3 +149,33 @@ def test_search_sorted_by_name_and_limited(client):
 def test_search_requires_query(client):
     assert client.get("/search").status_code == 422
     assert client.get("/search", params={"q": ""}).status_code == 422
+
+
+def test_search_trims_surrounding_whitespace(client):
+    client.post("/items", json={"sku": "BOLT-M8", "name": "Bolt"})
+    client.post("/items", json={"sku": "NUT-M8", "name": "Nut"})
+    r = client.get("/search", params={"q": "  bolt "})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["BOLT-M8"]
+
+
+def test_search_trimmed_query_matches_untrimmed_results(client):
+    client.post("/items", json={"sku": "S1", "name": "Blue Widget"})
+    trimmed = client.get("/search", params={"q": "widget"}).json()
+    padded = client.get("/search", params={"q": "  widget  "}).json()
+    assert padded == trimmed
+
+
+def test_search_query_longer_than_100_chars_returns_422(client):
+    assert client.get("/search", params={"q": "x" * 101}).status_code == 422
+
+
+def test_search_query_of_exactly_100_chars_is_accepted(client):
+    r = client.get("/search", params={"q": "x" * 100})
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_search_whitespace_only_query_returns_422(client):
+    for q in (" ", "   ", "\t", " \t "):
+        assert client.get("/search", params={"q": q}).status_code == 422, repr(q)
