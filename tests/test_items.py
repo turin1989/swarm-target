@@ -207,3 +207,76 @@ def test_items_table_column_renamed_in_schema(tmp_path):
         conn.close()
     assert "reorder_level" in cols
     assert "reorder_point" not in cols
+
+
+def test_get_item_by_sku(client, item):
+    r = client.get(f"/items/by-sku/{item['sku']}")
+    assert r.status_code == 200
+    # same shape/content as GET /items/{id}
+    assert r.json() == client.get(f"/items/{item['id']}").json()
+    assert r.json() == item
+
+
+def test_get_item_by_sku_exact_match_only(client, item):
+    # item fixture sku is "WIDGET-1"; a non-exact sku must 404
+    r = client.get("/items/by-sku/widget-1")
+    assert r.status_code == 404
+
+
+def test_get_item_by_unknown_sku_404(client):
+    r = client.get("/items/by-sku/NOPE-99")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "sku NOPE-99 not found"
+
+
+def test_get_item_by_sku_does_not_shadow_get_by_id(client, item):
+    # numeric path still resolves to GET /items/{item_id}
+    r = client.get(f"/items/{item['id']}")
+    assert r.status_code == 200
+    assert r.json() == item
+    # and the by-sku route works even for a numeric-looking sku
+    r2 = client.post("/items", json={"sku": "123", "name": "Numeric"})
+    assert r2.status_code == 201
+    r3 = client.get("/items/by-sku/123")
+    assert r3.status_code == 200
+    assert r3.json() == r2.json()
+
+
+def test_list_items_x_total_count_all_items(client):
+    for sku in ["A", "B", "C"]:
+        client.post("/items", json={"sku": sku, "name": sku})
+    r = client.get("/items")
+    assert r.status_code == 200
+    assert r.headers["X-Total-Count"] == "3"
+
+
+def test_list_items_x_total_count_ignores_limit_and_offset(client):
+    for i in range(5):
+        client.post("/items", json={"sku": f"SKU-{i}", "name": f"Item {i}"})
+    r = client.get("/items", params={"limit": 2, "offset": 1})
+    assert r.status_code == 200
+    assert len(r.json()) == 2
+    assert r.headers["X-Total-Count"] == "5"
+
+
+def test_list_items_x_total_count_respects_active_filter(client):
+    for i in range(4):
+        client.post("/items", json={"sku": f"SKU-{i}", "name": f"Item {i}"})
+    # deactivate the first item
+    client.put("/items/1", json={"active": False})
+
+    r = client.get("/items", params={"active": "true", "limit": 1})
+    assert r.status_code == 200
+    assert len(r.json()) == 1
+    assert r.headers["X-Total-Count"] == "3"
+
+    r = client.get("/items", params={"active": "false"})
+    assert r.status_code == 200
+    assert r.headers["X-Total-Count"] == "1"
+
+
+def test_list_items_x_total_count_zero_when_empty(client):
+    r = client.get("/items")
+    assert r.status_code == 200
+    assert r.json() == []
+    assert r.headers["X-Total-Count"] == "0"

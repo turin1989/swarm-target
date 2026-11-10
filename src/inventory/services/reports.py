@@ -8,7 +8,7 @@ from inventory.models import LowStockEntry
 def low_stock(
     conn: sqlite3.Connection, location_id: int | None = None
 ) -> list[LowStockEntry]:
-    """Active items whose total stock is below their reorder level.
+    """Active items whose total stock is at or below their reorder level.
 
     When ``location_id`` is given, only stock at that location counts towards
     ``total_qty``; otherwise stock is summed across all locations.
@@ -26,12 +26,18 @@ def low_stock(
         {join}
         WHERE i.active = 1
         GROUP BY i.id
-        HAVING total_qty < i.reorder_level
+        HAVING total_qty <= i.reorder_level
         ORDER BY i.sku
         """,
         params,
     ).fetchall()
-    return [LowStockEntry(**dict(r)) for r in rows]
+    return [
+        LowStockEntry(
+            **dict(r),
+            shortfall=max(0, r["reorder_level"] - r["total_qty"]),
+        )
+        for r in rows
+    ]
 
 
 def inventory_value(

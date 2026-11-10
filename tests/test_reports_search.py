@@ -26,7 +26,42 @@ def test_low_stock_lists_items_below_reorder_level(client, loc_a):
         "name": "Low",
         "total_qty": 2,
         "reorder_level": 5,
+        "shortfall": 3,
     }
+
+
+def test_low_stock_includes_items_exactly_at_reorder_level(client, loc_a):
+    _seed(client, "EXACT", "Exact", reorder=5, qty=5, loc=loc_a)
+    r = client.get("/reports/low-stock")
+    assert r.status_code == 200
+    entries = r.json()
+    assert [e["sku"] for e in entries] == ["EXACT"]
+    assert entries[0]["total_qty"] == 5
+    assert entries[0]["reorder_level"] == 5
+
+
+def test_low_stock_includes_zero_reorder_level_with_zero_stock(client, loc_a):
+    _seed(client, "ZERO", "Zero", reorder=0, qty=0, loc=loc_a)
+    entries = client.get("/reports/low-stock").json()
+    assert [(e["sku"], e["total_qty"], e["reorder_level"]) for e in entries] == [("ZERO", 0, 0)]
+
+
+def test_low_stock_excludes_items_strictly_above_reorder_level(client, loc_a):
+    _seed(client, "ABOVE", "Above", reorder=5, qty=6, loc=loc_a)
+    _seed(client, "ZSTOCKED", "Stocked", reorder=0, qty=1, loc=loc_a)
+    assert client.get("/reports/low-stock").json() == []
+
+
+def test_low_stock_scoped_to_location_includes_exact_match(client, loc_a, loc_b):
+    # 5 at A + 3 at B = 8 total (> 5), but exactly 5 at A (== reorder level)
+    item = _seed(client, "EDGE", "Edge", reorder=5, qty=5, loc=loc_a)
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "qty": 3, "to_location_id": loc_b["id"]},
+    )
+    assert client.get("/reports/low-stock").json() == []
+    r = client.get("/reports/low-stock", params={"location_id": loc_a["id"]})
+    assert [(e["sku"], e["total_qty"]) for e in r.json()] == [("EDGE", 5)]
 
 
 def test_low_stock_includes_items_with_no_stock(client, loc_a):
@@ -92,6 +127,44 @@ def test_low_stock_without_location_param_unchanged(client, loc_a, loc_b):
     assert r.status_code == 200
     entries = r.json()
     assert [(e["sku"], e["total_qty"]) for e in entries] == [("LOW", 7)]
+
+
+def test_low_stock_shortfall_is_reorder_level_minus_total_qty(client, loc_a):
+    _seed(client, "LOW", "Low", reorder=10, qty=3, loc=loc_a)
+    _seed(client, "NONE", "Nothing", reorder=4, qty=0, loc=loc_a)
+    entries = client.get("/reports/low-stock").json()
+    assert [(e["sku"], e["shortfall"]) for e in entries] == [("LOW", 7), ("NONE", 4)]
+
+
+def test_low_stock_shortfall_scoped_to_location(client, loc_a, loc_b):
+    item = _seed(client, "SPLIT", "Split", reorder=5, qty=2, loc=loc_a)
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "qty": 4, "to_location_id": loc_b["id"]},
+    )
+    r = client.get("/reports/low-stock", params={"location_id": loc_a["id"]})
+    assert [(e["sku"], e["shortfall"]) for e in r.json()] == [("SPLIT", 3)]
+    r = client.get("/reports/low-stock", params={"location_id": loc_b["id"]})
+    assert [(e["sku"], e["shortfall"]) for e in r.json()] == [("SPLIT", 1)]
+
+
+def test_low_stock_shortfall_never_negative(client, loc_a):
+    _seed(client, "LOW", "Low", reorder=5, qty=2, loc=loc_a)
+    _seed(client, "OK", "Fine", reorder=5, qty=10, loc=loc_a)
+    for entry in client.get("/reports/low-stock").json():
+        assert entry["shortfall"] >= 0
+
+
+def test_low_stock_entry_model_rejects_negative_shortfall():
+    import pytest
+    from pydantic import ValidationError
+
+    from inventory.models import LowStockEntry
+
+    with pytest.raises(ValidationError):
+        LowStockEntry(
+            item_id=1, sku="X", name="x", total_qty=10, reorder_level=5, shortfall=-5
+        )
 
 
 def test_inventory_value(client, loc_a):

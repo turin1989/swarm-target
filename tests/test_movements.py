@@ -237,6 +237,29 @@ def test_list_movements_pagination(client, item, loc_a):
     assert [m["id"] for m in r.json()] == [3, 4]
 
 
+# --- get single movement ---------------------------------------------------------
+
+
+def test_get_movement_matches_post_response(client, item, loc_a):
+    created = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=7,
+        to_location_id=loc_a["id"],
+        note="restock",
+    ).json()
+    r = client.get(f"/movements/{created['id']}")
+    assert r.status_code == 200
+    assert r.json() == created
+
+
+def test_get_movement_unknown_id_404(client):
+    r = client.get("/movements/999")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "movement 999 not found"
+
+
 # --- per-item movement history -------------------------------------------------
 
 
