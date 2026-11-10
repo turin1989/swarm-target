@@ -731,3 +731,118 @@ def test_init_db_adds_reference_column_to_existing_db(tmp_path):
     finally:
         conn.close()
     assert "reference" in cols
+
+
+# --- created_at timestamp (T042) ------------------------------------------------
+
+
+def _assert_iso_utc(value):
+    """Assert value is an ISO-8601 string representing a UTC timestamp."""
+    from datetime import datetime, timezone
+
+    assert isinstance(value, str) and value
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    assert parsed.tzinfo is not None
+    assert parsed.utcoffset().total_seconds() == 0
+    return parsed.astimezone(timezone.utc)
+
+
+def test_movement_created_at_returned_on_post(client, item, loc_a):
+    from datetime import datetime, timezone
+
+    before = datetime.now(timezone.utc)
+    r = _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    after = datetime.now(timezone.utc)
+
+    assert r.status_code == 201
+    body = r.json()
+    assert "created_at" in body
+    parsed = _assert_iso_utc(body["created_at"])
+    assert before <= parsed <= after
+
+
+def test_movement_created_at_returned_on_list(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="ship", qty=1, from_location_id=loc_a["id"])
+
+    listed = client.get("/movements").json()
+    assert len(listed) == 2
+    for m in listed:
+        _assert_iso_utc(m["created_at"])
+
+    by_item = client.get(f"/items/{item['id']}/movements").json()
+    assert len(by_item) == 2
+    for m in by_item:
+        _assert_iso_utc(m["created_at"])
+
+
+def test_movement_created_at_persisted_in_db_column(client, item, loc_a, tmp_path):
+    _move(client, item_id=item["id"], kind="receive", qty=2, to_location_id=loc_a["id"])
+    import sqlite3
+
+    conn = sqlite3.connect(str(tmp_path / "test.db"))
+    try:
+        (created_at,) = conn.execute(
+            "SELECT created_at FROM movements WHERE id = 1"
+        ).fetchone()
+    finally:
+        conn.close()
+    _assert_iso_utc(created_at)
+
+
+def test_apply_movement_sets_created_at_directly():
+    """The service layer stamps created_at when applying a movement."""
+    from inventory.db import SCHEMA, connect
+    from inventory.models import MovementCreate
+    from inventory.services.stock import apply_movement
+
+    conn = connect(":memory:")
+    conn.executescript(SCHEMA)
+    conn.execute(
+        "INSERT INTO items (sku, name, description, unit_price, reorder_point, active) "
+        "VALUES ('S1', 'Widget', '', 1.0, 0, 1)"
+    )
+    conn.execute("INSERT INTO locations (code, name) VALUES ('WH-A', 'Warehouse A')")
+
+    movement = apply_movement(
+        conn, MovementCreate(item_id=1, kind="receive", qty=3, to_location_id=1)
+    )
+    _assert_iso_utc(movement.created_at)
+    row = conn.execute("SELECT created_at FROM movements WHERE id = ?", (movement.id,)).fetchone()
+    assert row["created_at"] == movement.created_at
+
+
+def test_init_db_adds_created_at_column_to_existing_db(tmp_path):
+    import sqlite3
+
+    from inventory import db
+
+    path = str(tmp_path / "old.db")
+    conn = sqlite3.connect(path)
+    try:
+        conn.executescript(
+            """
+            CREATE TABLE movements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                item_id INTEGER NOT NULL,
+                kind TEXT NOT NULL,
+                qty INTEGER NOT NULL,
+                from_location_id INTEGER,
+                to_location_id INTEGER,
+                note TEXT NOT NULL DEFAULT ''
+            );
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    db.init_db(path)
+    db.init_db(path)  # idempotent
+
+    conn = sqlite3.connect(path)
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(movements)").fetchall()}
+    finally:
+        conn.close()
+    assert "created_at" in cols

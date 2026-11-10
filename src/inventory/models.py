@@ -80,6 +80,7 @@ class Movement(BaseModel):
     to_location_id: Optional[int]
     note: str
     reference: Optional[str] = None
+    created_at: Optional[str] = None
 
 
 class StockLevel(BaseModel):

@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS movements (
     from_location_id INTEGER REFERENCES locations(id),
     to_location_id INTEGER REFERENCES locations(id),
     note TEXT NOT NULL DEFAULT '',
-    reference TEXT
+    reference TEXT,
+    created_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -65,6 +66,9 @@ def init_db(path: str) -> None:
         }
         if "reference" not in movement_columns:
             conn.execute("ALTER TABLE movements ADD COLUMN reference TEXT")
+        # Migrate databases created before the movements.created_at column existed.
+        if "created_at" not in movement_columns:
+            conn.execute("ALTER TABLE movements ADD COLUMN created_at TEXT")
         row = conn.execute("SELECT version FROM schema_version").fetchone()
         if row is None:
             conn.execute(
