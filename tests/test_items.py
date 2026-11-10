@@ -186,12 +186,12 @@ def test_delete_item_twice_second_404(client, item):
 def test_delete_item_cascades_stock(client, item, loc_a):
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 3, "to_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 3, "to_location_id": loc_a["id"]},
     )
     # ship the stock back out so the item is at zero and may be deleted
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "ship", "qty": 3, "from_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "ship", "quantity": 3, "from_location_id": loc_a["id"]},
     )
     assert client.delete(f"/items/{item['id']}").status_code == 204
     assert client.get("/movements").json() == []
@@ -200,7 +200,7 @@ def test_delete_item_cascades_stock(client, item, loc_a):
 def test_delete_item_with_stock_conflicts(client, item, loc_a):
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 7, "to_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 7, "to_location_id": loc_a["id"]},
     )
     r = client.delete(f"/items/{item['id']}")
     assert r.status_code == 409
@@ -213,7 +213,7 @@ def test_delete_item_with_stock_across_locations_conflicts(client, item, loc_a, 
     for loc in (loc_a, loc_b):
         client.post(
             "/movements",
-            json={"item_id": item["id"], "kind": "receive", "qty": 2, "to_location_id": loc["id"]},
+            json={"item_id": item["id"], "kind": "receive", "quantity": 2, "to_location_id": loc["id"]},
         )
     r = client.delete(f"/items/{item['id']}")
     assert r.status_code == 409
@@ -223,12 +223,12 @@ def test_delete_item_with_stock_across_locations_conflicts(client, item, loc_a, 
 def test_delete_item_allowed_after_stock_returns_to_zero(client, item, loc_a):
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 5, "to_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 5, "to_location_id": loc_a["id"]},
     )
     assert client.delete(f"/items/{item['id']}").status_code == 409
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "ship", "qty": 5, "from_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "ship", "quantity": 5, "from_location_id": loc_a["id"]},
     )
     assert client.delete(f"/items/{item['id']}").status_code == 204
     assert client.get(f"/items/{item['id']}").status_code == 404
