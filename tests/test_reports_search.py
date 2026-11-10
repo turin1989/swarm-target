@@ -224,7 +224,8 @@ def test_search_no_duplicates_when_all_fields_match(client):
         json={"sku": "foo-1", "name": "foo thing", "description": "a foo item"},
     )
     results = client.get("/search", params={"q": "foo"}).json()
-    assert [i["sku"] for i in results] == ["foo-1"]
+    # sku is normalised to upper-case on create
+    assert [i["sku"] for i in results] == ["FOO-1"]
 
 
 def test_search_description_results_ordered_by_name(client):
