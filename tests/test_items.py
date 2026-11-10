@@ -171,3 +171,35 @@ def test_update_item_nonnegative_reorder_point_accepted(client, item):
     # a non-negative reorder_point passes validation (no 422)
     r = client.put(f"/items/{item['id']}", json={"reorder_point": 7})
     assert r.status_code == 200
+
+
+def test_update_item_reorder_point_persists_and_returned(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": 12})
+    assert r.status_code == 200
+    assert r.json()["reorder_point"] == 12
+    # persisted
+    assert client.get(f"/items/{item['id']}").json()["reorder_point"] == 12
+
+
+def test_update_item_reorder_point_with_other_fields(client, item):
+    r = client.put(
+        f"/items/{item['id']}",
+        json={"reorder_point": 9, "name": "Renamed", "unit_price": 3.75},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["reorder_point"] == 9
+    assert body["name"] == "Renamed"
+    assert body["unit_price"] == 3.75
+    fetched = client.get(f"/items/{item['id']}").json()
+    assert fetched["reorder_point"] == 9
+    assert fetched["name"] == "Renamed"
+    assert fetched["unit_price"] == 3.75
+
+
+def test_update_item_omitting_reorder_point_leaves_it_untouched(client, item):
+    assert item["reorder_point"] == 5
+    r = client.put(f"/items/{item['id']}", json={"name": "New Name"})
+    assert r.status_code == 200
+    assert r.json()["reorder_point"] == 5
+    assert client.get(f"/items/{item['id']}").json()["reorder_point"] == 5
