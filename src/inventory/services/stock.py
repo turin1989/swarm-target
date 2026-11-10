@@ -58,9 +58,11 @@ def _require_location(conn: sqlite3.Connection, location_id: int | None, field: 
 
 def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
     """Validate and apply a stock movement, returning the persisted record."""
-    item = conn.execute("SELECT id FROM items WHERE id = ?", (m.item_id,)).fetchone()
+    item = conn.execute("SELECT id, active FROM items WHERE id = ?", (m.item_id,)).fetchone()
     if item is None:
         raise StockError(f"item {m.item_id} not found", status_code=404)
+    if not item["active"]:
+        raise StockError(f"item {m.item_id} is inactive", status_code=409)
 
     if m.kind == "receive":
         to_id = _require_location(conn, m.to_location_id, "to_location_id")
