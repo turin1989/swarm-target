@@ -219,7 +219,7 @@ def test_apply_movement_rejects_non_positive_qty_directly():
     conn = connect(":memory:")
     conn.executescript(SCHEMA)
     conn.execute(
-        "INSERT INTO items (sku, name, description, unit_price, reorder_point, active) "
+        "INSERT INTO items (sku, name, description, unit_price, reorder_level, active) "
         "VALUES ('S1', 'Widget', '', 1.0, 0, 1)"
     )
     conn.execute("INSERT INTO locations (code, name) VALUES ('WH-A', 'Warehouse A')")
@@ -326,7 +326,7 @@ def test_apply_movement_rejects_insufficient_stock_directly():
     conn = connect(":memory:")
     conn.executescript(SCHEMA)
     conn.execute(
-        "INSERT INTO items (sku, name, description, unit_price, reorder_point, active) "
+        "INSERT INTO items (sku, name, description, unit_price, reorder_level, active) "
         "VALUES ('S1', 'Widget', '', 1.0, 0, 1)"
     )
     conn.execute("INSERT INTO locations (code, name) VALUES ('WH-A', 'Warehouse A')")
@@ -518,7 +518,7 @@ def test_item_movements_ordered_by_id(client, item, loc_a, loc_b):
 def test_item_movements_only_includes_that_item(client, item, loc_a):
     other = client.post(
         "/items",
-        json={"sku": "OTHER-1", "name": "Other", "unit_price": 1.0, "reorder_point": 0},
+        json={"sku": "OTHER-1", "name": "Other", "unit_price": 1.0, "reorder_level": 0},
     ).json()
     _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
     _move(client, item_id=other["id"], kind="receive", qty=9, to_location_id=loc_a["id"])
@@ -561,11 +561,11 @@ def test_list_movements_service_filters_by_item():
     conn = connect(":memory:")
     conn.executescript(SCHEMA)
     conn.execute(
-        "INSERT INTO items (sku, name, description, unit_price, reorder_point, active) "
+        "INSERT INTO items (sku, name, description, unit_price, reorder_level, active) "
         "VALUES ('S1', 'Widget', '', 1.0, 0, 1)"
     )
     conn.execute(
-        "INSERT INTO items (sku, name, description, unit_price, reorder_point, active) "
+        "INSERT INTO items (sku, name, description, unit_price, reorder_level, active) "
         "VALUES ('S2', 'Gadget', '', 1.0, 0, 1)"
     )
     conn.execute("INSERT INTO locations (code, name) VALUES ('WH-A', 'Warehouse A')")
@@ -598,7 +598,7 @@ def _movement_fixture_data(client, item, loc_a, loc_b):
     """
     other = client.post(
         "/items",
-        json={"sku": "OTHER-1", "name": "Other", "unit_price": 1.0, "reorder_point": 0},
+        json={"sku": "OTHER-1", "name": "Other", "unit_price": 1.0, "reorder_level": 0},
     ).json()
     _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
     _move(client, item_id=other["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
@@ -691,7 +691,7 @@ def test_list_movements_service_filters_by_kind():
     conn = connect(":memory:")
     conn.executescript(SCHEMA)
     conn.execute(
-        "INSERT INTO items (sku, name, description, unit_price, reorder_point, active) "
+        "INSERT INTO items (sku, name, description, unit_price, reorder_level, active) "
         "VALUES ('S1', 'Widget', '', 1.0, 0, 1)"
     )
     conn.execute("INSERT INTO locations (code, name) VALUES ('WH-A', 'Warehouse A')")

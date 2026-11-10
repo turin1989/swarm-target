@@ -32,7 +32,7 @@ def create_item(conn: sqlite3.Connection, payload: ItemCreate) -> Item:
     """
     cur = conn.execute(
         """
-        INSERT INTO items (sku, name, description, unit_price, reorder_point, created_at, barcode)
+        INSERT INTO items (sku, name, description, unit_price, reorder_level, created_at, barcode)
         VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         (
@@ -40,7 +40,7 @@ def create_item(conn: sqlite3.Connection, payload: ItemCreate) -> Item:
             payload.name,
             payload.description,
             payload.unit_price,
-            payload.reorder_point,
+            payload.reorder_level,
             utc_now_iso(),
             payload.barcode,
         ),
@@ -55,7 +55,7 @@ def update_item(conn: sqlite3.Connection, item_id: int, payload: ItemUpdate) -> 
     if existing is None:
         return None
     updates = payload.model_dump(exclude_unset=True)
-    allowed = {"name", "description", "unit_price", "reorder_point", "active"}
+    allowed = {"name", "description", "unit_price", "reorder_level", "active"}
     updates = {k: v for k, v in updates.items() if k in allowed and v is not None}
     if updates:
         if "active" in updates:

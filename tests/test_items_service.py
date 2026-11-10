@@ -23,14 +23,14 @@ def conn():
 
 def test_create_item_returns_item_model(conn):
     item = items_service.create_item(
-        conn, ItemCreate(sku="SVC-1", name="Service", unit_price=1.5, reorder_point=3)
+        conn, ItemCreate(sku="SVC-1", name="Service", unit_price=1.5, reorder_level=3)
     )
     assert isinstance(item, Item)
     assert item.id == 1
     assert item.sku == "SVC-1"
     assert item.name == "Service"
     assert item.unit_price == 1.5
-    assert item.reorder_point == 3
+    assert item.reorder_level == 3
     assert item.active is True
 
 
@@ -56,7 +56,7 @@ def test_update_item_returns_none_for_missing(conn):
 
 def test_update_item_applies_partial_updates(conn):
     created = items_service.create_item(
-        conn, ItemCreate(sku="UPD-1", name="Before", unit_price=2.0, reorder_point=4)
+        conn, ItemCreate(sku="UPD-1", name="Before", unit_price=2.0, reorder_level=4)
     )
     updated = items_service.update_item(
         conn, created.id, ItemUpdate(name="After", unit_price=9.99)
@@ -66,7 +66,7 @@ def test_update_item_applies_partial_updates(conn):
     assert updated.unit_price == 9.99
     # untouched fields preserved
     assert updated.sku == "UPD-1"
-    assert updated.reorder_point == 4
+    assert updated.reorder_level == 4
 
 
 def test_update_item_can_deactivate(conn):

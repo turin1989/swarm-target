@@ -65,7 +65,7 @@ def create_items_bulk(
         for item in payload:
             cur = conn.execute(
                 """
-                INSERT INTO items (sku, name, description, unit_price, reorder_point, created_at, barcode)
+                INSERT INTO items (sku, name, description, unit_price, reorder_level, created_at, barcode)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
@@ -73,7 +73,7 @@ def create_items_bulk(
                     item.name,
                     item.description,
                     item.unit_price,
-                    item.reorder_point,
+                    item.reorder_level,
                     items_service.utc_now_iso(),
                     item.barcode,
                 ),
