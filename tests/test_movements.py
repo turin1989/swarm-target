@@ -462,3 +462,35 @@ def test_list_movements_no_filters_returns_all(client, mixed_movements):
     r = client.get("/movements")
     assert r.status_code == 200
     assert [m["id"] for m in r.json()] == [1, 2, 3, 4, 5, 6]
+
+
+@pytest.mark.parametrize(
+    "kind,locs",
+    [
+        ("receive", {"to_location_id": 1}),
+        ("ship", {"from_location_id": 1}),
+        ("transfer", {"from_location_id": 1, "to_location_id": 2}),
+        ("adjust", {"to_location_id": 1}),
+    ],
+)
+def test_movement_rejected_for_inactive_item(client, item, loc_a, loc_b, kind, locs):
+    # Seed stock while the item is active, then deactivate it.
+    _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])
+    r = client.put(f"/items/{item['id']}", json={"active": False})
+    assert r.status_code == 200 and r.json()["active"] is False
+
+    before = client.get(f"/items/{item['id']}/stock").json()
+
+    r = _move(client, item_id=item["id"], kind=kind, qty=3, **locs)
+    assert r.status_code == 409
+    body = r.json()
+    # The HTTPException detail is surfaced via the uniform error shape.
+    detail = body.get("detail") or body["error"]["message"]
+    assert "inactive" in detail
+
+    # Stock levels are unchanged.
+    assert client.get(f"/items/{item['id']}/stock").json() == before
+
+    # No movement record was persisted either.
+    r = client.get("/movements", params={"item_id": item["id"]})
+    assert [m["kind"] for m in r.json()] == ["receive"]
