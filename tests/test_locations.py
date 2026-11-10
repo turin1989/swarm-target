@@ -61,7 +61,7 @@ def test_delete_location_returns_204_and_location_is_gone(client, loc_a):
 def test_delete_location_with_stock_returns_409(client, item, loc_a):
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 5, "to_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 5, "to_location_id": loc_a["id"]},
     )
     assert r.status_code == 201, r.text
 
@@ -76,11 +76,11 @@ def test_delete_location_with_zero_qty_stock_row_succeeds(client, item, loc_a):
     # receive then ship everything: a stock_levels row remains with qty == 0
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 5, "to_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 5, "to_location_id": loc_a["id"]},
     )
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "ship", "qty": 5, "from_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "ship", "quantity": 5, "from_location_id": loc_a["id"]},
     )
     assert r.status_code == 201, r.text
 
