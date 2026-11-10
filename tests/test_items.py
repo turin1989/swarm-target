@@ -141,8 +141,60 @@ def test_delete_item_cascades_stock(client, item, loc_a):
         "/movements",
         json={"item_id": item["id"], "kind": "receive", "qty": 3, "to_location_id": loc_a["id"]},
     )
-    client.delete(f"/items/{item['id']}")
+    # drain the stock so the item is deletable, then delete it
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "ship", "qty": 3, "from_location_id": loc_a["id"]},
+    )
+    assert client.delete(f"/items/{item['id']}").status_code == 204
     assert client.get("/movements").json() == []
+
+
+def test_delete_item_with_stock_409(client, item, loc_a):
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "qty": 3, "to_location_id": loc_a["id"]},
+    )
+    r = client.delete(f"/items/{item['id']}")
+    assert r.status_code == 409
+    # detail mentions the remaining quantity
+    assert "3" in r.json()["detail"]
+    # item still exists
+    assert client.get(f"/items/{item['id']}").status_code == 200
+
+
+def test_delete_item_with_stock_409_detail_sums_across_locations(client, item, loc_a, loc_b):
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "qty": 4, "to_location_id": loc_a["id"]},
+    )
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "qty": 6, "to_location_id": loc_b["id"]},
+    )
+    r = client.delete(f"/items/{item['id']}")
+    assert r.status_code == 409
+    assert "10" in r.json()["detail"]
+
+
+def test_delete_item_after_stock_drained_to_zero(client, item, loc_a):
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "qty": 5, "to_location_id": loc_a["id"]},
+    )
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "ship", "qty": 5, "from_location_id": loc_a["id"]},
+    )
+    r = client.delete(f"/items/{item['id']}")
+    assert r.status_code == 204
+    assert client.get(f"/items/{item['id']}").status_code == 404
+
+
+def test_delete_item_with_no_stock_rows_still_works(client, item):
+    # zero-stock items (never had any movements) delete as before
+    assert client.delete(f"/items/{item['id']}").status_code == 204
+    assert client.get(f"/items/{item['id']}").status_code == 404
 
 
 def test_create_item_negative_reorder_point_422(client):
