@@ -74,9 +74,11 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
     if m.quantity <= 0:
         raise StockError("quantity must be a positive integer", status_code=422)
 
-    item = conn.execute("SELECT id FROM items WHERE id = ?", (m.item_id,)).fetchone()
+    item = conn.execute("SELECT id, active FROM items WHERE id = ?", (m.item_id,)).fetchone()
     if item is None:
         raise StockError(f"item {m.item_id} not found", status_code=404)
+    if not item["active"]:
+        raise StockError(f"item {m.item_id} is inactive", status_code=409)
 
     if m.kind == "receive":
         to_id = _require_location(conn, m.to_location_id, "to_location_id")
@@ -86,9 +88,9 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
         _adjust(conn, m.item_id, from_id, -m.quantity)
     elif m.kind == "transfer":
         from_id = _require_location(conn, m.from_location_id, "from_location_id")
-        _require_location(conn, m.to_location_id, "to_location_id")
+        to_id = _require_location(conn, m.to_location_id, "to_location_id")
         _adjust(conn, m.item_id, from_id, -m.quantity)
-        _adjust(conn, m.item_id, from_id, m.quantity)
+        _adjust(conn, m.item_id, to_id, m.quantity)
     elif m.kind == "adjust":
         if m.from_location_id is not None:
             raise StockError("from_location_id must be null for adjust movements")
@@ -99,10 +101,10 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
 
     cur = conn.execute(
         """
-        INSERT INTO movements (item_id, kind, qty, from_location_id, to_location_id, note)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO movements (item_id, kind, qty, from_location_id, to_location_id, note, reference)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (m.item_id, m.kind, m.quantity, m.from_location_id, m.to_location_id, m.note),
+        (m.item_id, m.kind, m.quantity, m.from_location_id, m.to_location_id, m.note, m.reference),
     )
     return get_movement(conn, cur.lastrowid)
 

@@ -2,17 +2,29 @@
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 MovementKind = Literal["receive", "ship", "transfer", "adjust"]
 
 
-class ItemCreate(BaseModel):
+class _RejectsReorderPoint(BaseModel):
+    """Reject the legacy ``reorder_point`` field (renamed to ``reorder_level``)."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_reorder_point(cls, data: object) -> object:
+        if isinstance(data, dict) and "reorder_point" in data:
+            raise ValueError("'reorder_point' was renamed to 'reorder_level'")
+        return data
+
+
+class ItemCreate(_RejectsReorderPoint):
     sku: str = Field(..., min_length=1, max_length=64)
     name: str = Field(..., min_length=1, max_length=200)
     description: str = ""
     unit_price: float = 0.0
-    reorder_point: int = 0
+    reorder_level: int = 0
+    barcode: Optional[str] = Field(None, min_length=1, max_length=128)
 
     @field_validator("sku", mode="before")
     @classmethod
@@ -22,11 +34,11 @@ class ItemCreate(BaseModel):
         return value
 
 
-class ItemUpdate(BaseModel):
+class ItemUpdate(_RejectsReorderPoint):
     name: Optional[str] = None
     description: Optional[str] = None
     unit_price: Optional[float] = None
-    reorder_point: Optional[int] = None
+    reorder_level: Optional[int] = None
     active: Optional[bool] = None
 
 
@@ -36,8 +48,9 @@ class Item(BaseModel):
     name: str
     description: str
     unit_price: float
-    reorder_point: int
+    reorder_level: int
     active: bool
+    barcode: Optional[str] = None
     created_at: str
 
 
@@ -66,6 +79,7 @@ class MovementCreate(BaseModel):
     from_location_id: Optional[int] = None
     to_location_id: Optional[int] = None
     note: str = Field(default="", max_length=500)
+    reference: Optional[str] = Field(default=None, max_length=64)
 
 
 class Movement(BaseModel):
@@ -76,6 +90,7 @@ class Movement(BaseModel):
     from_location_id: Optional[int]
     to_location_id: Optional[int]
     note: str
+    reference: Optional[str] = None
 
 
 class StockLevel(BaseModel):
@@ -95,5 +110,5 @@ class LowStockEntry(BaseModel):
     sku: str
     name: str
     total_qty: int
-    reorder_point: int
+    reorder_level: int
     shortfall: int = Field(..., ge=0)

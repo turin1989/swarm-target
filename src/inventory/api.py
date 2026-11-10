@@ -50,19 +50,24 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
     try:
         cur = conn.execute(
             """
-            INSERT INTO items (sku, name, description, unit_price, reorder_point, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO items (sku, name, description, unit_price, reorder_level, barcode, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 payload.sku,
                 payload.name,
                 payload.description,
                 payload.unit_price,
-                payload.reorder_point,
+                payload.reorder_level,
+                payload.barcode,
                 _utc_now_iso(),
             ),
         )
-    except sqlite3.IntegrityError:
+    except sqlite3.IntegrityError as exc:
+        if "barcode" in str(exc):
+            raise HTTPException(
+                status_code=409, detail=f"barcode {payload.barcode!r} already exists"
+            )
         raise HTTPException(status_code=409, detail=f"sku {payload.sku!r} already exists")
     return _fetch_item(conn, cur.lastrowid)
 
@@ -71,15 +76,26 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
 def list_items(
     response: Response,
     active: Optional[bool] = None,
+    sku: Optional[str] = None,
+    barcode: Optional[str] = None,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     conn: sqlite3.Connection = Depends(get_db),
 ) -> list[Item]:
-    where = ""
     params: list = []
+    clauses: list[str] = []
     if active is not None:
-        where = " WHERE active = ?"
+        clauses.append("active = ?")
         params.append(int(active))
+    if sku is not None:
+        clauses.append("sku = ?")
+        params.append(sku)
+    if barcode is not None:
+        clauses.append("barcode = ?")
+        params.append(barcode)
+    where = ""
+    if clauses:
+        where = " WHERE " + " AND ".join(clauses)
     total = conn.execute(f"SELECT COUNT(*) FROM items{where}", params).fetchone()[0]
     response.headers["X-Total-Count"] = str(total)
     sql = f"SELECT * FROM items{where} ORDER BY id LIMIT ? OFFSET ?"
