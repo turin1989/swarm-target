@@ -23,7 +23,8 @@ def get_stock_level(conn: sqlite3.Connection, item_id: int, location_id: int) ->
 
 def get_item_levels(conn: sqlite3.Connection, item_id: int) -> list[StockLevel]:
     rows = conn.execute(
-        "SELECT item_id, location_id, qty AS quantity FROM stock_levels WHERE item_id = ? ORDER BY location_id",
+        "SELECT item_id, location_id, qty AS quantity FROM stock_levels"
+        " WHERE item_id = ? ORDER BY location_id",
         (item_id,),
     ).fetchall()
     return [StockLevel(**dict(r)) for r in rows]
