@@ -101,6 +101,12 @@ def update_item(
 
 @router.delete("/items/{item_id}", status_code=204)
 def delete_item(item_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Response:
+    total = stock.total_stock(conn, item_id)
+    if total > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"item {item_id} still has {total} units in stock",
+        )
     conn.execute("DELETE FROM items WHERE id = ?", (item_id,))
     return Response(status_code=204)
 
