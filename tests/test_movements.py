@@ -308,3 +308,63 @@ def test_movement_note_max_length_ok(client, item, loc_a):
     )
     assert r.status_code == 201
     assert r.json()["note"] == note
+
+
+# --- inactive items (T041) -----------------------------------------------------
+
+
+def _deactivate(client, item_id):
+    r = client.put(f"/items/{item_id}", json={"active": False})
+    assert r.status_code == 200, r.text
+    assert r.json()["active"] is False
+
+
+@pytest.mark.parametrize(
+    "kind,payload",
+    [
+        ("receive", {"to_location_id": 1}),
+        ("ship", {"from_location_id": 1}),
+        ("transfer", {"from_location_id": 1, "to_location_id": 2}),
+        ("adjust", {"to_location_id": 1}),
+    ],
+)
+def test_movement_for_inactive_item_409(client, item, loc_a, loc_b, kind, payload):
+    _deactivate(client, item["id"])
+    r = _move(client, item_id=item["id"], kind=kind, qty=1, **payload)
+    assert r.status_code == 409
+    assert "inactive" in r.json()["detail"]
+    # No movement row must be written.
+    assert client.get("/movements").json() == []
+
+
+def test_inactive_item_movement_does_not_change_stock(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    _deactivate(client, item["id"])
+
+    for kind, payload in [
+        ("receive", {"to_location_id": loc_a["id"]}),
+        ("ship", {"from_location_id": loc_a["id"]}),
+        ("transfer", {"from_location_id": loc_a["id"], "to_location_id": loc_b["id"]}),
+        ("adjust", {"to_location_id": loc_a["id"]}),
+    ]:
+        r = _move(client, item_id=item["id"], kind=kind, qty=3, **payload)
+        assert r.status_code == 409
+        assert "inactive" in r.json()["detail"]
+
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 5
+    assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "qty": 5}]
+    assert len(client.get("/movements").json()) == 1
+
+
+def test_reactivated_item_accepts_movements_again(client, item, loc_a):
+    _deactivate(client, item["id"])
+    assert (
+        _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"]).status_code
+        == 409
+    )
+    r = client.put(f"/items/{item['id']}", json={"active": True})
+    assert r.status_code == 200
+    r = _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
+    assert r.status_code == 201
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 1
