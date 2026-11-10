@@ -1,6 +1,7 @@
 """HTTP routes."""
 
 import sqlite3
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -21,6 +22,11 @@ from inventory.models import (
 from inventory.services import reports, search, stock
 
 router = APIRouter()
+
+
+def _utc_now_iso() -> str:
+    """Current UTC time as ISO-8601 with a trailing Z, e.g. 2026-01-02T03:04:05Z."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _row_to_item(row: sqlite3.Row) -> Item:
@@ -44,10 +50,17 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
     try:
         cur = conn.execute(
             """
-            INSERT INTO items (sku, name, description, unit_price, reorder_point)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO items (sku, name, description, unit_price, reorder_point, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (payload.sku, payload.name, payload.description, payload.unit_price, payload.reorder_point),
+            (
+                payload.sku,
+                payload.name,
+                payload.description,
+                payload.unit_price,
+                payload.reorder_point,
+                _utc_now_iso(),
+            ),
         )
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=409, detail=f"sku {payload.sku!r} already exists")
