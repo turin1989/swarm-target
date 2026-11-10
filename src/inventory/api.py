@@ -9,6 +9,7 @@ from inventory.db import get_db, utc_now_iso
 from inventory.models import (
     Item,
     ItemCreate,
+    ItemPage,
     ItemStock,
     ItemUpdate,
     Location,
@@ -96,7 +97,7 @@ def create_items_bulk(
     return [_fetch_item(conn, item_id) for item_id in created_ids]
 
 
-@router.get("/items", response_model=list[Item])
+@router.get("/items", response_model=ItemPage)
 def list_items(
     response: Response,
     active: Optional[bool] = None,
@@ -104,7 +105,7 @@ def list_items(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     conn: sqlite3.Connection = Depends(get_db),
-) -> list[Item]:
+) -> ItemPage:
     params: list = []
     conditions: list[str] = []
     if active is not None:
@@ -117,7 +118,8 @@ def list_items(
     total = conn.execute(f"SELECT COUNT(*) FROM items{where}", params).fetchone()[0]
     response.headers["X-Total-Count"] = str(total)
     sql = f"SELECT * FROM items{where} ORDER BY id LIMIT ? OFFSET ?"
-    return [_row_to_item(r) for r in conn.execute(sql, [*params, limit, offset]).fetchall()]
+    items = [_row_to_item(r) for r in conn.execute(sql, [*params, limit, offset]).fetchall()]
+    return ItemPage(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.get("/items/by-sku/{sku}", response_model=Item)
