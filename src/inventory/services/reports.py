@@ -19,7 +19,10 @@ def low_stock(conn: sqlite3.Connection) -> list[LowStockEntry]:
         ORDER BY i.sku
         """
     ).fetchall()
-    return [LowStockEntry(**dict(r)) for r in rows]
+    return [
+        LowStockEntry(**dict(r), shortfall=max(r["reorder_point"] - r["total_qty"], 0))
+        for r in rows
+    ]
 
 
 def inventory_value(conn: sqlite3.Connection) -> float:
