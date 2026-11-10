@@ -215,3 +215,35 @@ def test_get_item_exposes_reorder_level_not_reorder_point(client, item):
     body = client.get(f"/items/{item['id']}").json()
     assert body["reorder_level"] == 5
     assert "reorder_point" not in body
+
+
+def test_update_item_reorder_level_persists_and_is_returned(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_level": 12})
+    assert r.status_code == 200
+    assert r.json()["reorder_level"] == 12
+    # persisted, not just echoed back
+    assert client.get(f"/items/{item['id']}").json()["reorder_level"] == 12
+
+
+def test_update_item_reorder_level_with_other_fields(client, item):
+    r = client.put(
+        f"/items/{item['id']}",
+        json={"reorder_level": 12, "name": "Widget XL", "unit_price": 9.75},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["reorder_level"] == 12
+    assert body["name"] == "Widget XL"
+    assert body["unit_price"] == 9.75
+    stored = client.get(f"/items/{item['id']}").json()
+    assert stored["reorder_level"] == 12
+    assert stored["name"] == "Widget XL"
+    assert stored["unit_price"] == 9.75
+
+
+def test_update_item_omitting_reorder_level_leaves_it_untouched(client, item):
+    assert item["reorder_level"] == 5
+    r = client.put(f"/items/{item['id']}", json={"name": "Renamed"})
+    assert r.status_code == 200
+    assert r.json()["reorder_level"] == 5
+    assert client.get(f"/items/{item['id']}").json()["reorder_level"] == 5
