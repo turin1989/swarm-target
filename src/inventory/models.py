@@ -4,7 +4,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-MovementKind = Literal["receive", "ship", "transfer"]
+MovementKind = Literal["receive", "ship", "transfer", "adjust"]
 
 
 class ItemCreate(BaseModel):
