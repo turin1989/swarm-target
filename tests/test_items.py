@@ -95,7 +95,12 @@ def test_delete_item_cascades_stock(client, item, loc_a):
         "/movements",
         json={"item_id": item["id"], "kind": "receive", "qty": 3, "to_location_id": loc_a["id"]},
     )
-    client.delete(f"/items/{item['id']}")
+    # ship everything back out so the item is at zero stock and can be deleted
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "ship", "qty": 3, "from_location_id": loc_a["id"]},
+    )
+    assert client.delete(f"/items/{item['id']}").status_code == 204
     assert client.get("/movements").json() == []
 
 
@@ -187,6 +192,47 @@ def test_legacy_reorder_point_column_is_migrated(tmp_path):
     assert row["reorder_level"] == 4
 
 
+def test_delete_item_with_stock_conflicts(client, item, loc_a):
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "qty": 7, "to_location_id": loc_a["id"]},
+    )
+    r = client.delete(f"/items/{item['id']}")
+    assert r.status_code == 409
+    body = r.json()
+    assert body["error"]["code"] == "conflict"
+    assert "7" in body["error"]["message"]
+    # item still exists
+    assert client.get(f"/items/{item['id']}").status_code == 200
+
+
+def test_delete_item_with_stock_detail_mentions_remaining_quantity(client, item, loc_a, loc_b):
+    for loc, qty in ((loc_a, 2), (loc_b, 3)):
+        client.post(
+            "/movements",
+            json={"item_id": item["id"], "kind": "receive", "qty": qty, "to_location_id": loc["id"]},
+        )
+    r = client.delete(f"/items/{item['id']}")
+    assert r.status_code == 409
+    # total across all locations is reported
+    assert "5" in r.json()["error"]["message"]
+
+
+def test_delete_item_after_stock_drained_succeeds(client, item, loc_a):
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "qty": 4, "to_location_id": loc_a["id"]},
+    )
+    assert client.delete(f"/items/{item['id']}").status_code == 409
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "ship", "qty": 4, "from_location_id": loc_a["id"]},
+    )
+    r = client.delete(f"/items/{item['id']}")
+    assert r.status_code == 204
+    assert client.get(f"/items/{item['id']}").status_code == 404
+
+
 # --- barcode -------------------------------------------------------------------
 
 
@@ -210,7 +256,9 @@ def test_duplicate_barcode_conflicts(client):
     assert r.status_code == 201
     r = client.post("/items", json={"sku": "BC-2", "name": "Two", "barcode": "DUP-CODE"})
     assert r.status_code == 409
-    assert "barcode" in r.json()["error"]["message"]
+    body = r.json()
+    assert body["error"]["code"] == "conflict"
+    assert "barcode" in body["error"]["message"]
 
 
 def test_multiple_items_without_barcode_allowed(client):
@@ -277,3 +325,44 @@ def test_update_item_description_at_limit_ok(client, item):
     r = client.put(f"/items/{item['id']}", json={"description": "x" * 2000})
     assert r.status_code == 200
     assert r.json()["description"] == "x" * 2000
+
+
+def test_create_item_negative_reorder_level_422(client):
+    r = client.post(
+        "/items",
+        json={"sku": "NEG-1", "name": "Neg", "reorder_level": -1},
+    )
+    assert r.status_code == 422
+
+
+def test_create_item_zero_reorder_level_ok(client):
+    r = client.post(
+        "/items",
+        json={"sku": "ZERO-1", "name": "Zero", "reorder_level": 0},
+    )
+    assert r.status_code == 201
+    assert r.json()["reorder_level"] == 0
+
+
+def test_create_item_with_barcode_and_negative_reorder_level_422(client):
+    # Both merged features must coexist: barcode is accepted as a field,
+    # but a negative reorder_level is still rejected with 422.
+    r = client.post(
+        "/items",
+        json={"sku": "BC-NEG", "name": "Neg", "barcode": "BC-123", "reorder_level": -1},
+    )
+    assert r.status_code == 422
+    assert r.json()["error"]["code"] == "validation_error"
+
+
+def test_update_item_negative_reorder_level_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_level": -5})
+    assert r.status_code == 422
+    # item unchanged
+    assert client.get(f"/items/{item['id']}").json() == item
+
+
+def test_update_item_nonnegative_reorder_level_not_rejected(client, item):
+    # Non-negative reorder_level values must pass validation (no 422).
+    r = client.put(f"/items/{item['id']}", json={"reorder_level": 7})
+    assert r.status_code == 200

@@ -71,6 +71,8 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
     elif m.kind == "transfer":
         from_id = _require_location(conn, m.from_location_id, "from_location_id")
         _require_location(conn, m.to_location_id, "to_location_id")
+        if m.from_location_id == m.to_location_id:
+            raise StockError("cannot transfer to the same location")
         _adjust(conn, m.item_id, from_id, -m.qty)
         _adjust(conn, m.item_id, from_id, m.qty)
     else:  # pragma: no cover - guarded by the Literal type

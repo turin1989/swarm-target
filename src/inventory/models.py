@@ -14,7 +14,7 @@ class ItemCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     description: str = Field(default="", max_length=2000)
     unit_price: float = 0.0
-    reorder_level: int = 0
+    reorder_level: int = Field(default=0, ge=0)
     barcode: Optional[str] = None
 
 
@@ -24,7 +24,7 @@ class ItemUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = Field(default=None, max_length=2000)
     unit_price: Optional[float] = None
-    reorder_level: Optional[int] = None
+    reorder_level: Optional[int] = Field(default=None, ge=0)
     active: Optional[bool] = None
 
 
