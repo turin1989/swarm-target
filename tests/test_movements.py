@@ -77,7 +77,72 @@ def test_transfer_is_recorded(client, item, loc_a, loc_b):
     assert movements[1]["kind"] == "transfer"
 
 
+def test_adjust_sets_absolute_stock(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])
+    r = _move(client, item_id=item["id"], kind="adjust", qty=3, to_location_id=loc_a["id"])
+    assert r.status_code == 201
+    body = r.json()
+    assert body["kind"] == "adjust"
+    assert body["qty"] == 3
+    assert body["to_location_id"] == loc_a["id"]
+    assert body["from_location_id"] is None
+
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 3
+    assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "qty": 3}]
+
+
+def test_adjust_creates_level_when_missing(client, item, loc_a):
+    r = _move(client, item_id=item["id"], kind="adjust", qty=8, to_location_id=loc_a["id"])
+    assert r.status_code == 201
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 8
+    assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "qty": 8}]
+
+
+def test_adjust_only_touches_target_location(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", qty=7, to_location_id=loc_b["id"])
+    _move(client, item_id=item["id"], kind="adjust", qty=1, to_location_id=loc_b["id"])
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 6
+    assert [lvl["qty"] for lvl in s["levels"]] == [5, 1]
+
+
+def test_adjust_requires_to_location(client, item, loc_a):
+    r = _move(client, item_id=item["id"], kind="adjust", qty=1)
+    assert r.status_code == 400
+    assert "required" in r.json()["detail"]
+
+
+def test_adjust_rejects_from_location(client, item, loc_a, loc_b):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="adjust",
+        qty=1,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    assert r.status_code == 400
+    assert "from_location_id" in r.json()["detail"]
+
+
+def test_adjust_unknown_location_404(client, item):
+    r = _move(client, item_id=item["id"], kind="adjust", qty=1, to_location_id=123)
+    assert r.status_code == 404
+
+
+def test_adjust_is_recorded_in_movement_list(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="adjust", qty=4, to_location_id=loc_a["id"])
+    movements = client.get("/movements").json()
+    assert len(movements) == 1
+    assert movements[0]["kind"] == "adjust"
+    assert movements[0]["qty"] == 4
+
+
 def test_stock_for_missing_item_404(client):
+
     assert client.get("/items/77/stock").status_code == 404
 
 
@@ -167,3 +232,29 @@ def test_item_movements_empty_for_item_without_history(client, item):
 def test_item_movements_unknown_item_404(client):
     r = client.get("/items/999/movements")
     assert r.status_code == 404
+
+
+def test_movement_note_too_long_422(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=1,
+        to_location_id=loc_a["id"],
+        note="x" * 501,
+    )
+    assert r.status_code == 422
+
+
+def test_movement_note_max_length_ok(client, item, loc_a):
+    note = "x" * 500
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=1,
+        to_location_id=loc_a["id"],
+        note=note,
+    )
+    assert r.status_code == 201
+    assert r.json()["note"] == note

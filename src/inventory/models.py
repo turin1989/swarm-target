@@ -4,7 +4,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-MovementKind = Literal["receive", "ship", "transfer"]
+MovementKind = Literal["receive", "ship", "transfer", "adjust"]
 
 
 class ItemCreate(BaseModel):
@@ -55,7 +55,7 @@ class MovementCreate(BaseModel):
     qty: int
     from_location_id: Optional[int] = None
     to_location_id: Optional[int] = None
-    note: str = ""
+    note: str = Field(default="", max_length=500)
 
 
 class Movement(BaseModel):
