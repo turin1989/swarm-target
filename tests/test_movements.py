@@ -77,6 +77,27 @@ def test_transfer_is_recorded(client, item, loc_a, loc_b):
     assert movements[1]["kind"] == "transfer"
 
 
+def test_transfer_to_same_location_rejected(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    before = client.get(f"/items/{item['id']}/stock").json()
+
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=2,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_a["id"],
+    )
+    assert r.status_code == 400
+    assert "same location" in r.json()["detail"]
+
+    # No movement row was written and stock is unchanged.
+    movements = client.get("/movements").json()
+    assert len(movements) == 1
+    assert client.get(f"/items/{item['id']}/stock").json() == before
+
+
 def test_stock_for_missing_item_404(client):
     assert client.get("/items/77/stock").status_code == 404
 
