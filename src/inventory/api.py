@@ -70,6 +70,7 @@ def create_items_bulk(
 @router.get("/items", response_model=list[Item])
 def list_items(
     active: Optional[bool] = None,
+    sku: Optional[str] = None,
     sort: str = Query("id", pattern=r"^-?(id|name|sku)$"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -77,9 +78,15 @@ def list_items(
 ) -> list[Item]:
     sql = "SELECT * FROM items"
     params: list = []
+    conditions: list[str] = []
     if active is not None:
-        sql += " WHERE active = ?"
+        conditions.append("active = ?")
         params.append(int(active))
+    if sku is not None:
+        conditions.append("sku = ?")
+        params.append(sku)
+    if conditions:
+        sql += " WHERE " + " AND ".join(conditions)
     direction = "ASC"
     column = sort
     if column.startswith("-"):
