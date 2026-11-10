@@ -502,3 +502,18 @@ def test_delete_location_with_zero_qty_stock_row(client, item, loc_a):
     r = client.delete(f"/locations/{loc_a['id']}")
     assert r.status_code == 204
     assert client.get(f"/locations/{loc_a['id']}").status_code == 404
+
+
+def test_get_movement_by_id(client, item, loc_a):
+    created = _move(
+        client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"]
+    ).json()
+    r = client.get(f"/movements/{created['id']}")
+    assert r.status_code == 200
+    assert r.json() == created
+
+
+def test_get_movement_unknown_id_returns_404(client):
+    r = client.get("/movements/999")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "movement 999 not found"
