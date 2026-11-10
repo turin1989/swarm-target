@@ -120,6 +120,15 @@ def list_items(
     )
 
 
+# NB: registered before /items/{item_id} so "by-sku" is not captured as an item id.
+@router.get("/items/by-sku/{sku}", response_model=Item)
+def get_item_by_sku(sku: str, conn: sqlite3.Connection = Depends(get_db)) -> Item:
+    row = conn.execute("SELECT * FROM items WHERE sku = ?", (sku,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"sku {sku} not found")
+    return _row_to_item(row)
+
+
 @router.get("/items/{item_id}", response_model=Item)
 def get_item(item_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Item:
     return _fetch_item(conn, item_id)
