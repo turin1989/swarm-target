@@ -101,6 +101,64 @@ def test_transfer_same_location_rejected(client, item, loc_a):
     assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "qty": 5}]
 
 
+def test_ship_more_than_on_hand_rejected_409(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    r = _move(client, item_id=item["id"], kind="ship", qty=6, from_location_id=loc_a["id"])
+    assert r.status_code == 409
+    body = r.json()
+    assert body["error"]["code"] == "conflict"
+    assert "insufficient" in body["error"]["message"]
+    # no movement row is written for the rejected ship
+    movements = client.get("/movements").json()
+    assert len(movements) == 1
+    assert movements[0]["kind"] == "receive"
+    # stock is untouched (never driven negative)
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 5
+    assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "qty": 5}]
+
+
+def test_ship_from_empty_location_rejected_409(client, item, loc_a):
+    r = _move(client, item_id=item["id"], kind="ship", qty=1, from_location_id=loc_a["id"])
+    assert r.status_code == 409
+    body = r.json()
+    assert body["error"]["code"] == "conflict"
+    assert "insufficient" in body["error"]["message"]
+    assert client.get("/movements").json() == []
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 0
+
+
+def test_ship_exactly_on_hand_succeeds(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    r = _move(client, item_id=item["id"], kind="ship", qty=5, from_location_id=loc_a["id"])
+    assert r.status_code == 201
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 0
+
+
+def test_transfer_more_than_source_stock_rejected_409(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=3, to_location_id=loc_a["id"])
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=4,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    assert r.status_code == 409
+    body = r.json()
+    assert body["error"]["code"] == "conflict"
+    assert "insufficient" in body["error"]["message"]
+    # no movement row is written for the rejected transfer
+    movements = client.get("/movements").json()
+    assert len(movements) == 1
+    assert movements[0]["kind"] == "receive"
+    # stock levels are unchanged at both locations
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 3
+    assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "qty": 3}]
+
+
 def test_stock_for_missing_item_404(client):
     assert client.get("/items/77/stock").status_code == 404
 

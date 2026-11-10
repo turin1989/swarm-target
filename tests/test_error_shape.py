@@ -58,6 +58,17 @@ def test_400_bad_request_shape(client, item, loc_a):
     _assert_error_shape(r.json(), "bad_request")
 
 
+def test_409_insufficient_stock_shape(client, item, loc_a):
+    # T005 rejection (ship more than on hand) uses the uniform error shape
+    r = client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "ship", "qty": 1, "from_location_id": loc_a["id"]},
+    )
+    assert r.status_code == 409
+    _assert_error_shape(r.json(), "conflict")
+    assert "insufficient" in r.json()["error"]["message"]
+
+
 def test_stock_error_404_converted_via_http_exception(client, item):
     # StockError raised in the service layer surfaces through HTTPException
     r = client.post(
