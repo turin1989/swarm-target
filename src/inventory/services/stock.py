@@ -106,6 +106,42 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
     return get_movement(conn, cur.lastrowid)
 
 
+def reverse_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
+    """Create and apply a new movement that undoes an existing one."""
+    original = get_movement(conn, movement_id)
+    note = f"reversal of {movement_id}"
+
+    if original.kind == "receive":
+        reversal = MovementCreate(
+            item_id=original.item_id,
+            kind="ship",
+            qty=original.qty,
+            from_location_id=original.to_location_id,
+            note=note,
+        )
+    elif original.kind == "ship":
+        reversal = MovementCreate(
+            item_id=original.item_id,
+            kind="receive",
+            qty=original.qty,
+            to_location_id=original.from_location_id,
+            note=note,
+        )
+    elif original.kind == "transfer":
+        reversal = MovementCreate(
+            item_id=original.item_id,
+            kind="transfer",
+            qty=original.qty,
+            from_location_id=original.to_location_id,
+            to_location_id=original.from_location_id,
+            note=note,
+        )
+    else:
+        raise StockError(f"{original.kind} movements cannot be reversed")
+
+    return apply_movement(conn, reversal)
+
+
 def get_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
     row = conn.execute("SELECT * FROM movements WHERE id = ?", (movement_id,)).fetchone()
     if row is None:
