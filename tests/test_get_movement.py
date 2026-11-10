@@ -7,7 +7,7 @@ def _move(client, **kw):
 
 def test_get_movement_returns_same_shape_as_post(client, item, loc_a):
     created = _move(
-        client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"]
+        client, item_id=item["id"], kind="receive", quantity=10, to_location_id=loc_a["id"]
     ).json()
 
     r = client.get(f"/movements/{created['id']}")
@@ -16,12 +16,12 @@ def test_get_movement_returns_same_shape_as_post(client, item, loc_a):
 
 
 def test_get_movement_after_transfer(client, item, loc_a, loc_b):
-    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", quantity=5, to_location_id=loc_a["id"])
     created = _move(
         client,
         item_id=item["id"],
         kind="transfer",
-        qty=3,
+        quantity=3,
         from_location_id=loc_a["id"],
         to_location_id=loc_b["id"],
     ).json()

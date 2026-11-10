@@ -291,7 +291,7 @@ def test_put_location_duplicate_code_returns_409(client, loc_a, loc_b):
 def _receive(client, item, loc, qty):
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": qty, "to_location_id": loc["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": qty, "to_location_id": loc["id"]},
     )
     assert r.status_code == 201, r.text
     return r.json()
@@ -330,12 +330,12 @@ def test_delete_location_allowed_when_stock_level_is_zero(client, item, loc_a):
     _receive(client, item, loc_a, 5)
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "ship", "qty": 5, "from_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "ship", "quantity": 5, "from_location_id": loc_a["id"]},
     )
     assert r.status_code == 201, r.text
 
     s = client.get(f"/locations/{loc_a['id']}/stock").json()
-    assert all(lvl["qty"] == 0 for lvl in s["levels"])
+    assert all(lvl["quantity"] == 0 for lvl in s["levels"])
 
     r = client.delete(f"/locations/{loc_a['id']}")
     assert r.status_code == 204, r.text
