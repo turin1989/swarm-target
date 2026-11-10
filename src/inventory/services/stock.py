@@ -103,7 +103,7 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
             raise StockError("cannot transfer to the same location")
         _require_available(conn, m.item_id, from_id, m.qty)
         _adjust(conn, m.item_id, from_id, -m.qty)
-        _adjust(conn, m.item_id, from_id, m.qty)
+        _adjust(conn, m.item_id, to_id, m.qty)
     else:  # pragma: no cover - guarded by the Literal type
         raise StockError(f"unknown movement kind {m.kind!r}")
 
@@ -115,6 +115,28 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
         (m.item_id, m.kind, m.qty, m.from_location_id, m.to_location_id, m.note),
     )
     return get_movement(conn, cur.lastrowid)
+
+
+def reverse_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
+    """Create and apply a new movement that undoes an existing one."""
+    original = get_movement(conn, movement_id)
+
+    if original.kind == "receive":
+        kind = "ship"
+    elif original.kind == "ship":
+        kind = "receive"
+    else:  # transfer
+        kind = "transfer"
+
+    reversal = MovementCreate(
+        item_id=original.item_id,
+        kind=kind,
+        qty=original.qty,
+        from_location_id=original.to_location_id,
+        to_location_id=original.from_location_id,
+        note=f"reversal of {movement_id}",
+    )
+    return apply_movement(conn, reversal)
 
 
 def get_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
