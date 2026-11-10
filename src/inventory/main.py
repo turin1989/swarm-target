@@ -6,8 +6,9 @@ import uuid
 from fastapi import FastAPI
 
 from inventory import __version__
-from inventory.api import router
+from inventory.api import inventory_error_handler, router
 from inventory.db import init_db
+from inventory.services.errors import InventoryError
 
 DEFAULT_DB_PATH = "inventory.db"
 
@@ -60,6 +61,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
     app = FastAPI(title="Inventory", version=__version__)
     app.state.db_path = db_path
     app.add_middleware(RequestIDMiddleware)
+    app.add_exception_handler(InventoryError, inventory_error_handler)
     app.include_router(router)
 
     @app.get("/health")
