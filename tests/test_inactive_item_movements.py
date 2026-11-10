@@ -28,14 +28,14 @@ def test_movement_for_inactive_item_409(client, item, loc_a, loc_b, kind):
     # seed some stock while the item is still active
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 10, "to_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 10, "to_location_id": loc_a["id"]},
     )
     assert r.status_code == 201, r.text
 
     _deactivate(client, item["id"])
     before = _stock(client, item["id"])
 
-    payload = {"item_id": item["id"], "kind": kind, "qty": 3}
+    payload = {"item_id": item["id"], "kind": kind, "quantity": 3}
     if kind in ("ship", "transfer"):
         payload["from_location_id"] = loc_a["id"]
     if kind in ("receive", "transfer", "adjust"):
@@ -52,7 +52,7 @@ def test_movement_for_inactive_item_409(client, item, loc_a, loc_b, kind):
 def test_reverse_movement_for_inactive_item_409(client, item, loc_a):
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 7, "to_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 7, "to_location_id": loc_a["id"]},
     )
     assert r.status_code == 201, r.text
     movement_id = r.json()["id"]

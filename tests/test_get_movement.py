@@ -10,7 +10,7 @@ def test_get_movement_matches_post_response(client, item, loc_a, loc_b):
         client,
         item_id=item["id"],
         kind="receive",
-        qty=10,
+        quantity=10,
         to_location_id=loc_a["id"],
         note="initial",
     ).json()
@@ -21,12 +21,12 @@ def test_get_movement_matches_post_response(client, item, loc_a, loc_b):
 
 
 def test_get_movement_transfer_shape(client, item, loc_a, loc_b):
-    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", quantity=5, to_location_id=loc_a["id"])
     created = _move(
         client,
         item_id=item["id"],
         kind="transfer",
-        qty=2,
+        quantity=2,
         from_location_id=loc_a["id"],
         to_location_id=loc_b["id"],
         note="rebalance",
@@ -37,7 +37,7 @@ def test_get_movement_transfer_shape(client, item, loc_a, loc_b):
     body = r.json()
     assert body == created
     assert body["kind"] == "transfer"
-    assert body["qty"] == 2
+    assert body["quantity"] == 2
     assert body["from_location_id"] == loc_a["id"]
     assert body["to_location_id"] == loc_b["id"]
     assert body["note"] == "rebalance"

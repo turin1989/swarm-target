@@ -24,7 +24,7 @@ def test_stats_counts_entities_and_total_units(client, item, loc_a, loc_b):
     # movements: receive 10 into A, transfer 4 to B, ship 3 from A
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 10, "to_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 10, "to_location_id": loc_a["id"]},
     )
     assert r.status_code == 201
     r = client.post(
@@ -32,7 +32,7 @@ def test_stats_counts_entities_and_total_units(client, item, loc_a, loc_b):
         json={
             "item_id": item["id"],
             "kind": "transfer",
-            "qty": 4,
+            "quantity": 4,
             "from_location_id": loc_a["id"],
             "to_location_id": loc_b["id"],
         },
@@ -40,7 +40,7 @@ def test_stats_counts_entities_and_total_units(client, item, loc_a, loc_b):
     assert r.status_code == 201
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "ship", "qty": 3, "from_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "ship", "quantity": 3, "from_location_id": loc_a["id"]},
     )
     assert r.status_code == 201
 
@@ -58,11 +58,11 @@ def test_stats_counts_entities_and_total_units(client, item, loc_a, loc_b):
 def test_stats_total_units_sums_across_items_and_locations(client, item, loc_a, loc_b):
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 5, "to_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 5, "to_location_id": loc_a["id"]},
     )
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 2, "to_location_id": loc_b["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 2, "to_location_id": loc_b["id"]},
     )
     r = client.get("/stats")
     assert r.status_code == 200
