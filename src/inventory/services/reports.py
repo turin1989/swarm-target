@@ -6,7 +6,7 @@ from inventory.models import LowStockEntry
 
 
 def low_stock(conn: sqlite3.Connection) -> list[LowStockEntry]:
-    """Active items whose total stock across all locations is below their reorder point."""
+    """Active items whose total stock across all locations is at or below their reorder point."""
     rows = conn.execute(
         """
         SELECT i.id AS item_id, i.sku, i.name, i.reorder_point,
@@ -15,7 +15,7 @@ def low_stock(conn: sqlite3.Connection) -> list[LowStockEntry]:
         LEFT JOIN stock_levels s ON s.item_id = i.id
         WHERE i.active = 1
         GROUP BY i.id
-        HAVING total_qty < i.reorder_point
+        HAVING total_qty <= i.reorder_point
         ORDER BY i.sku
         """
     ).fetchall()
