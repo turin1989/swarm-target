@@ -93,6 +93,7 @@ def create_items_bulk(
 @router.get("/items", response_model=list[Item])
 def list_items(
     active: Optional[bool] = None,
+    sort: str = Query("id", pattern=r"^-?(id|name|sku)$"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     conn: sqlite3.Connection = Depends(get_db),
@@ -102,7 +103,11 @@ def list_items(
     if active is not None:
         sql += " WHERE active = ?"
         params.append(int(active))
-    sql += " ORDER BY id LIMIT ? OFFSET ?"
+    direction = "ASC"
+    if sort.startswith("-"):
+        direction = "DESC"
+        sort = sort[1:]
+    sql += f" ORDER BY {sort} {direction} LIMIT ? OFFSET ?"
     params += [limit, offset]
     return [_row_to_item(r) for r in conn.execute(sql, params).fetchall()]
 

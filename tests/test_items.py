@@ -2,6 +2,8 @@
 
 import re
 
+import pytest
+
 
 def test_health(client):
     r = client.get("/health")
@@ -224,3 +226,79 @@ def test_get_item_by_sku_does_not_shadow_get_item_by_id(client, item):
     # item sub-resources remain reachable
     assert client.get(f"/items/{item['id']}/stock").status_code == 200
     assert client.get(f"/items/{item['id']}/movements").status_code == 200
+
+
+# --- GET /items?sort= (T021) ------------------------------------------------------
+
+
+@pytest.fixture()
+def sort_items(client):
+    """Create items whose id, sku, and name orders all differ."""
+    specs = [
+        {"sku": "SKU-B", "name": "Charlie"},  # id 1
+        {"sku": "SKU-C", "name": "Alpha"},    # id 2
+        {"sku": "SKU-A", "name": "Bravo"},    # id 3
+    ]
+    for spec in specs:
+        r = client.post("/items", json=spec)
+        assert r.status_code == 201, r.text
+    return specs
+
+
+def test_list_items_default_sort_is_id(client, sort_items):
+    r = client.get("/items")
+    assert r.status_code == 200
+    assert [i["id"] for i in r.json()] == [1, 2, 3]
+
+
+def test_list_items_sort_id_ascending(client, sort_items):
+    r = client.get("/items", params={"sort": "id"})
+    assert r.status_code == 200
+    assert [i["id"] for i in r.json()] == [1, 2, 3]
+
+
+def test_list_items_sort_id_descending(client, sort_items):
+    r = client.get("/items", params={"sort": "-id"})
+    assert r.status_code == 200
+    assert [i["id"] for i in r.json()] == [3, 2, 1]
+
+
+def test_list_items_sort_name_ascending(client, sort_items):
+    r = client.get("/items", params={"sort": "name"})
+    assert r.status_code == 200
+    assert [i["name"] for i in r.json()] == ["Alpha", "Bravo", "Charlie"]
+
+
+def test_list_items_sort_name_descending(client, sort_items):
+    r = client.get("/items", params={"sort": "-name"})
+    assert r.status_code == 200
+    assert [i["name"] for i in r.json()] == ["Charlie", "Bravo", "Alpha"]
+
+
+def test_list_items_sort_sku_ascending(client, sort_items):
+    r = client.get("/items", params={"sort": "sku"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["SKU-A", "SKU-B", "SKU-C"]
+
+
+def test_list_items_sort_sku_descending(client, sort_items):
+    r = client.get("/items", params={"sort": "-sku"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["SKU-C", "SKU-B", "SKU-A"]
+
+
+def test_list_items_sort_invalid_value_422(client, sort_items):
+    for bad in ["price", "unit_price", "-created_at", "id; DROP TABLE items", "", "--id", "-"]:
+        r = client.get("/items", params={"sort": bad})
+        assert r.status_code == 422, f"sort={bad!r} -> {r.status_code}"
+
+
+def test_list_items_sort_combines_with_filters_and_paging(client, sort_items):
+    client.put("/items/2", json={"active": False})
+    r = client.get("/items", params={"sort": "-name", "active": "true"})
+    assert r.status_code == 200
+    assert [i["name"] for i in r.json()] == ["Charlie", "Bravo"]
+
+    r = client.get("/items", params={"sort": "name", "limit": 2, "offset": 1})
+    assert r.status_code == 200
+    assert [i["name"] for i in r.json()] == ["Bravo", "Charlie"]
