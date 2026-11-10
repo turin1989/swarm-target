@@ -13,6 +13,7 @@ class ItemCreate(BaseModel):
     description: str = ""
     unit_price: float = 0.0
     reorder_point: int = 0
+    barcode: Optional[str] = Field(None, min_length=1, max_length=128)
 
     @field_validator("sku", mode="before")
     @classmethod
@@ -38,6 +39,7 @@ class Item(BaseModel):
     unit_price: float
     reorder_point: int
     active: bool
+    barcode: Optional[str] = None
     created_at: str
 
 

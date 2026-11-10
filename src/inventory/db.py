@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS items (
     unit_price REAL NOT NULL DEFAULT 0,
     reorder_point INTEGER NOT NULL DEFAULT 0,
     active INTEGER NOT NULL DEFAULT 1,
+    barcode TEXT UNIQUE,
     created_at TEXT NOT NULL
 );
 
