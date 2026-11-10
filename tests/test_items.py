@@ -355,3 +355,34 @@ def test_update_item_omitting_reorder_point_keeps_stored_value(client, item):
     assert r.status_code == 200
     assert r.json()["reorder_point"] == 5
     assert client.get(f"/items/{item['id']}").json()["reorder_point"] == 5
+
+
+# --- reorder_point validation (T009) --------------------------------------------
+
+
+def test_create_item_negative_reorder_point_returns_422(client):
+    r = client.post(
+        "/items", json={"sku": "NEG-1", "name": "Negative", "reorder_point": -1}
+    )
+    assert r.status_code == 422
+
+
+def test_create_item_zero_reorder_point_is_allowed(client):
+    r = client.post(
+        "/items", json={"sku": "ZERO-1", "name": "Zero", "reorder_point": 0}
+    )
+    assert r.status_code == 201
+    assert r.json()["reorder_point"] == 0
+
+
+def test_update_item_negative_reorder_point_returns_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": -3})
+    assert r.status_code == 422
+    # stored value unchanged
+    assert client.get(f"/items/{item['id']}").json()["reorder_point"] == 5
+
+
+def test_update_item_zero_reorder_point_is_allowed(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": 0})
+    assert r.status_code == 200
+    assert r.json()["reorder_point"] == 0
