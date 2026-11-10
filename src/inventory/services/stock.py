@@ -138,8 +138,24 @@ def reverse_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
     return apply_movement(conn, reversal)
 
 
-def list_movements(conn: sqlite3.Connection, limit: int = 100, offset: int = 0) -> list[Movement]:
+def list_movements(
+    conn: sqlite3.Connection,
+    limit: int = 100,
+    offset: int = 0,
+    item_id: int | None = None,
+    kind: str | None = None,
+) -> list[Movement]:
+    conditions: list[str] = []
+    params: list = []
+    if item_id is not None:
+        conditions.append("item_id = ?")
+        params.append(item_id)
+    if kind is not None:
+        conditions.append("kind = ?")
+        params.append(kind)
+    where = " WHERE " + " AND ".join(conditions) if conditions else ""
     rows = conn.execute(
-        "SELECT * FROM movements ORDER BY id LIMIT ? OFFSET ?", (limit, offset)
+        f"SELECT * FROM movements{where} ORDER BY id LIMIT ? OFFSET ?",
+        (*params, limit, offset),
     ).fetchall()
     return [Movement(**dict(r)) for r in rows]

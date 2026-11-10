@@ -276,3 +276,110 @@ def test_transfer_same_location_rejected(client, item, loc_a):
     s = client.get(f"/items/{item['id']}/stock").json()
     assert s["total"] == 5
     assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "qty": 5}]
+
+
+# --- GET /movements filters (T044) --------------------------------------------
+
+
+def _seed_movements(client, item, loc_a, loc_b):
+    """Create a second item plus a mix of movements for both items."""
+    item2 = client.post(
+        "/items",
+        json={"sku": "GADGET-1", "name": "Gadget", "unit_price": 1.0, "reorder_level": 2},
+    ).json()
+    _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])
+    _move(client, item_id=item2["id"], kind="receive", qty=8, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="ship", qty=2, from_location_id=loc_a["id"])
+    _move(client, item_id=item2["id"], kind="ship", qty=1, from_location_id=loc_a["id"])
+    _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=3,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    return item2
+
+
+def test_list_movements_filter_by_item_id(client, item, loc_a, loc_b):
+    item2 = _seed_movements(client, item, loc_a, loc_b)
+
+    r = client.get("/movements", params={"item_id": item["id"]})
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 3
+    assert all(m["item_id"] == item["id"] for m in body)
+
+    r2 = client.get("/movements", params={"item_id": item2["id"]})
+    assert r2.status_code == 200
+    assert [m["item_id"] for m in r2.json()] == [item2["id"], item2["id"]]
+
+
+def test_list_movements_filter_by_item_id_no_matches(client, item, loc_a, loc_b):
+    _seed_movements(client, item, loc_a, loc_b)
+    r = client.get("/movements", params={"item_id": 9999})
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_list_movements_filter_by_kind(client, item, loc_a, loc_b):
+    _seed_movements(client, item, loc_a, loc_b)
+
+    r = client.get("/movements", params={"kind": "ship"})
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 2
+    assert all(m["kind"] == "ship" for m in body)
+
+    r2 = client.get("/movements", params={"kind": "transfer"})
+    assert [m["kind"] for m in r2.json()] == ["transfer"]
+
+
+def test_list_movements_invalid_kind_422(client, item, loc_a, loc_b):
+    _seed_movements(client, item, loc_a, loc_b)
+    r = client.get("/movements", params={"kind": "explode"})
+    assert r.status_code == 422
+
+
+def test_list_movements_filters_combine(client, item, loc_a, loc_b):
+    item2 = _seed_movements(client, item, loc_a, loc_b)
+
+    r = client.get("/movements", params={"item_id": item["id"], "kind": "ship"})
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 1
+    assert body[0]["item_id"] == item["id"]
+    assert body[0]["kind"] == "ship"
+
+    # item2 never had a transfer
+    r2 = client.get("/movements", params={"item_id": item2["id"], "kind": "transfer"})
+    assert r2.status_code == 200
+    assert r2.json() == []
+
+
+def test_list_movements_filters_with_pagination(client, item, loc_a, loc_b):
+    _seed_movements(client, item, loc_a, loc_b)
+    for _ in range(3):
+        _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
+
+    # item has 4 receive movements total (ids 1, 6, 7, 8)
+    all_ids = [
+        m["id"]
+        for m in client.get(
+            "/movements", params={"item_id": item["id"], "kind": "receive"}
+        ).json()
+    ]
+    assert len(all_ids) == 4
+
+    page1 = client.get(
+        "/movements",
+        params={"item_id": item["id"], "kind": "receive", "limit": 2, "offset": 0},
+    ).json()
+    page2 = client.get(
+        "/movements",
+        params={"item_id": item["id"], "kind": "receive", "limit": 2, "offset": 2},
+    ).json()
+    assert [m["id"] for m in page1] == all_ids[:2]
+    assert [m["id"] for m in page2] == all_ids[2:]
+    assert all(m["item_id"] == item["id"] and m["kind"] == "receive" for m in page1 + page2)
