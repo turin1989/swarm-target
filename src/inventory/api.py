@@ -70,6 +70,7 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
 @router.get("/items", response_model=ItemPage)
 def list_items(
     active: Optional[bool] = None,
+    sku: Optional[str] = None,
     barcode: Optional[str] = None,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -80,6 +81,9 @@ def list_items(
     if active is not None:
         conditions.append("active = ?")
         params.append(int(active))
+    if sku is not None:
+        conditions.append("sku = ?")
+        params.append(sku)
     if barcode is not None:
         conditions.append("barcode = ?")
         params.append(barcode)
