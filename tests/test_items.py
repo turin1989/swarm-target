@@ -320,3 +320,38 @@ def test_get_item_by_sku_does_not_shadow_get_by_id(client, item):
     r = client.get(f"/items/{item['id']}")
     assert r.status_code == 200
     assert r.json()["id"] == item["id"]
+
+
+# --- PUT /items/{id} reorder_point (T004) --------------------------------------
+
+
+def test_update_item_reorder_point_persists_and_returns(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": 12})
+    assert r.status_code == 200
+    assert r.json()["reorder_point"] == 12
+    # persisted, not just echoed
+    assert client.get(f"/items/{item['id']}").json()["reorder_point"] == 12
+
+
+def test_update_item_reorder_point_with_other_fields(client, item):
+    r = client.put(
+        f"/items/{item['id']}",
+        json={"reorder_point": 7, "name": "Renamed", "unit_price": 3.75},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["reorder_point"] == 7
+    assert body["name"] == "Renamed"
+    assert body["unit_price"] == 3.75
+    stored = client.get(f"/items/{item['id']}").json()
+    assert stored["reorder_point"] == 7
+    assert stored["name"] == "Renamed"
+    assert stored["unit_price"] == 3.75
+
+
+def test_update_item_omitting_reorder_point_keeps_stored_value(client, item):
+    assert item["reorder_point"] == 5
+    r = client.put(f"/items/{item['id']}", json={"name": "No RP change"})
+    assert r.status_code == 200
+    assert r.json()["reorder_point"] == 5
+    assert client.get(f"/items/{item['id']}").json()["reorder_point"] == 5
