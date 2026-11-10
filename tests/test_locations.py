@@ -89,6 +89,120 @@ def test_location_update_model_exists():
     assert update.code is None
 
 
+# --- active flag (T026) --------------------------------------------------------
+
+
+def test_new_location_is_active_by_default(client):
+    r = client.post("/locations", json={"code": "WH-C", "name": "Warehouse C"})
+    assert r.status_code == 201, r.text
+    assert r.json()["active"] is True
+
+
+def test_locations_active_column_in_schema(tmp_path):
+    path = str(tmp_path / "schema.db")
+    db.init_db(path)
+    conn = sqlite3.connect(path)
+    try:
+        conn.row_factory = sqlite3.Row
+        cols = {
+            row["name"]: row
+            for row in conn.execute("PRAGMA table_info(locations)").fetchall()
+        }
+        assert "active" in cols
+        assert cols["active"]["dflt_value"] == "1"
+        # default applies when inserting without an explicit value
+        conn.execute("INSERT INTO locations (code, name) VALUES ('X', 'one')")
+        row = conn.execute("SELECT active FROM locations WHERE code = 'X'").fetchone()
+        assert row["active"] == 1
+    finally:
+        conn.close()
+
+
+def test_init_db_migrates_locations_without_active_column(tmp_path):
+    path = str(tmp_path / "old.db")
+    conn = sqlite3.connect(path)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE locations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute("INSERT INTO locations (code, name) VALUES ('OLD', 'Legacy')")
+        conn.commit()
+    finally:
+        conn.close()
+    db.init_db(path)
+    conn = sqlite3.connect(path)
+    try:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM locations WHERE code = 'OLD'").fetchone()
+        assert row["active"] == 1
+    finally:
+        conn.close()
+
+
+def test_put_location_can_deactivate(client, loc_a):
+    r = client.put(f"/locations/{loc_a['id']}", json={"active": False})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["active"] is False
+    assert body["code"] == "WH-A"  # unchanged
+    assert body["name"] == "Warehouse A"  # unchanged
+
+
+def test_put_location_can_reactivate(client, loc_a):
+    client.put(f"/locations/{loc_a['id']}", json={"active": False})
+    r = client.put(f"/locations/{loc_a['id']}", json={"active": True})
+    assert r.status_code == 200, r.text
+    assert r.json()["active"] is True
+
+
+def test_deactivation_is_persisted(client, loc_a):
+    client.put(f"/locations/{loc_a['id']}", json={"active": False})
+    r = client.get(f"/locations/{loc_a['id']}")
+    assert r.status_code == 200
+    assert r.json()["active"] is False
+
+
+def test_put_location_active_alongside_other_fields(client, loc_a):
+    r = client.put(
+        f"/locations/{loc_a['id']}",
+        json={"name": "Mothballed Warehouse", "active": False},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["name"] == "Mothballed Warehouse"
+    assert body["active"] is False
+
+
+def test_list_locations_filters_by_active(client, loc_a, loc_b):
+    client.put(f"/locations/{loc_b['id']}", json={"active": False})
+
+    r = client.get("/locations", params={"active": "true"})
+    assert r.status_code == 200
+    codes = [loc["code"] for loc in r.json()]
+    assert codes == ["WH-A"]
+    assert all(loc["active"] is True for loc in r.json())
+
+    r = client.get("/locations", params={"active": "false"})
+    assert r.status_code == 200
+    codes = [loc["code"] for loc in r.json()]
+    assert codes == ["WH-B"]
+    assert all(loc["active"] is False for loc in r.json())
+
+
+def test_list_locations_without_filter_returns_all(client, loc_a, loc_b):
+    client.put(f"/locations/{loc_b['id']}", json={"active": False})
+    r = client.get("/locations")
+    assert r.status_code == 200
+    codes = sorted(loc["code"] for loc in r.json())
+    assert codes == ["WH-A", "WH-B"]
+
+
 def test_locations_code_column_is_unique_in_schema(tmp_path):
     path = str(tmp_path / "schema.db")
     db.init_db(path)

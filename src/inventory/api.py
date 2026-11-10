@@ -187,8 +187,16 @@ def create_location(
 
 
 @router.get("/locations", response_model=list[Location])
-def list_locations(conn: sqlite3.Connection = Depends(get_db)) -> list[Location]:
-    rows = conn.execute("SELECT * FROM locations ORDER BY id").fetchall()
+def list_locations(
+    active: Optional[bool] = None, conn: sqlite3.Connection = Depends(get_db)
+) -> list[Location]:
+    sql = "SELECT * FROM locations"
+    params: list = []
+    if active is not None:
+        sql += " WHERE active = ?"
+        params.append(int(active))
+    sql += " ORDER BY id"
+    rows = conn.execute(sql, params).fetchall()
     return [Location(**dict(r)) for r in rows]
 
 
@@ -207,11 +215,13 @@ def update_location(
     row = conn.execute("SELECT * FROM locations WHERE id = ?", (location_id,)).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail=f"location {location_id} not found")
-    updates: dict[str, str] = {}
+    updates: dict[str, object] = {}
     if payload.code is not None:
         updates["code"] = payload.code
     if payload.name is not None:
         updates["name"] = payload.name
+    if payload.active is not None:
+        updates["active"] = int(payload.active)
     if updates:
         assignments = ", ".join(f"{column} = ?" for column in updates)
         try:
