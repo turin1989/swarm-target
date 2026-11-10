@@ -249,3 +249,38 @@ def test_get_item_by_sku_does_not_shadow_get_by_id(client, item):
     r = client.get(f"/items/{item['id']}")
     assert r.status_code == 200
     assert r.json()["id"] == item["id"]
+
+
+def test_list_items_filter_by_sku_exact_match(client, item):
+    client.post("/items", json={"sku": "WIDGET-10", "name": "Other"})
+    r = client.get("/items", params={"sku": "WIDGET-1"})
+    assert r.status_code == 200
+    body = r.json()
+    assert [i["sku"] for i in body["items"]] == ["WIDGET-1"]
+    assert body["total"] == 1
+
+
+def test_list_items_filter_by_unknown_sku_returns_empty_list(client, item):
+    r = client.get("/items", params={"sku": "NOPE"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["items"] == []
+    assert body["total"] == 0
+
+
+def test_list_items_sku_filter_combines_with_active(client):
+    r = client.post("/items", json={"sku": "GADGET-1", "name": "Gadget"})
+    item_id = r.json()["id"]
+    client.post("/items", json={"sku": "GADGET-2", "name": "Gadget 2"})
+    client.put(f"/items/{item_id}", json={"active": False})
+
+    r = client.get("/items", params={"sku": "GADGET-1", "active": "false"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()["items"]] == ["GADGET-1"]
+
+    r = client.get("/items", params={"sku": "GADGET-1", "active": "true"})
+    assert r.status_code == 200
+    assert r.json()["items"] == []
+
+    r = client.get("/items", params={"sku": "GADGET-2", "active": "true"})
+    assert [i["sku"] for i in r.json()["items"]] == ["GADGET-2"]
