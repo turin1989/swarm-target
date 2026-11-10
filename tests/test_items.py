@@ -32,6 +32,28 @@ def test_create_item_requires_sku_and_name(client):
     assert client.post("/items", json={"sku": "", "name": "x"}).status_code == 422
 
 
+def test_create_item_description_too_long_422(client):
+    r = client.post("/items", json={"sku": "LONG", "name": "x", "description": "d" * 2001})
+    assert r.status_code == 422
+
+
+def test_create_item_description_at_limit_ok(client):
+    r = client.post("/items", json={"sku": "LIMIT", "name": "x", "description": "d" * 2000})
+    assert r.status_code == 201
+    assert r.json()["description"] == "d" * 2000
+
+
+def test_update_item_description_too_long_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"description": "d" * 2001})
+    assert r.status_code == 422
+
+
+def test_update_item_description_at_limit_ok(client, item):
+    r = client.put(f"/items/{item['id']}", json={"description": "d" * 2000})
+    assert r.status_code == 200
+    assert r.json()["description"] == "d" * 2000
+
+
 def test_get_item(client, item):
     r = client.get(f"/items/{item['id']}")
     assert r.status_code == 200
@@ -171,3 +193,42 @@ def test_created_at_ignored_on_put(client, item):
     assert r.json()["created_at"] == item["created_at"]
     # Still unchanged on a fresh read
     assert client.get(f"/items/{item['id']}").json()["created_at"] == item["created_at"]
+
+
+# --- GET /items/by-sku/{sku} (T011) ---------------------------------------------
+
+
+def test_get_item_by_sku_returns_same_shape_as_get_by_id(client, item):
+    r = client.get(f"/items/by-sku/{item['sku']}")
+    assert r.status_code == 200
+    assert r.json() == client.get(f"/items/{item['id']}").json()
+    assert r.json() == item
+
+
+def test_get_item_by_sku_exact_match_only(client, item):
+    # partial / case-different skus do not match
+    assert client.get("/items/by-sku/WIDGET").status_code == 404
+    assert client.get("/items/by-sku/widget-1").status_code == 404
+
+
+def test_get_item_by_sku_unknown_404_with_detail(client):
+    r = client.get("/items/by-sku/NOPE-99")
+    assert r.status_code == 404
+    body = r.json()
+    assert body["error"]["code"] == "not_found"
+    assert body["error"]["message"] == "sku NOPE-99 not found"
+
+
+def test_get_item_by_sku_does_not_shadow_get_item_by_id(client, item):
+    # numeric id lookups still work
+    r = client.get(f"/items/{item['id']}")
+    assert r.status_code == 200
+    assert r.json()["id"] == item["id"]
+    # and a sku that collides with sub-resource names still resolves via by-sku
+    client.post("/items", json={"sku": "stock", "name": "Stocky"})
+    r = client.get("/items/by-sku/stock")
+    assert r.status_code == 200
+    assert r.json()["sku"] == "stock"
+    # item sub-resources remain reachable
+    assert client.get(f"/items/{item['id']}/stock").status_code == 200
+    assert client.get(f"/items/{item['id']}/movements").status_code == 200

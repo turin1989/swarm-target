@@ -10,14 +10,14 @@ MovementKind = Literal["receive", "ship", "transfer"]
 class ItemCreate(BaseModel):
     sku: str = Field(..., min_length=1, max_length=64)
     name: str = Field(..., min_length=1, max_length=200)
-    description: str = ""
+    description: str = Field("", max_length=2000)
     unit_price: float = 0.0
     reorder_point: int = 0
 
 
 class ItemUpdate(BaseModel):
     name: Optional[str] = None
-    description: Optional[str] = None
+    description: Optional[str] = Field(None, max_length=2000)
     unit_price: Optional[float] = None
     reorder_point: Optional[int] = None
     active: Optional[bool] = None
@@ -73,6 +73,11 @@ class StockLevel(BaseModel):
 class ItemStock(BaseModel):
     item_id: int
     total: int
+    levels: list[StockLevel]
+
+
+class LocationStock(BaseModel):
+    location_id: int
     levels: list[StockLevel]
 
 
