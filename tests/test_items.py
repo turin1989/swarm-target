@@ -335,3 +335,24 @@ def test_update_item_zero_unit_price_ok(client, item):
     r = client.put(f"/items/{item['id']}", json={"unit_price": 0})
     assert r.status_code == 200
     assert r.json()["unit_price"] == 0
+
+
+def test_create_item_sku_is_trimmed_and_uppercased(client):
+    r = client.post("/items", json={"sku": "  abc-1 ", "name": "Alpha"})
+    assert r.status_code == 201
+    assert r.json()["sku"] == "ABC-1"
+    # stored normalised: lookup by the normalised sku works
+    r2 = client.get("/items/by-sku/ABC-1")
+    assert r2.status_code == 200
+    assert r2.json()["sku"] == "ABC-1"
+
+
+def test_create_item_duplicate_sku_conflicts_case_insensitively(client):
+    assert client.post("/items", json={"sku": "  abc-1 ", "name": "Alpha"}).status_code == 201
+    assert client.post("/items", json={"sku": "ABC-1", "name": "Dup"}).status_code == 409
+    assert client.post("/items", json={"sku": "abc-1", "name": "Dup2"}).status_code == 409
+
+
+def test_create_item_whitespace_only_sku_422(client):
+    r = client.post("/items", json={"sku": "   ", "name": "Blank"})
+    assert r.status_code == 422
