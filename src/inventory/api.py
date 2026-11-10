@@ -13,6 +13,7 @@ from inventory.models import (
     ItemUpdate,
     Location,
     LocationCreate,
+    LocationUpdate,
     LowStockEntry,
     Movement,
     MovementCreate,
@@ -132,6 +133,26 @@ def get_location(location_id: int, conn: sqlite3.Connection = Depends(get_db)) -
     row = conn.execute("SELECT * FROM locations WHERE id = ?", (location_id,)).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail=f"location {location_id} not found")
+    return Location(**dict(row))
+
+
+@router.put("/locations/{location_id}", response_model=Location)
+def update_location(
+    location_id: int, payload: LocationUpdate, conn: sqlite3.Connection = Depends(get_db)
+) -> Location:
+    row = conn.execute("SELECT * FROM locations WHERE id = ?", (location_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"location {location_id} not found")
+    updates = {
+        k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None
+    }
+    if updates:
+        assignments = ", ".join(f"{k} = ?" for k in updates)
+        conn.execute(
+            f"UPDATE locations SET {assignments} WHERE id = ?",
+            [*updates.values(), location_id],
+        )
+    row = conn.execute("SELECT * FROM locations WHERE id = ?", (location_id,)).fetchone()
     return Location(**dict(row))
 
 
