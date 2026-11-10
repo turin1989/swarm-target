@@ -176,3 +176,37 @@ def test_get_item_by_sku_does_not_shadow_get_by_id(client, item):
     assert r.json()["id"] == item["id"]
     # and non-integer single-segment paths still 422 against the id route
     assert client.get("/items/not-an-int").status_code == 422
+
+
+def test_list_items_total_count_header(client):
+    for n in range(5):
+        client.post("/items", json={"sku": f"TC{n}", "name": f"N{n}"})
+    r = client.get("/items")
+    assert r.status_code == 200
+    assert r.headers["X-Total-Count"] == "5"
+
+
+def test_list_items_total_count_ignores_limit_and_offset(client):
+    for n in range(7):
+        client.post("/items", json={"sku": f"TC{n}", "name": f"N{n}"})
+    r = client.get("/items", params={"limit": 2, "offset": 3})
+    assert r.status_code == 200
+    assert len(r.json()) == 2
+    assert r.headers["X-Total-Count"] == "7"
+
+
+def test_list_items_total_count_respects_active_filter(client, item):
+    client.post("/items", json={"sku": "INACTIVE-1", "name": "Old1"})
+    client.post("/items", json={"sku": "INACTIVE-2", "name": "Old2"})
+    client.put("/items/2", json={"active": False})
+    client.put("/items/3", json={"active": False})
+    assert client.get("/items", params={"active": "true"}).headers["X-Total-Count"] == "1"
+    assert client.get(
+        "/items", params={"active": "false", "limit": 1}
+    ).headers["X-Total-Count"] == "2"
+
+
+def test_list_items_total_count_empty(client):
+    r = client.get("/items")
+    assert r.headers["X-Total-Count"] == "0"
+    assert r.json() == []
