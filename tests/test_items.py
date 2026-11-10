@@ -39,7 +39,8 @@ def test_get_item(client, item):
 def test_get_missing_item_404(client):
     r = client.get("/items/999")
     assert r.status_code == 404
-    assert "not found" in r.json()["detail"]
+    assert "not found" in r.json()["error"]["message"]
+    assert r.json()["error"]["code"] == "not_found"
 
 
 def test_list_items_ordered_by_id(client):
@@ -154,14 +155,17 @@ def test_delete_item(client, item):
 def test_delete_missing_item_404_with_detail(client):
     r = client.delete("/items/999")
     assert r.status_code == 404
-    assert r.json()["detail"] == "item 999 not found"
+    assert r.json()["error"] == {"code": "not_found", "message": "item 999 not found"}
 
 
 def test_delete_item_twice_second_is_404(client, item):
     assert client.delete(f"/items/{item['id']}").status_code == 204
     r = client.delete(f"/items/{item['id']}")
     assert r.status_code == 404
-    assert r.json()["detail"] == f"item {item['id']} not found"
+    assert r.json()["error"] == {
+        "code": "not_found",
+        "message": f"item {item['id']} not found",
+    }
 
 
 def test_delete_item_cascades_stock(client, item, loc_a):
