@@ -1,5 +1,7 @@
 """Locations, movements, stock levels."""
 
+from datetime import datetime, timezone
+
 import pytest
 
 
@@ -413,6 +415,54 @@ def test_movement_note_longer_than_500_chars_rejected_422(client, item, loc_a):
     # nothing was recorded
     assert client.get("/movements").json() == []
     assert client.get(f"/items/{item['id']}/stock").json()["total"] == 0
+
+
+def test_movement_response_includes_created_at(client, item, loc_a):
+    before = datetime.now(timezone.utc)
+    r = _move(client, item_id=item["id"], kind="receive", quantity=3, to_location_id=loc_a["id"])
+    after = datetime.now(timezone.utc)
+    assert r.status_code == 201
+    body = r.json()
+    assert "created_at" in body
+    # created_at parses as an ISO-8601 timestamp in UTC
+    created = datetime.fromisoformat(body["created_at"])
+    assert created.tzinfo is not None
+    assert created.utcoffset().total_seconds() == 0
+    # set at the time the movement was applied
+    assert before.replace(microsecond=0) <= created <= after
+
+
+def test_listed_movements_include_created_at(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", quantity=1, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", quantity=2, to_location_id=loc_a["id"])
+    movements = client.get("/movements").json()
+    assert len(movements) == 2
+    for m in movements:
+        created = datetime.fromisoformat(m["created_at"])
+        assert created.tzinfo is not None
+        assert created.utcoffset().total_seconds() == 0
+
+
+def test_movements_created_at_column_persisted(client, item, loc_a):
+    """The created_at value is stored in the movements table itself."""
+    from inventory.db import SCHEMA, connect
+    from inventory.models import MovementCreate
+    from inventory.services.stock import apply_movement
+
+    conn = connect(":memory:")
+    conn.executescript(SCHEMA)
+    columns = [row[1] for row in conn.execute("PRAGMA table_info(movements)").fetchall()]
+    assert "created_at" in columns
+
+    conn.execute("INSERT INTO items (sku, name) VALUES ('S-1', 'Thing')")
+    conn.execute("INSERT INTO locations (code, name) VALUES ('WH-A', 'Warehouse A')")
+    m = apply_movement(
+        conn, MovementCreate(item_id=1, kind="receive", quantity=2, to_location_id=1)
+    )
+    row = conn.execute("SELECT created_at FROM movements WHERE id = ?", (m.id,)).fetchone()
+    assert row["created_at"] == m.created_at
+    created = datetime.fromisoformat(row["created_at"])
+    assert created.utcoffset().total_seconds() == 0
 
 
 def test_movement_note_exactly_500_chars_accepted(client, item, loc_a):
