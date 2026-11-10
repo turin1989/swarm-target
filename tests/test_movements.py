@@ -115,6 +115,40 @@ def test_transfer_does_not_change_total_stock(client, item, loc_a, loc_b):
     assert before == after == 9
 
 
+def test_transfer_same_location_rejected(client, item, loc_a):
+    """T046: a transfer where source == destination returns 400 with 'same location'."""
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=2,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_a["id"],
+    )
+    assert r.status_code == 400
+    assert "same location" in r.json()["detail"]
+
+
+def test_transfer_same_location_writes_no_movement(client, item, loc_a):
+    """T046: a rejected same-location transfer leaves no movement row and stock unchanged."""
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    before = client.get("/movements").json()
+    _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=2,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_a["id"],
+    )
+    after = client.get("/movements").json()
+    assert after == before
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 5
+    assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "qty": 5}]
+
+
 def test_transfer_to_existing_destination_accumulates(client, item, loc_a, loc_b):
     _move(client, item_id=item["id"], kind="receive", qty=6, to_location_id=loc_a["id"])
     _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_b["id"])
