@@ -107,6 +107,7 @@ _SORTABLE_ITEM_COLUMNS = {"id", "name", "sku"}
 
 @router.get("/items", response_model=ItemPage)
 def list_items(
+    response: Response,
     active: Optional[bool] = None,
     sort: str = Query("id", pattern=r"^-?(id|name|sku)$"),
     limit: int = Query(100, ge=1, le=500),
@@ -125,6 +126,7 @@ def list_items(
     if sort not in _SORTABLE_ITEM_COLUMNS:  # defence in depth; pattern already enforces
         raise HTTPException(status_code=422, detail=f"invalid sort field {sort!r}")
     total = conn.execute(f"SELECT COUNT(*) FROM items{where}", where_params).fetchone()[0]
+    response.headers["X-Total-Count"] = str(total)
     rows = conn.execute(
         f"SELECT * FROM items{where} ORDER BY {sort} {direction} LIMIT ? OFFSET ?",
         [*where_params, limit, offset],

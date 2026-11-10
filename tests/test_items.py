@@ -453,3 +453,49 @@ def test_update_item_zero_reorder_level_not_rejected(client, item):
     # zero is a valid (non-negative) value, so validation must not return 422
     r = client.put(f"/items/{item['id']}", json={"reorder_level": 0})
     assert r.status_code == 200
+
+
+# --- X-Total-Count header (T037) ---------------------------------------------
+
+
+def test_list_items_sets_x_total_count_header(client):
+    for n in range(3):
+        client.post("/items", json={"sku": f"H{n}", "name": f"H{n}"})
+    r = client.get("/items")
+    assert r.status_code == 200
+    assert r.headers["X-Total-Count"] == "3"
+
+
+def test_x_total_count_ignores_limit_and_offset(client):
+    for n in range(5):
+        client.post("/items", json={"sku": f"HP{n}", "name": f"HP{n}"})
+    r = client.get("/items", params={"limit": 2, "offset": 1})
+    assert r.status_code == 200
+    assert len(r.json()["items"]) == 2
+    assert r.headers["X-Total-Count"] == "5"
+
+
+def test_x_total_count_respects_active_filter(client, item):
+    client.post("/items", json={"sku": "INACTIVE", "name": "Old"})
+    client.put("/items/2", json={"active": False})
+    r_active = client.get("/items", params={"active": "true", "limit": 1})
+    assert r_active.headers["X-Total-Count"] == "1"
+    r_inactive = client.get("/items", params={"active": "false"})
+    assert r_inactive.headers["X-Total-Count"] == "1"
+    r_all = client.get("/items", params={"limit": 1})
+    assert r_all.headers["X-Total-Count"] == "2"
+
+
+def test_x_total_count_zero_when_no_items(client):
+    r = client.get("/items")
+    assert r.status_code == 200
+    assert r.headers["X-Total-Count"] == "0"
+
+
+def test_x_total_count_when_offset_beyond_results(client):
+    for n in range(3):
+        client.post("/items", json={"sku": f"OB{n}", "name": f"OB{n}"})
+    r = client.get("/items", params={"offset": 10})
+    assert r.status_code == 200
+    assert r.json()["items"] == []
+    assert r.headers["X-Total-Count"] == "3"
