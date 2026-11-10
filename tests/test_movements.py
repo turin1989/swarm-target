@@ -1,5 +1,7 @@
 """Locations, movements, stock levels."""
 
+from datetime import datetime, timezone
+
 import pytest
 
 
@@ -167,6 +169,56 @@ def test_list_movements_pagination(client, item, loc_a):
         _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
     r = client.get("/movements", params={"limit": 2, "offset": 2})
     assert [m["id"] for m in r.json()] == [3, 4]
+
+
+# --- movements.created_at (T042) ----------------------------------------------
+
+
+def test_movement_response_includes_created_at(client, item, loc_a):
+    before = datetime.now(timezone.utc)
+    r = _move(client, item_id=item["id"], kind="receive", qty=3, to_location_id=loc_a["id"])
+    after = datetime.now(timezone.utc)
+    assert r.status_code == 201
+    body = r.json()
+    assert "created_at" in body
+
+    # Must parse as an ISO-8601 timestamp in UTC, set when the movement was applied.
+    ts = datetime.fromisoformat(body["created_at"])
+    assert ts.tzinfo is not None
+    assert ts.utcoffset().total_seconds() == 0
+    assert before <= ts <= after
+
+
+def test_list_movements_includes_created_at(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=2,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    movements = client.get("/movements").json()
+    assert len(movements) == 2
+    for m in movements:
+        ts = datetime.fromisoformat(m["created_at"])
+        assert ts.tzinfo is not None
+        assert ts.utcoffset().total_seconds() == 0
+
+
+def test_created_at_stored_in_db_column(client, item, loc_a, tmp_path):
+    import sqlite3
+
+    _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
+    conn = sqlite3.connect(str(tmp_path / "test.db"))
+    try:
+        (created_at,) = conn.execute("SELECT created_at FROM movements WHERE id = 1").fetchone()
+    finally:
+        conn.close()
+    assert isinstance(created_at, str) and created_at
+    ts = datetime.fromisoformat(created_at)
+    assert ts.utcoffset().total_seconds() == 0
 
 
 # --- DELETE /locations/{id} (T013) --------------------------------------------
