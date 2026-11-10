@@ -149,6 +149,62 @@ def test_movement_invalid_kind_422(client, item, loc_a):
     assert r.status_code == 422
 
 
+def test_movement_response_includes_created_at(client, item, loc_a):
+    from datetime import datetime, timezone
+
+    before = datetime.now(timezone.utc)
+    r = _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])
+    after = datetime.now(timezone.utc)
+    assert r.status_code == 201
+    body = r.json()
+    assert "created_at" in body
+    # ISO-8601 UTC string, parseable and within the request window
+    created = datetime.fromisoformat(body["created_at"])
+    assert created.utcoffset() is not None
+    assert created.utcoffset().total_seconds() == 0  # UTC
+    assert before <= created <= after
+
+
+def test_list_movements_includes_created_at(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=3, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="ship", qty=1, from_location_id=loc_a["id"])
+    movements = client.get("/movements").json()
+    assert len(movements) == 2
+    from datetime import datetime
+
+    for m in movements:
+        assert isinstance(m["created_at"], str)
+        parsed = datetime.fromisoformat(m["created_at"])
+        assert parsed.utcoffset() is not None
+        assert parsed.utcoffset().total_seconds() == 0
+
+
+def test_created_at_persisted_in_db(tmp_path):
+    """The movements.created_at column is set when the movement is applied."""
+    from inventory import db as dbmod
+    from inventory.models import MovementCreate
+    from inventory.services import stock
+
+    path = str(tmp_path / "direct.db")
+    dbmod.init_db(path)
+    conn = dbmod.connect(path)
+    try:
+        conn.execute("INSERT INTO items (sku, name) VALUES ('S1', 'Thing')")
+        conn.execute("INSERT INTO locations (code, name) VALUES ('L1', 'Loc 1')")
+        m = stock.apply_movement(
+            conn, MovementCreate(item_id=1, kind="receive", qty=2, to_location_id=1)
+        )
+        row = conn.execute("SELECT created_at FROM movements WHERE id = ?", (m.id,)).fetchone()
+        assert row["created_at"] == m.created_at
+        from datetime import datetime
+
+        parsed = datetime.fromisoformat(row["created_at"])
+        assert parsed.utcoffset() is not None
+        assert parsed.utcoffset().total_seconds() == 0
+    finally:
+        conn.close()
+
+
 def test_list_movements_pagination(client, item, loc_a):
     for _ in range(4):
         _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
