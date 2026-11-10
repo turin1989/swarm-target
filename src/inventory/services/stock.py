@@ -171,6 +171,32 @@ def get_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
     return _row_to_movement(row)
 
 
+def reverse_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
+    """Create and apply a new movement that undoes an existing one.
+
+    receive -> ship, ship -> receive, transfer -> transfer with the
+    locations swapped. The new movement's note records what it reverses.
+    """
+    original = get_movement(conn, movement_id)
+    if original.kind == "receive":
+        kind, from_id, to_id = "ship", original.to_location_id, None
+    elif original.kind == "ship":
+        kind, from_id, to_id = "receive", None, original.from_location_id
+    elif original.kind == "transfer":
+        kind, from_id, to_id = "transfer", original.to_location_id, original.from_location_id
+    else:
+        raise ValidationError(f"movement kind {original.kind!r} cannot be reversed")
+    reversal = MovementCreate(
+        item_id=original.item_id,
+        kind=kind,
+        quantity=original.quantity,
+        from_location_id=from_id,
+        to_location_id=to_id,
+        note=f"reversal of {movement_id}",
+    )
+    return apply_movement(conn, reversal)
+
+
 def list_movements(
     conn: sqlite3.Connection,
     item_id: int | None = None,
