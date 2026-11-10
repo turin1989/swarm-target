@@ -30,6 +30,30 @@ def test_create_item_requires_sku_and_name(client):
     assert client.post("/items", json={"sku": "", "name": "x"}).status_code == 422
 
 
+def test_create_item_negative_reorder_point_422(client):
+    r = client.post("/items", json={"sku": "NEG-1", "name": "Neg", "reorder_point": -1})
+    assert r.status_code == 422
+
+
+def test_create_item_zero_reorder_point_ok(client):
+    r = client.post("/items", json={"sku": "ZERO-1", "name": "Zero", "reorder_point": 0})
+    assert r.status_code == 201
+    assert r.json()["reorder_point"] == 0
+
+
+def test_update_item_negative_reorder_point_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": -5})
+    assert r.status_code == 422
+    # item unchanged
+    assert client.get(f"/items/{item['id']}").json()["reorder_point"] == item["reorder_point"]
+
+
+def test_update_item_nonnegative_reorder_point_accepted(client, item):
+    # a non-negative reorder_point must pass validation (no 422)
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": 7})
+    assert r.status_code == 200
+
+
 def test_get_item(client, item):
     r = client.get(f"/items/{item['id']}")
     assert r.status_code == 200
