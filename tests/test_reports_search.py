@@ -46,6 +46,54 @@ def test_low_stock_sorted_by_sku(client, loc_a):
     assert [e["sku"] for e in client.get("/reports/low-stock").json()] == ["A", "Z"]
 
 
+def test_low_stock_scoped_to_location_counts_only_that_location(client, loc_a, loc_b):
+    # 2 at A + 4 at B = 6 total (>= 5), but only 2 at A (< 5)
+    item = _seed(client, "SPLIT", "Split", reorder=5, qty=2, loc=loc_a)
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "qty": 4, "to_location_id": loc_b["id"]},
+    )
+    # not low overall
+    assert client.get("/reports/low-stock").json() == []
+    # low when scoped to A
+    r = client.get("/reports/low-stock", params={"location_id": loc_a["id"]})
+    assert r.status_code == 200
+    entries = r.json()
+    assert [e["sku"] for e in entries] == ["SPLIT"]
+    assert entries[0]["total_qty"] == 2
+    # also low when scoped to B (4 < 5), counting only B's stock
+    r = client.get("/reports/low-stock", params={"location_id": loc_b["id"]})
+    assert [(e["sku"], e["total_qty"]) for e in r.json()] == [("SPLIT", 4)]
+
+
+def test_low_stock_scoped_excludes_items_well_stocked_at_location(client, loc_a, loc_b):
+    _seed(client, "FULL", "Full", reorder=5, qty=10, loc=loc_a)
+    r = client.get("/reports/low-stock", params={"location_id": loc_a["id"]})
+    assert r.status_code == 200
+    assert r.json() == []
+    # no stock at B, so it is low there
+    r = client.get("/reports/low-stock", params={"location_id": loc_b["id"]})
+    assert [(e["sku"], e["total_qty"]) for e in r.json()] == [("FULL", 0)]
+
+
+def test_low_stock_unknown_location_returns_404(client, loc_a):
+    _seed(client, "LOW", "Low", reorder=5, qty=2, loc=loc_a)
+    r = client.get("/reports/low-stock", params={"location_id": 9999})
+    assert r.status_code == 404
+
+
+def test_low_stock_without_location_param_unchanged(client, loc_a, loc_b):
+    item = _seed(client, "LOW", "Low", reorder=10, qty=3, loc=loc_a)
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "qty": 4, "to_location_id": loc_b["id"]},
+    )
+    r = client.get("/reports/low-stock")
+    assert r.status_code == 200
+    entries = r.json()
+    assert [(e["sku"], e["total_qty"]) for e in entries] == [("LOW", 7)]
+
+
 def test_inventory_value(client, loc_a):
     _seed(client, "P1", "p1", reorder=0, qty=3, loc=loc_a, price=2.0)
     _seed(client, "P2", "p2", reorder=0, qty=1, loc=loc_a, price=10.0)
