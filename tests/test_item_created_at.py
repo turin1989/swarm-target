@@ -38,7 +38,7 @@ def test_created_at_returned_by_list_items(client):
     created = _create(client)
     r = client.get("/items")
     assert r.status_code == 200
-    rows = r.json()
+    rows = r.json()["items"]
     assert rows and rows[0]["created_at"] == created["created_at"]
 
 
