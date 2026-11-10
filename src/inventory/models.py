@@ -4,7 +4,9 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-MovementKind = Literal["receive", "ship", "transfer"]
+MovementKind = Literal["receive", "ship", "transfer", "adjust"]
+
+LOCATION_CODE_PATTERN = r"^[A-Z0-9][A-Z0-9-]{0,31}$"
 
 
 class ItemCreate(BaseModel):
@@ -50,12 +52,14 @@ class ItemPage(BaseModel):
 
 
 class LocationCreate(BaseModel):
-    code: str = Field(..., min_length=1, max_length=32)
+    code: str = Field(..., min_length=1, max_length=32, pattern=LOCATION_CODE_PATTERN)
     name: str = Field(..., min_length=1, max_length=200)
 
 
 class LocationUpdate(BaseModel):
-    code: Optional[str] = Field(default=None, min_length=1, max_length=32)
+    code: Optional[str] = Field(
+        default=None, min_length=1, max_length=32, pattern=LOCATION_CODE_PATTERN
+    )
     name: Optional[str] = Field(default=None, min_length=1, max_length=200)
 
 
@@ -71,7 +75,7 @@ class MovementCreate(BaseModel):
     qty: int = Field(..., gt=0)
     from_location_id: Optional[int] = None
     to_location_id: Optional[int] = None
-    note: str = ""
+    note: str = Field(default="", max_length=500)
     reference: Optional[str] = Field(default=None, max_length=64)
 
 
