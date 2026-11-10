@@ -128,3 +128,28 @@ def test_search_description_matches_keep_name_ordering(client):
 def test_search_requires_query(client):
     assert client.get("/search").status_code == 422
     assert client.get("/search", params={"q": ""}).status_code == 422
+
+
+def test_search_trims_surrounding_whitespace(client):
+    client.post("/items", json={"sku": "BOLT-M8", "name": "Bolt"})
+    client.post("/items", json={"sku": "NUT-M8", "name": "Nut"})
+    r = client.get("/search", params={"q": "  Bolt "})
+    assert r.status_code == 200
+    trimmed = client.get("/search", params={"q": "Bolt"})
+    assert r.json() == trimmed.json()
+    assert [i["sku"] for i in r.json()] == ["BOLT-M8"]
+
+
+def test_search_query_longer_than_100_chars_rejected(client):
+    assert client.get("/search", params={"q": "x" * 101}).status_code == 422
+
+
+def test_search_query_of_exactly_100_chars_accepted(client):
+    r = client.get("/search", params={"q": "x" * 100})
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_search_whitespace_only_query_rejected(client):
+    assert client.get("/search", params={"q": "   "}).status_code == 422
+    assert client.get("/search", params={"q": "\t\n "}).status_code == 422
