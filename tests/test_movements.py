@@ -233,6 +233,117 @@ def test_apply_movement_rejects_non_positive_qty_directly():
     assert conn.execute("SELECT COUNT(*) AS n FROM movements").fetchone()["n"] == 0
 
 
+# --- insufficient stock rejected with 409 (T005) --------------------------------
+
+
+def test_ship_more_than_on_hand_409(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    before = client.get(f"/items/{item['id']}/stock").json()
+
+    r = _move(client, item_id=item["id"], kind="ship", qty=6, from_location_id=loc_a["id"])
+    assert r.status_code == 409
+    assert "insufficient" in r.json()["detail"]
+
+    # No movement row was written and stock levels are unchanged.
+    assert len(client.get("/movements").json()) == 1
+    assert client.get(f"/items/{item['id']}/stock").json() == before
+
+
+def test_ship_with_no_stock_at_all_409(client, item, loc_a):
+    r = _move(client, item_id=item["id"], kind="ship", qty=1, from_location_id=loc_a["id"])
+    assert r.status_code == 409
+    assert "insufficient" in r.json()["detail"]
+    assert client.get("/movements").json() == []
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 0
+
+
+def test_ship_exactly_on_hand_succeeds(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    r = _move(client, item_id=item["id"], kind="ship", qty=5, from_location_id=loc_a["id"])
+    assert r.status_code == 201
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 0
+
+
+def test_transfer_more_than_source_stock_409(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=3, to_location_id=loc_a["id"])
+    before = client.get(f"/items/{item['id']}/stock").json()
+
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=4,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    assert r.status_code == 409
+    assert "insufficient" in r.json()["detail"]
+
+    # No movement row was written and stock levels are unchanged.
+    assert len(client.get("/movements").json()) == 1
+    assert client.get(f"/items/{item['id']}/stock").json() == before
+
+
+def test_transfer_checks_source_not_destination(client, item, loc_a, loc_b):
+    # Plenty of stock at B, none at A; transferring from A must still fail.
+    _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_b["id"])
+
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=1,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    assert r.status_code == 409
+    assert "insufficient" in r.json()["detail"]
+
+
+def test_transfer_exactly_source_stock_succeeds(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=3, to_location_id=loc_a["id"])
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=3,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    assert r.status_code == 201
+    s = client.get(f"/items/{item['id']}/stock").json()
+    levels = {lvl["location_id"]: lvl["qty"] for lvl in s["levels"]}
+    assert levels[loc_a["id"]] == 0
+    assert levels[loc_b["id"]] == 3
+
+
+def test_apply_movement_rejects_insufficient_stock_directly():
+    """The service layer raises StockError(409) and writes nothing."""
+    from inventory.db import SCHEMA, connect
+    from inventory.models import MovementCreate
+    from inventory.services.stock import StockError, apply_movement
+
+    conn = connect(":memory:")
+    conn.executescript(SCHEMA)
+    conn.execute(
+        "INSERT INTO items (sku, name, description, unit_price, reorder_point, active) "
+        "VALUES ('S1', 'Widget', '', 1.0, 0, 1)"
+    )
+    conn.execute("INSERT INTO locations (code, name) VALUES ('WH-A', 'Warehouse A')")
+    conn.execute("INSERT INTO stock_levels (item_id, location_id, qty) VALUES (1, 1, 2)")
+
+    m = MovementCreate(item_id=1, kind="ship", qty=3, from_location_id=1)
+    with pytest.raises(StockError) as exc:
+        apply_movement(conn, m)
+    assert exc.value.status_code == 409
+    assert "insufficient" in str(exc.value)
+    assert conn.execute("SELECT COUNT(*) AS n FROM movements").fetchone()["n"] == 0
+    row = conn.execute(
+        "SELECT qty FROM stock_levels WHERE item_id = 1 AND location_id = 1"
+    ).fetchone()
+    assert row["qty"] == 2
+
+
 def test_movement_invalid_kind_422(client, item, loc_a):
     r = _move(client, item_id=item["id"], kind="explode", qty=1, to_location_id=loc_a["id"])
     assert r.status_code == 422
