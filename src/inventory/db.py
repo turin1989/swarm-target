@@ -40,7 +40,8 @@ CREATE TABLE IF NOT EXISTS movements (
     qty INTEGER NOT NULL,
     from_location_id INTEGER REFERENCES locations(id),
     to_location_id INTEGER REFERENCES locations(id),
-    note TEXT NOT NULL DEFAULT ''
+    note TEXT NOT NULL DEFAULT '',
+    reference TEXT
 );
 
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -75,6 +76,12 @@ def init_db(path: str) -> None:
             conn.execute(
                 "ALTER TABLE locations ADD COLUMN active INTEGER NOT NULL DEFAULT 1"
             )
+        # Migration: older databases may lack movements.reference.
+        movement_cols = {
+            r["name"] for r in conn.execute("PRAGMA table_info('movements')").fetchall()
+        }
+        if "reference" not in movement_cols:
+            conn.execute("ALTER TABLE movements ADD COLUMN reference TEXT")
         row = conn.execute("SELECT version FROM schema_version").fetchone()
         if row is None:
             conn.execute(
