@@ -274,3 +274,49 @@ def test_filter_movements_no_matches(client, item, mixed_movements):
     r = client.get("/movements", params={"item_id": 999})
     assert r.status_code == 200
     assert r.json() == []
+
+
+# --- inactive items ----------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "kind,locs",
+    [
+        ("receive", {"to_location_id": 1}),
+        ("ship", {"from_location_id": 1}),
+        ("transfer", {"from_location_id": 1, "to_location_id": 2}),
+    ],
+)
+def test_movement_for_inactive_item_409(client, item, loc_a, loc_b, kind, locs):
+    # seed some stock while the item is still active
+    r = _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])
+    assert r.status_code == 201
+    before = client.get(f"/items/{item['id']}/stock").json()
+
+    r = client.put(f"/items/{item['id']}", json={"active": False})
+    assert r.status_code == 200
+    assert r.json()["active"] is False
+
+    r = _move(client, item_id=item["id"], kind=kind, qty=3, **locs)
+    assert r.status_code == 409
+    assert "inactive" in r.json()["detail"]
+
+    # stock levels unchanged
+    after = client.get(f"/items/{item['id']}/stock").json()
+    assert after == before
+    assert after["total"] == 10
+
+    # no movement record was created for the rejected request
+    movements = client.get("/movements", params={"item_id": item["id"]}).json()
+    assert len(movements) == 1
+
+
+def test_movement_allowed_again_after_reactivation(client, item, loc_a):
+    client.put(f"/items/{item['id']}", json={"active": False})
+    r = _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    assert r.status_code == 409
+
+    client.put(f"/items/{item['id']}", json={"active": True})
+    r = _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    assert r.status_code == 201
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 5
