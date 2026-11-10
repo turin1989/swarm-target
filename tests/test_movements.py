@@ -605,6 +605,84 @@ def test_movement_note_exactly_500_chars_accepted(client, item, loc_a):
     assert r.json()["note"] == note
 
 
+# --- get movement by id (T015) -------------------------------------------------
+
+
+def test_get_movement_by_id_matches_post_response(client, item, loc_a):
+    created = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        quantity=4,
+        to_location_id=loc_a["id"],
+        note="restock",
+        reference="PO-1",
+    ).json()
+
+    r = client.get(f"/movements/{created['id']}")
+    assert r.status_code == 200
+    # same shape (and values) as the POST response
+    assert r.json() == created
+
+
+def test_get_movement_by_id_each_kind(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", quantity=10, to_location_id=loc_a["id"])
+    _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        quantity=2,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    _move(client, item_id=item["id"], kind="ship", quantity=1, from_location_id=loc_b["id"])
+
+    assert client.get("/movements/1").json()["kind"] == "receive"
+    body = client.get("/movements/2").json()
+    assert body["kind"] == "transfer"
+    assert body["from_location_id"] == loc_a["id"]
+    assert body["to_location_id"] == loc_b["id"]
+    assert client.get("/movements/3").json()["kind"] == "ship"
+
+
+def test_get_movement_uses_quantity_not_qty(client, item, loc_a):
+    created = _move(
+        client, item_id=item["id"], kind="receive", quantity=6, to_location_id=loc_a["id"]
+    ).json()
+    body = client.get(f"/movements/{created['id']}").json()
+    assert body["quantity"] == 6
+    assert "qty" not in body
+
+
+def test_get_movement_unknown_id_404(client):
+    r = client.get("/movements/999")
+    assert r.status_code == 404
+    body = r.json()
+    assert body["error"]["code"] == "not_found"
+    assert body["error"]["message"] == "movement 999 not found"
+
+
+def test_get_movement_route_reuses_service(client):
+    """The route delegates to stock.get_movement rather than duplicating SQL."""
+    import inspect
+
+    from inventory import api
+
+    source = inspect.getsource(api.get_movement)
+    assert "stock.get_movement" in source
+
+
+def test_service_get_movement_raises_not_found():
+    from inventory.db import SCHEMA, connect
+    from inventory.services.errors import NotFoundError
+    from inventory.services.stock import get_movement
+
+    conn = connect(":memory:")
+    conn.executescript(SCHEMA)
+    with pytest.raises(NotFoundError, match="movement 42 not found"):
+        get_movement(conn, 42)
+
+
 # --- per-item movement history (T032) -----------------------------------------
 
 
