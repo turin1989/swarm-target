@@ -4,7 +4,6 @@ import sqlite3
 
 from inventory import db
 
-
 # --- API exposes reorder_level ---------------------------------------------------
 
 
