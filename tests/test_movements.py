@@ -131,6 +131,54 @@ def test_movement_unknown_item_404(client, loc_a):
     assert r.status_code == 404
 
 
+# --- non-positive quantities (T040) --------------------------------------------
+
+
+@pytest.mark.parametrize("qty", [0, -1, -10])
+@pytest.mark.parametrize(
+    "kind,payload",
+    [
+        ("receive", {"to_location_id": 1}),
+        ("ship", {"from_location_id": 1}),
+        ("transfer", {"from_location_id": 1, "to_location_id": 2}),
+    ],
+)
+def test_movement_non_positive_qty_422(client, item, loc_a, loc_b, kind, payload, qty):
+    # Seed some stock so the rejection isn't caused by anything else.
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    before = client.get(f"/items/{item['id']}/stock").json()
+
+    r = _move(client, item_id=item["id"], kind=kind, qty=qty, **payload)
+    assert r.status_code == 422
+
+    # No movement row was written and stock is unchanged.
+    assert len(client.get("/movements").json()) == 1
+    assert client.get(f"/items/{item['id']}/stock").json() == before
+
+
+def test_apply_movement_rejects_non_positive_qty_directly():
+    """The service layer guards against qty <= 0 even if validation is bypassed."""
+    from inventory.db import SCHEMA, connect
+    from inventory.models import MovementCreate
+    from inventory.services.stock import StockError, apply_movement
+
+    conn = connect(":memory:")
+    conn.executescript(SCHEMA)
+    conn.execute(
+        "INSERT INTO items (sku, name, description, unit_price, reorder_point, active) "
+        "VALUES ('S1', 'Widget', '', 1.0, 0, 1)"
+    )
+    conn.execute("INSERT INTO locations (code, name) VALUES ('WH-A', 'Warehouse A')")
+
+    m = MovementCreate.model_construct(
+        item_id=1, kind="receive", qty=0, from_location_id=None, to_location_id=1, note=""
+    )
+    with pytest.raises(StockError) as exc:
+        apply_movement(conn, m)
+    assert exc.value.status_code == 422
+    assert conn.execute("SELECT COUNT(*) AS n FROM movements").fetchone()["n"] == 0
+
+
 def test_movement_invalid_kind_422(client, item, loc_a):
     r = _move(client, item_id=item["id"], kind="explode", qty=1, to_location_id=loc_a["id"])
     assert r.status_code == 422
