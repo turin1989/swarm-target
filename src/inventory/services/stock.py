@@ -1,9 +1,15 @@
 """Stock level bookkeeping and movement application."""
 
 import sqlite3
+from datetime import datetime, timezone
 
 from inventory.models import Movement, MovementCreate, StockLevel
 from inventory.services.errors import ConflictError, NotFoundError, ValidationError
+
+
+def _utc_now_iso() -> str:
+    """Current UTC time as an ISO-8601 string (e.g. 2026-11-10T12:34:56.789012+00:00)."""
+    return datetime.now(timezone.utc).isoformat()
 
 
 def get_stock_level(conn: sqlite3.Connection, item_id: int, location_id: int) -> int:
@@ -87,9 +93,11 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
     if m.qty <= 0:
         raise ValidationError("qty must be a positive integer")
 
-    item = conn.execute("SELECT id FROM items WHERE id = ?", (m.item_id,)).fetchone()
+    item = conn.execute("SELECT id, active FROM items WHERE id = ?", (m.item_id,)).fetchone()
     if item is None:
         raise NotFoundError(f"item {m.item_id} not found")
+    if not item["active"]:
+        raise ConflictError(f"item {m.item_id} is inactive")
 
     if m.kind == "receive":
         to_id = _require_location(conn, m.to_location_id, "to_location_id")
@@ -116,10 +124,20 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
 
     cur = conn.execute(
         """
-        INSERT INTO movements (item_id, kind, qty, from_location_id, to_location_id, note, reference)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO movements
+            (item_id, kind, qty, from_location_id, to_location_id, note, reference, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (m.item_id, m.kind, m.qty, m.from_location_id, m.to_location_id, m.note, m.reference),
+        (
+            m.item_id,
+            m.kind,
+            m.qty,
+            m.from_location_id,
+            m.to_location_id,
+            m.note,
+            m.reference,
+            _utc_now_iso(),
+        ),
     )
     return get_movement(conn, cur.lastrowid)
 

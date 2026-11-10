@@ -37,6 +37,8 @@ class ItemUpdate(BaseModel):
     unit_price: Optional[float] = Field(default=None, ge=0)
     reorder_level: Optional[int] = Field(default=None, ge=0)
     active: Optional[bool] = None
+    # Accepted for convenience but ignored: created_at is server-managed.
+    created_at: Optional[str] = None
 
 
 class Item(BaseModel):
@@ -48,6 +50,7 @@ class Item(BaseModel):
     reorder_level: int
     active: bool
     barcode: Optional[str] = None
+    created_at: str
 
 
 class ItemPage(BaseModel):
@@ -96,6 +99,7 @@ class Movement(BaseModel):
     to_location_id: Optional[int]
     note: str
     reference: Optional[str] = None
+    created_at: str
 
 
 class StockLevel(BaseModel):

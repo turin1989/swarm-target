@@ -103,6 +103,22 @@ def test_apply_movement_insufficient_stock_raises_conflict(conn):
     assert exc_info.value.status_code == 409
 
 
+def test_apply_movement_inactive_item_raises_conflict(conn):
+    """T041 + T051: inactive items are rejected with the typed ConflictError."""
+    item_id = _item_id(conn)
+    conn.execute("UPDATE items SET active = 0 WHERE id = ?", (item_id,))
+    with pytest.raises(ConflictError) as exc_info:
+        stock.apply_movement(
+            conn,
+            MovementCreate(item_id=item_id, kind="receive", qty=1, to_location_id=_loc_id(conn)),
+        )
+    assert exc_info.value.status_code == 409
+    assert "inactive" in str(exc_info.value)
+    # No movement record was created and no stock was adjusted.
+    assert conn.execute("SELECT COUNT(*) AS n FROM movements").fetchone()["n"] == 0
+    assert stock.total_stock(conn, item_id) == 0
+
+
 def test_get_movement_unknown_id_raises_not_found(conn):
     with pytest.raises(NotFoundError):
         stock.get_movement(conn, 12345)

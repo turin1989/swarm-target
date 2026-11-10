@@ -111,3 +111,36 @@ def test_api_module_uses_service_instead_of_inline_sql():
     assert "INSERT INTO items" not in source
     assert "UPDATE items" not in source
     assert "DELETE FROM items" not in source
+
+
+# --- created_at (T020) ---------------------------------------------------------
+
+
+def test_create_item_sets_created_at_in_service_layer(conn):
+    """The service stamps created_at explicitly so legacy-migrated DBs
+    (whose ALTER TABLE column has no default) still get a value on insert."""
+    import re
+    from datetime import datetime, timezone
+
+    before = datetime.now(timezone.utc).replace(microsecond=0)
+    item = _make(conn)
+    after = datetime.now(timezone.utc)
+    assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", item.created_at)
+    parsed = datetime.strptime(item.created_at, "%Y-%m-%dT%H:%M:%SZ").replace(
+        tzinfo=timezone.utc
+    )
+    assert before <= parsed <= after
+    row = conn.execute(
+        "SELECT created_at FROM items WHERE id = ?", (item.id,)
+    ).fetchone()
+    assert row["created_at"] == item.created_at
+
+
+def test_service_update_item_does_not_change_created_at(conn):
+    item = _make(conn)
+    updated = items_service.update_item(
+        conn, item.id, ItemUpdate(name="Renamed", created_at="1999-01-01T00:00:00Z")
+    )
+    assert updated is not None
+    assert updated.name == "Renamed"
+    assert updated.created_at == item.created_at

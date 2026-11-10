@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS items (
     unit_price REAL NOT NULL DEFAULT 0,
     reorder_level INTEGER NOT NULL DEFAULT 0,
     active INTEGER NOT NULL DEFAULT 1,
-    barcode TEXT UNIQUE
+    barcode TEXT UNIQUE,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
 CREATE TABLE IF NOT EXISTS locations (
@@ -39,7 +40,8 @@ CREATE TABLE IF NOT EXISTS movements (
     from_location_id INTEGER REFERENCES locations(id),
     to_location_id INTEGER REFERENCES locations(id),
     note TEXT NOT NULL DEFAULT '',
-    reference TEXT
+    reference TEXT,
+    created_at TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -76,6 +78,19 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE items ADD COLUMN barcode TEXT")
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_items_barcode ON items(barcode)"
+        )
+    if "created_at" not in cols:
+        # ALTER TABLE cannot add a column with a non-constant default, so add it
+        # as nullable and backfill existing rows with the current UTC time.
+        conn.execute("ALTER TABLE items ADD COLUMN created_at TEXT")
+        conn.execute(
+            "UPDATE items SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') "
+            "WHERE created_at IS NULL"
+        )
+    movement_cols = {row["name"] for row in conn.execute("PRAGMA table_info(movements)")}
+    if "created_at" not in movement_cols:
+        conn.execute(
+            "ALTER TABLE movements ADD COLUMN created_at TEXT NOT NULL DEFAULT ''"
         )
     # Enforce unique location codes on databases created before the UNIQUE
     # constraint was added to the table definition.
