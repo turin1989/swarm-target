@@ -4,11 +4,13 @@ import os
 import sqlite3
 import uuid
 
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse, Response
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from inventory import __version__
-from inventory.api import inventory_error_handler, router
+from inventory.api import error_response, inventory_error_handler, router
 from inventory.db import connect, init_db
 from inventory.services.errors import InventoryError
 
@@ -57,6 +59,29 @@ class RequestIDMiddleware:
         await self.app(scope, receive, send_with_request_id)
 
 
+async def http_exception_error_handler(
+    request: Request, exc: StarletteHTTPException
+) -> Response:
+    """Render HTTPException with the uniform error body."""
+    response = error_response(exc.status_code, str(exc.detail))
+    for name, value in (exc.headers or {}).items():
+        response.headers[name] = value
+    return response
+
+
+async def request_validation_error_handler(
+    request: Request, exc: RequestValidationError
+) -> Response:
+    """Render request validation errors (422) with the uniform error body."""
+    parts = []
+    for err in exc.errors():
+        loc = ".".join(str(piece) for piece in err.get("loc", ()))
+        msg = err.get("msg", "invalid")
+        parts.append(f"{loc}: {msg}" if loc else msg)
+    message = "; ".join(parts) or "request validation failed"
+    return error_response(422, message)
+
+
 def create_app(db_path: str | None = None) -> FastAPI:
     db_path = db_path or os.environ.get("INVENTORY_DB", DEFAULT_DB_PATH)
     init_db(db_path)
@@ -64,6 +89,8 @@ def create_app(db_path: str | None = None) -> FastAPI:
     app.state.db_path = db_path
     app.add_middleware(RequestIDMiddleware)
     app.add_exception_handler(InventoryError, inventory_error_handler)
+    app.add_exception_handler(StarletteHTTPException, http_exception_error_handler)
+    app.add_exception_handler(RequestValidationError, request_validation_error_handler)
     app.include_router(router)
 
     @app.get("/health")
