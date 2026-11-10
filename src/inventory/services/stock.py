@@ -59,6 +59,16 @@ def _adjust(conn: sqlite3.Connection, item_id: int, location_id: int, delta: int
     )
 
 
+def _set_level(conn: sqlite3.Connection, item_id: int, location_id: int, qty: int) -> None:
+    conn.execute(
+        """
+        INSERT INTO stock_levels (item_id, location_id, qty) VALUES (?, ?, ?)
+        ON CONFLICT(item_id, location_id) DO UPDATE SET qty = excluded.qty
+        """,
+        (item_id, location_id, qty),
+    )
+
+
 def _require_location(conn: sqlite3.Connection, location_id: int | None, field: str) -> int:
     if location_id is None:
         raise StockError(f"{field} is required for this movement kind")
@@ -90,6 +100,11 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
             raise StockError("cannot transfer to the same location")
         _adjust(conn, m.item_id, from_id, -m.qty)
         _adjust(conn, m.item_id, from_id, m.qty)
+    elif m.kind == "adjust":
+        if m.from_location_id is not None:
+            raise StockError("from_location_id must be null for adjust movements")
+        to_id = _require_location(conn, m.to_location_id, "to_location_id")
+        _set_level(conn, m.item_id, to_id, m.qty)
     else:  # pragma: no cover - guarded by the Literal type
         raise StockError(f"unknown movement kind {m.kind!r}")
 
@@ -122,10 +137,12 @@ def reverse_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
         kind = "receive"
         from_location_id = None
         to_location_id = original.from_location_id
-    else:  # transfer
+    elif original.kind == "transfer":
         kind = "transfer"
         from_location_id = original.to_location_id
         to_location_id = original.from_location_id
+    else:  # adjust: an absolute set has no well-defined inverse
+        raise StockError(f"cannot reverse movement of kind {original.kind!r}")
 
     reversal = MovementCreate(
         item_id=original.item_id,
