@@ -13,6 +13,7 @@ from inventory.models import (
     ItemUpdate,
     Location,
     LocationCreate,
+    LocationStock,
     LowStockEntry,
     Movement,
     MovementCreate,
@@ -159,6 +160,19 @@ def get_location(location_id: int, conn: sqlite3.Connection = Depends(get_db)) -
     return Location(**dict(row))
 
 
+@router.get("/locations/{location_id}/stock", response_model=LocationStock)
+def location_stock(
+    location_id: int, conn: sqlite3.Connection = Depends(get_db)
+) -> LocationStock:
+    row = conn.execute("SELECT id FROM locations WHERE id = ?", (location_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"location {location_id} not found")
+    return LocationStock(
+        location_id=location_id,
+        levels=stock.get_location_levels(conn, location_id),
+    )
+
+
 @router.delete("/locations/{location_id}", status_code=204)
 def delete_location(location_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Response:
     row = conn.execute("SELECT id FROM locations WHERE id = ?", (location_id,)).fetchone()
@@ -217,8 +231,18 @@ def list_movements(
 
 
 @router.get("/reports/low-stock", response_model=list[LowStockEntry])
-def low_stock_report(conn: sqlite3.Connection = Depends(get_db)) -> list[LowStockEntry]:
-    return reports.low_stock(conn)
+def low_stock_report(
+    location_id: Optional[int] = None, conn: sqlite3.Connection = Depends(get_db)
+) -> list[LowStockEntry]:
+    if location_id is not None:
+        row = conn.execute(
+            "SELECT 1 FROM locations WHERE id = ?", (location_id,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(
+                status_code=404, detail=f"location {location_id} not found"
+            )
+    return reports.low_stock(conn, location_id=location_id)
 
 
 @router.get("/reports/value")
