@@ -6,15 +6,17 @@ from inventory.models import Item
 
 
 def search_items(conn: sqlite3.Connection, q: str, limit: int = 50) -> list[Item]:
-    """Case-insensitive substring match on sku or name."""
+    """Case-insensitive substring match on sku, name or description."""
     needle = q.lower()
     rows = conn.execute(
         """
         SELECT * FROM items
-        WHERE instr(lower(sku), ?) > 0 OR instr(lower(name), ?) > 0
+        WHERE instr(lower(sku), ?) > 0
+           OR instr(lower(name), ?) > 0
+           OR instr(lower(description), ?) > 0
         ORDER BY name
         LIMIT ?
         """,
-        (needle, needle, limit),
+        (needle, needle, needle, limit),
     ).fetchall()
     return [Item(**{**dict(r), "active": bool(r["active"])}) for r in rows]

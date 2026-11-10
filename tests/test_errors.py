@@ -51,7 +51,7 @@ def test_apply_movement_missing_item_raises_not_found(client):
         with pytest.raises(NotFoundError) as exc_info:
             stock.apply_movement(
                 conn,
-                MovementCreate(item_id=999, kind="receive", qty=1, to_location_id=1),
+                MovementCreate(item_id=999, kind="receive", quantity=1, to_location_id=1),
             )
     finally:
         conn.close()
@@ -82,7 +82,7 @@ def test_apply_movement_inactive_item_raises_conflict(client, item, loc_a):
             stock.apply_movement(
                 conn,
                 MovementCreate(
-                    item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"]
+                    item_id=item["id"], kind="receive", quantity=1, to_location_id=loc_a["id"]
                 ),
             )
     finally:
@@ -100,7 +100,7 @@ def test_apply_movement_missing_location_field_raises_validation(client, item):
         with pytest.raises(ValidationError) as exc_info:
             stock.apply_movement(
                 conn,
-                MovementCreate(item_id=item["id"], kind="receive", qty=1),
+                MovementCreate(item_id=item["id"], kind="receive", quantity=1),
             )
     finally:
         conn.close()
@@ -156,25 +156,31 @@ def test_handler_maps_each_subclass_status():
 def test_movement_for_missing_item_returns_404(client, loc_a):
     r = client.post(
         "/movements",
-        json={"item_id": 999, "kind": "receive", "qty": 1, "to_location_id": loc_a["id"]},
+        json={"item_id": 999, "kind": "receive", "quantity": 1, "to_location_id": loc_a["id"]},
     )
     assert r.status_code == 404
-    assert "not found" in r.json()["detail"]
+    err = r.json()["error"]
+    assert err["code"] == "not_found"
+    assert "not found" in err["message"]
 
 
 def test_movement_missing_required_location_returns_400(client, item):
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 1},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 1},
     )
     assert r.status_code == 400
-    assert "to_location_id" in r.json()["detail"]
+    err = r.json()["error"]
+    assert err["code"] == "bad_request"
+    assert "to_location_id" in err["message"]
 
 
 def test_get_missing_movement_returns_404(client):
     r = client.get("/movements/999")
     assert r.status_code == 404
-    assert "not found" in r.json()["detail"]
+    err = r.json()["error"]
+    assert err["code"] == "not_found"
+    assert "not found" in err["message"]
 
 
 # --- merged m5-opt services use the typed exceptions too -------------------------
@@ -193,12 +199,65 @@ def test_get_location_levels_missing_location_raises_not_found(client):
     assert "not found" in str(exc_info.value)
 
 
+def test_insufficient_stock_raises_conflict_error(client, item, loc_a):
+    from inventory.db import connect
+    from inventory.models import MovementCreate
+
+    conn = connect(client.app.state.db_path)
+    try:
+        with pytest.raises(ConflictError) as exc_info:
+            stock.apply_movement(
+                conn,
+                MovementCreate(
+                    item_id=item["id"], kind="ship", quantity=1, from_location_id=loc_a["id"]
+                ),
+            )
+    finally:
+        conn.close()
+    assert exc_info.value.status_code == 409
+    assert "insufficient" in str(exc_info.value)
+
+
+def test_transfer_to_same_location_raises_validation_error(client, item, loc_a):
+    from inventory.db import connect
+    from inventory.models import MovementCreate
+
+    r = client.post(
+        "/movements",
+        json={
+            "item_id": item["id"],
+            "kind": "receive",
+            "quantity": 5,
+            "to_location_id": loc_a["id"],
+        },
+    )
+    assert r.status_code == 201, r.text
+
+    conn = connect(client.app.state.db_path)
+    try:
+        with pytest.raises(ValidationError) as exc_info:
+            stock.apply_movement(
+                conn,
+                MovementCreate(
+                    item_id=item["id"],
+                    kind="transfer",
+                    quantity=1,
+                    from_location_id=loc_a["id"],
+                    to_location_id=loc_a["id"],
+                ),
+            )
+    finally:
+        conn.close()
+    assert exc_info.value.status_code == 400
+    assert "same location" in str(exc_info.value)
+
+
 def test_reverse_adjust_movement_raises_validation_error(client, item, loc_a):
     from inventory.db import connect
 
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "adjust", "qty": 5, "to_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "adjust", "quantity": 5, "to_location_id": loc_a["id"]},
     )
     assert r.status_code == 201, r.text
     movement_id = r.json()["id"]
@@ -216,16 +275,20 @@ def test_reverse_adjust_movement_raises_validation_error(client, item, loc_a):
 def test_location_stock_missing_location_returns_404_via_handler(client):
     r = client.get("/locations/98765/stock")
     assert r.status_code == 404
-    assert "not found" in r.json()["detail"]
+    err = r.json()["error"]
+    assert err["code"] == "not_found"
+    assert "not found" in err["message"]
 
 
 def test_reverse_adjust_movement_returns_400_via_handler(client, item, loc_a):
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "adjust", "qty": 5, "to_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "adjust", "quantity": 5, "to_location_id": loc_a["id"]},
     )
     assert r.status_code == 201, r.text
 
     r2 = client.post(f"/movements/{r.json()['id']}/reverse")
     assert r2.status_code == 400
-    assert "cannot be reversed" in r2.json()["detail"]
+    err = r2.json()["error"]
+    assert err["code"] == "bad_request"
+    assert "cannot be reversed" in err["message"]

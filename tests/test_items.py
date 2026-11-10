@@ -58,7 +58,7 @@ def test_get_item(client, item):
 def test_get_missing_item_404(client):
     r = client.get("/items/999")
     assert r.status_code == 404
-    assert "not found" in r.json()["detail"]
+    assert "not found" in r.json()["error"]["message"]
 
 
 def test_list_items_ordered_by_id(client):
@@ -172,7 +172,7 @@ def test_delete_item(client, item):
 def test_delete_missing_item_404(client):
     r = client.delete("/items/42")
     assert r.status_code == 404
-    assert r.json()["detail"] == "item 42 not found"
+    assert r.json()["error"]["message"] == "item 42 not found"
 
 
 def test_delete_item_twice_second_404(client, item):
@@ -180,18 +180,18 @@ def test_delete_item_twice_second_404(client, item):
     assert client.delete(f"/items/{item_id}").status_code == 204
     r = client.delete(f"/items/{item_id}")
     assert r.status_code == 404
-    assert r.json()["detail"] == f"item {item_id} not found"
+    assert r.json()["error"]["message"] == f"item {item_id} not found"
 
 
 def test_delete_item_cascades_stock(client, item, loc_a):
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 3, "to_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 3, "to_location_id": loc_a["id"]},
     )
     # ship the stock back out so the item is at zero and may be deleted
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "ship", "qty": 3, "from_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "ship", "quantity": 3, "from_location_id": loc_a["id"]},
     )
     assert client.delete(f"/items/{item['id']}").status_code == 204
     assert client.get("/movements").json() == []
@@ -200,11 +200,11 @@ def test_delete_item_cascades_stock(client, item, loc_a):
 def test_delete_item_with_stock_conflicts(client, item, loc_a):
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 7, "to_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 7, "to_location_id": loc_a["id"]},
     )
     r = client.delete(f"/items/{item['id']}")
     assert r.status_code == 409
-    assert "7" in r.json()["detail"]
+    assert "7" in r.json()["error"]["message"]
     # item is untouched
     assert client.get(f"/items/{item['id']}").status_code == 200
 
@@ -213,22 +213,22 @@ def test_delete_item_with_stock_across_locations_conflicts(client, item, loc_a, 
     for loc in (loc_a, loc_b):
         client.post(
             "/movements",
-            json={"item_id": item["id"], "kind": "receive", "qty": 2, "to_location_id": loc["id"]},
+            json={"item_id": item["id"], "kind": "receive", "quantity": 2, "to_location_id": loc["id"]},
         )
     r = client.delete(f"/items/{item['id']}")
     assert r.status_code == 409
-    assert "4" in r.json()["detail"]
+    assert "4" in r.json()["error"]["message"]
 
 
 def test_delete_item_allowed_after_stock_returns_to_zero(client, item, loc_a):
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 5, "to_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 5, "to_location_id": loc_a["id"]},
     )
     assert client.delete(f"/items/{item['id']}").status_code == 409
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "ship", "qty": 5, "from_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "ship", "quantity": 5, "from_location_id": loc_a["id"]},
     )
     assert client.delete(f"/items/{item['id']}").status_code == 204
     assert client.get(f"/items/{item['id']}").status_code == 404
@@ -263,6 +263,50 @@ def test_update_item_accepts_reorder_level_field(client, item):
     r = client.put(f"/items/{item['id']}", json={"reorder_level": 9})
     assert r.status_code == 200
     assert "reorder_level" in r.json()
+
+
+"""T009: negative reorder values are rejected on create/update with 422."""
+
+
+def test_create_item_with_negative_reorder_point_returns_422(client):
+    r = client.post(
+        "/items", json={"sku": "NEG-RP-1", "name": "Neg", "reorder_point": -1}
+    )
+    assert r.status_code == 422
+
+
+def test_update_item_with_negative_reorder_point_returns_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": -5})
+    assert r.status_code == 422
+    # value must not have leaked through under the renamed field
+    assert client.get(f"/items/{item['id']}").json()["reorder_level"] == 5
+
+
+def test_create_item_with_negative_reorder_level_returns_422(client):
+    r = client.post(
+        "/items", json={"sku": "NEG-RL-1", "name": "Neg", "reorder_level": -1}
+    )
+    assert r.status_code == 422
+
+
+def test_update_item_with_negative_reorder_level_returns_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_level": -3})
+    assert r.status_code == 422
+    assert client.get(f"/items/{item['id']}").json()["reorder_level"] == 5
+
+
+def test_create_item_with_zero_reorder_level_is_accepted(client):
+    r = client.post(
+        "/items", json={"sku": "ZERO-RL-1", "name": "Zero", "reorder_level": 0}
+    )
+    assert r.status_code == 201
+    assert r.json()["reorder_level"] == 0
+
+
+def test_update_item_with_zero_reorder_level_is_accepted(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_level": 0})
+    assert r.status_code == 200
+    assert r.json()["reorder_level"] == 0
 
 
 def test_get_item_exposes_reorder_level_not_reorder_point(client, item):
@@ -333,7 +377,7 @@ def test_get_item_by_sku_exact_match_only(client, item):
 def test_get_item_by_unknown_sku_404(client):
     r = client.get("/items/by-sku/NOPE-99")
     assert r.status_code == 404
-    assert r.json()["detail"] == "sku NOPE-99 not found"
+    assert r.json()["error"]["message"] == "sku NOPE-99 not found"
 
 
 def test_get_item_by_sku_does_not_shadow_get_by_id(client, item):
