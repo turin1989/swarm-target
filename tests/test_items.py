@@ -429,3 +429,40 @@ def test_update_item_nonnegative_reorder_level_not_rejected(client, item):
     # Non-negative reorder_level values must pass validation (no 422).
     r = client.put(f"/items/{item['id']}", json={"reorder_level": 7})
     assert r.status_code == 200
+
+
+# --- T004: PUT /items/{id} must persist the reorder field (reorder_level, the
+# --- renamed reorder_point) instead of silently ignoring it ----------------------
+
+
+def test_update_item_reorder_level_persists_and_is_returned(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_level": 12})
+    assert r.status_code == 200
+    assert r.json()["reorder_level"] == 12
+    # persisted: visible on a subsequent GET, not just echoed back
+    assert client.get(f"/items/{item['id']}").json()["reorder_level"] == 12
+
+
+def test_update_item_reorder_level_together_with_other_fields(client, item):
+    r = client.put(
+        f"/items/{item['id']}",
+        json={"reorder_level": 3, "name": "Renamed", "unit_price": 4.5},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["reorder_level"] == 3
+    assert body["name"] == "Renamed"
+    assert body["unit_price"] == 4.5
+    body = client.get(f"/items/{item['id']}").json()
+    assert body["reorder_level"] == 3
+    assert body["name"] == "Renamed"
+    assert body["unit_price"] == 4.5
+
+
+def test_update_item_omitting_reorder_level_leaves_value_untouched(client, item):
+    # item fixture is created with reorder_level=5
+    assert item["reorder_level"] == 5
+    r = client.put(f"/items/{item['id']}", json={"name": "Still Widget"})
+    assert r.status_code == 200
+    assert r.json()["reorder_level"] == 5
+    assert client.get(f"/items/{item['id']}").json()["reorder_level"] == 5
