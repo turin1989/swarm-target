@@ -120,6 +120,94 @@ def test_transfer_same_location_rejected(client, item, loc_a):
     assert client.get(f"/items/{item['id']}/stock").json()["total"] == 5
 
 
+def test_adjust_sets_stock_to_absolute_quantity(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", quantity=10, to_location_id=loc_a["id"])
+    r = _move(client, item_id=item["id"], kind="adjust", quantity=3, to_location_id=loc_a["id"])
+    assert r.status_code == 201
+    body = r.json()
+    assert body["kind"] == "adjust"
+    assert body["quantity"] == 3
+    assert body["to_location_id"] == loc_a["id"]
+    assert body["from_location_id"] is None
+
+    # quantity is absolute, not a delta
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 3
+    assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "quantity": 3}]
+
+
+def test_adjust_creates_stock_level_when_none_exists(client, item, loc_a):
+    r = _move(client, item_id=item["id"], kind="adjust", quantity=7, to_location_id=loc_a["id"])
+    assert r.status_code == 201
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 7
+    assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "quantity": 7}]
+
+
+def test_adjust_only_affects_target_location(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", quantity=5, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", quantity=8, to_location_id=loc_b["id"])
+    r = _move(client, item_id=item["id"], kind="adjust", quantity=2, to_location_id=loc_b["id"])
+    assert r.status_code == 201
+    s = client.get(f"/items/{item['id']}/stock").json()
+    levels = {lvl["location_id"]: lvl["quantity"] for lvl in s["levels"]}
+    assert levels[loc_a["id"]] == 5
+    assert levels[loc_b["id"]] == 2
+    assert s["total"] == 7
+
+
+def test_adjust_requires_to_location(client, item, loc_a):
+    r = _move(client, item_id=item["id"], kind="adjust", quantity=3)
+    assert r.status_code == 400
+    body = r.json()
+    assert body["error"]["code"] == "bad_request"
+    assert "required" in body["error"]["message"]
+    assert client.get("/movements").json() == []
+
+
+def test_adjust_rejects_from_location(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", quantity=5, to_location_id=loc_a["id"])
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="adjust",
+        quantity=3,
+        from_location_id=loc_b["id"],
+        to_location_id=loc_a["id"],
+    )
+    assert r.status_code == 400
+    body = r.json()
+    assert body["error"]["code"] == "bad_request"
+    assert "from_location_id must be null" in body["error"]["message"]
+    # no movement row written and stock unchanged
+    movements = client.get("/movements").json()
+    assert len(movements) == 1
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 5
+
+
+def test_adjust_is_recorded_as_adjust(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="adjust", quantity=4, to_location_id=loc_a["id"])
+    movements = client.get("/movements").json()
+    assert len(movements) == 1
+    assert movements[0]["kind"] == "adjust"
+    assert movements[0]["quantity"] == 4
+    assert movements[0]["to_location_id"] == loc_a["id"]
+    assert movements[0]["from_location_id"] is None
+
+
+def test_adjust_unknown_location_404(client, item):
+    r = _move(client, item_id=item["id"], kind="adjust", quantity=1, to_location_id=123)
+    assert r.status_code == 404
+
+
+def test_adjust_rejected_for_inactive_item(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", quantity=5, to_location_id=loc_a["id"])
+    client.put(f"/items/{item['id']}", json={"active": False})
+    r = _move(client, item_id=item["id"], kind="adjust", quantity=1, to_location_id=loc_a["id"])
+    assert r.status_code == 409
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 5
+
+
 def test_stock_for_missing_item_404(client):
     assert client.get("/items/77/stock").status_code == 404
 

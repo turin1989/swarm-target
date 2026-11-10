@@ -47,6 +47,16 @@ def _adjust(conn: sqlite3.Connection, item_id: int, location_id: int, delta: int
     )
 
 
+def _set_level(conn: sqlite3.Connection, item_id: int, location_id: int, qty: int) -> None:
+    conn.execute(
+        """
+        INSERT INTO stock_levels (item_id, location_id, qty) VALUES (?, ?, ?)
+        ON CONFLICT(item_id, location_id) DO UPDATE SET qty = excluded.qty
+        """,
+        (item_id, location_id, qty),
+    )
+
+
 def _require_location(conn: sqlite3.Connection, location_id: int | None, field: str) -> int:
     if location_id is None:
         raise ValidationError(f"{field} is required for this movement kind")
@@ -82,6 +92,11 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
             raise ValidationError("cannot transfer to the same location")
         _adjust(conn, m.item_id, from_id, -m.quantity)
         _adjust(conn, m.item_id, to_id, m.quantity)
+    elif m.kind == "adjust":
+        if m.from_location_id is not None:
+            raise ValidationError("from_location_id must be null for an adjust movement")
+        to_id = _require_location(conn, m.to_location_id, "to_location_id")
+        _set_level(conn, m.item_id, to_id, m.quantity)
     else:  # pragma: no cover - guarded by the Literal type
         raise ValidationError(f"unknown movement kind {m.kind!r}")
 
