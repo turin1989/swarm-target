@@ -4,7 +4,6 @@ import sqlite3
 
 from inventory.db import init_db
 
-
 # --- POST /locations duplicate codes (T007) ------------------------------------
 
 
