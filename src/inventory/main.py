@@ -5,7 +5,7 @@ import os
 from fastapi import FastAPI
 
 from inventory import __version__
-from inventory.api import router
+from inventory.api import register_error_handlers, router
 from inventory.db import init_db
 
 DEFAULT_DB_PATH = "inventory.db"
@@ -17,6 +17,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
     app = FastAPI(title="Inventory", version=__version__)
     app.state.db_path = db_path
     app.include_router(router)
+    register_error_handlers(app)
 
     @app.get("/health")
     def health() -> dict:
