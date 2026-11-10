@@ -23,6 +23,35 @@ def test_location_requires_code(client):
     assert client.post("/locations", json={"name": "x"}).status_code == 422
 
 
+def test_delete_location(client, loc_a):
+    r = client.delete(f"/locations/{loc_a['id']}")
+    assert r.status_code == 204
+    assert client.get(f"/locations/{loc_a['id']}").status_code == 404
+    assert client.get("/locations").json() == []
+
+
+def test_delete_location_unknown_id_404(client):
+    assert client.delete("/locations/99").status_code == 404
+
+
+def test_delete_location_with_stock_409(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    r = client.delete(f"/locations/{loc_a['id']}")
+    assert r.status_code == 409
+    # location is still there
+    assert client.get(f"/locations/{loc_a['id']}").status_code == 200
+
+
+def test_delete_location_with_zero_qty_stock_row_ok(client, item, loc_a):
+    # Receiving then shipping everything leaves a stock_levels row with qty == 0.
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="ship", qty=5, from_location_id=loc_a["id"])
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 0
+    r = client.delete(f"/locations/{loc_a['id']}")
+    assert r.status_code == 204
+    assert client.get(f"/locations/{loc_a['id']}").status_code == 404
+
+
 def test_receive_increases_stock(client, item, loc_a):
     r = _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])
     assert r.status_code == 201
