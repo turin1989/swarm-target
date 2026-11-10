@@ -50,16 +50,22 @@ class LocationCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
 
 
+class LocationUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=200)
+    active: Optional[bool] = None
+
+
 class Location(BaseModel):
     id: int
     code: str
     name: str
+    active: bool
 
 
 class MovementCreate(BaseModel):
     item_id: int
     kind: MovementKind
-    qty: int
+    qty: int = Field(..., gt=0)
     from_location_id: Optional[int] = None
     to_location_id: Optional[int] = None
     note: str = Field("", max_length=500)

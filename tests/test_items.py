@@ -150,6 +150,56 @@ def test_list_items_filter_active(client, item):
     ] == ["INACTIVE"]
 
 
+# --- sku filter (T010) ----------------------------------------------------------
+
+
+def test_list_items_filter_sku_exact_match(client, item):
+    client.post("/items", json={"sku": "WIDGET-2", "name": "Widget 2"})
+    r = client.get("/items", params={"sku": "WIDGET-1"})
+    assert r.status_code == 200
+    body = r.json()
+    assert [i["sku"] for i in body["items"]] == ["WIDGET-1"]
+    assert body["total"] == 1
+
+
+def test_list_items_filter_sku_is_exact_not_prefix(client, item):
+    client.post("/items", json={"sku": "WIDGET-10", "name": "Widget 10"})
+    r = client.get("/items", params={"sku": "WIDGET-1"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()["items"]] == ["WIDGET-1"]
+
+
+def test_list_items_filter_sku_unknown_returns_empty_list_200(client, item):
+    r = client.get("/items", params={"sku": "NOPE"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["items"] == []
+    assert body["total"] == 0
+
+
+def test_list_items_filter_sku_combines_with_active(client, item):
+    # item WIDGET-1 is active; make it inactive and verify combined filtering
+    client.post("/items", json={"sku": "OTHER", "name": "Other"})
+    assert (
+        client.get("/items", params={"sku": "WIDGET-1", "active": "true"}).json()["items"][0][
+            "sku"
+        ]
+        == "WIDGET-1"
+    )
+    assert (
+        client.get("/items", params={"sku": "WIDGET-1", "active": "false"}).json()["items"] == []
+    )
+
+    client.put(f"/items/{item['id']}", json={"active": False})
+    assert client.get("/items", params={"sku": "WIDGET-1", "active": "true"}).json()["items"] == []
+    assert [
+        i["sku"]
+        for i in client.get("/items", params={"sku": "WIDGET-1", "active": "false"}).json()[
+            "items"
+        ]
+    ] == ["WIDGET-1"]
+
+
 def test_update_item_name_and_price(client, item):
     r = client.put(f"/items/{item['id']}", json={"name": "Renamed", "unit_price": 9.99})
     assert r.status_code == 200
