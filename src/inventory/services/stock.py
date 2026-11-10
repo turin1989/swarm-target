@@ -137,7 +137,8 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
 
     cur = conn.execute(
         """
-        INSERT INTO movements (item_id, kind, qty, from_location_id, to_location_id, note, reference, created_at)
+        INSERT INTO movements
+            (item_id, kind, qty, from_location_id, to_location_id, note, reference, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
