@@ -169,6 +169,82 @@ def test_list_movements_pagination(client, item, loc_a):
     assert [m["id"] for m in r.json()] == [3, 4]
 
 
+# --- 'adjust' movement kind (T039) ---------------------------------------------
+
+
+def test_adjust_sets_absolute_stock(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])
+    r = _move(client, item_id=item["id"], kind="adjust", qty=3, to_location_id=loc_a["id"])
+    assert r.status_code == 201
+    body = r.json()
+    assert body["kind"] == "adjust"
+    assert body["qty"] == 3
+    assert body["to_location_id"] == loc_a["id"]
+    assert body["from_location_id"] is None
+
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 3
+    assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "qty": 3}]
+
+
+def test_adjust_creates_stock_row_when_none_exists(client, item, loc_a):
+    r = _move(client, item_id=item["id"], kind="adjust", qty=7, to_location_id=loc_a["id"])
+    assert r.status_code == 201
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 7
+    assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "qty": 7}]
+
+
+def test_adjust_is_absolute_not_delta(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="adjust", qty=5, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="adjust", qty=5, to_location_id=loc_a["id"])
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 5
+
+
+def test_adjust_only_affects_target_location(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=4, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="adjust", qty=9, to_location_id=loc_b["id"])
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 13
+    assert [lvl["qty"] for lvl in s["levels"]] == [4, 9]
+
+
+def test_adjust_requires_to_location(client, item, loc_a):
+    r = _move(client, item_id=item["id"], kind="adjust", qty=5)
+    assert r.status_code == 400
+    assert "required" in r.json()["detail"]
+    assert client.get("/movements").json() == []
+
+
+def test_adjust_rejects_from_location(client, item, loc_a, loc_b):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="adjust",
+        qty=5,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    assert r.status_code == 400
+    assert "from_location_id" in r.json()["detail"]
+    assert client.get("/movements").json() == []
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 0
+
+
+def test_adjust_unknown_location_404(client, item):
+    r = _move(client, item_id=item["id"], kind="adjust", qty=5, to_location_id=123)
+    assert r.status_code == 404
+
+
+def test_adjust_recorded_in_movements_list(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="adjust", qty=2, to_location_id=loc_a["id"], note="count")
+    movements = client.get("/movements").json()
+    assert len(movements) == 1
+    assert movements[0]["kind"] == "adjust"
+    assert movements[0]["qty"] == 2
+    assert movements[0]["note"] == "count"
+
+
 # --- DELETE /locations/{id} (T013) --------------------------------------------
 
 
