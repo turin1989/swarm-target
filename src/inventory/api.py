@@ -28,6 +28,12 @@ from inventory.services.items import row_to_item as _row_to_item
 router = APIRouter()
 
 
+def _row_to_location(row: sqlite3.Row) -> Location:
+    data = dict(row)
+    data["active"] = bool(data["active"])
+    return Location(**data)
+
+
 def _fetch_item(conn: sqlite3.Connection, item_id: int) -> Item:
     item = items_service.get_item(conn, item_id)
     if item is None:
@@ -131,6 +137,17 @@ def item_stock(item_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Item
     )
 
 
+@router.get("/items/{item_id}/movements", response_model=list[Movement])
+def item_movements(
+    item_id: int,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    conn: sqlite3.Connection = Depends(get_db),
+) -> list[Movement]:
+    _fetch_item(conn, item_id)
+    return stock.list_movements(conn, limit=limit, offset=offset, item_id=item_id)
+
+
 # --- locations ---------------------------------------------------------------
 
 
@@ -149,13 +166,20 @@ def create_location(
             detail=f"location code {payload.code!r} already exists",
         )
     row = conn.execute("SELECT * FROM locations WHERE id = ?", (cur.lastrowid,)).fetchone()
-    return Location(**dict(row))
+    return _row_to_location(row)
 
 
 @router.get("/locations", response_model=list[Location])
-def list_locations(conn: sqlite3.Connection = Depends(get_db)) -> list[Location]:
-    rows = conn.execute("SELECT * FROM locations ORDER BY id").fetchall()
-    return [Location(**dict(r)) for r in rows]
+def list_locations(
+    active: Optional[bool] = None, conn: sqlite3.Connection = Depends(get_db)
+) -> list[Location]:
+    params: list = []
+    where = ""
+    if active is not None:
+        where = " WHERE active = ?"
+        params.append(int(active))
+    rows = conn.execute(f"SELECT * FROM locations{where} ORDER BY id", params).fetchall()
+    return [_row_to_location(r) for r in rows]
 
 
 @router.get("/locations/{location_id}", response_model=Location)
@@ -163,7 +187,7 @@ def get_location(location_id: int, conn: sqlite3.Connection = Depends(get_db)) -
     row = conn.execute("SELECT * FROM locations WHERE id = ?", (location_id,)).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail=f"location {location_id} not found")
-    return Location(**dict(row))
+    return _row_to_location(row)
 
 
 @router.put("/locations/{location_id}", response_model=Location)
@@ -174,15 +198,19 @@ def update_location(
     if row is None:
         raise HTTPException(status_code=404, detail=f"location {location_id} not found")
     updates = payload.model_dump(exclude_unset=True)
-    updates = {k: v for k, v in updates.items() if k in {"code", "name"} and v is not None}
+    updates = {
+        k: v for k, v in updates.items() if k in {"code", "name", "active"} and v is not None
+    }
     if updates:
+        if "active" in updates:
+            updates["active"] = int(updates["active"])
         assignments = ", ".join(f"{k} = ?" for k in updates)
         conn.execute(
             f"UPDATE locations SET {assignments} WHERE id = ?",
             [*updates.values(), location_id],
         )
     row = conn.execute("SELECT * FROM locations WHERE id = ?", (location_id,)).fetchone()
-    return Location(**dict(row))
+    return _row_to_location(row)
 
 
 @router.get("/locations/{location_id}/stock", response_model=LocationStock)
