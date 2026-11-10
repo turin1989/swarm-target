@@ -115,6 +115,26 @@ def test_movement_invalid_kind_422(client, item, loc_a):
     assert r.status_code == 422
 
 
+@pytest.mark.parametrize("qty", [0, -1, -10])
+def test_movement_non_positive_qty_422(client, item, loc_a, qty):
+    r = _move(client, item_id=item["id"], kind="receive", qty=qty, to_location_id=loc_a["id"])
+    assert r.status_code == 422
+    # no movement row is written
+    assert client.get("/movements").json() == []
+    # and stock is untouched
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 0
+
+
+@pytest.mark.parametrize("kind,locs", [
+    ("ship", {"from_location_id": 1}),
+    ("transfer", {"from_location_id": 1, "to_location_id": 2}),
+])
+def test_non_positive_qty_rejected_for_all_kinds(client, item, loc_a, loc_b, kind, locs):
+    r = _move(client, item_id=item["id"], kind=kind, qty=0, **locs)
+    assert r.status_code == 422
+    assert client.get("/movements").json() == []
+
+
 def test_list_movements_pagination(client, item, loc_a):
     for _ in range(4):
         _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
