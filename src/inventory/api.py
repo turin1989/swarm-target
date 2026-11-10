@@ -187,10 +187,9 @@ def location_stock(location_id: int, conn: sqlite3.Connection = Depends(get_db))
 def create_movement(
     payload: MovementCreate, conn: sqlite3.Connection = Depends(get_db)
 ) -> Movement:
-    try:
-        return stock.apply_movement(conn, payload)
-    except stock.StockError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    # InventoryError raised by the service layer is mapped to an HTTP error
+    # response by the app-level exception handler; no per-route try/except.
+    return stock.apply_movement(conn, payload)
 
 
 @router.get("/movements", response_model=list[Movement])

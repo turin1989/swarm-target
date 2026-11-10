@@ -11,6 +11,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from inventory import __version__
 from inventory.api import router
 from inventory.db import init_db
+from inventory.services.errors import InventoryError
 
 DEFAULT_DB_PATH = "inventory.db"
 
@@ -45,6 +46,13 @@ def create_app(db_path: str | None = None) -> FastAPI:
         request: Request, exc: StarletteHTTPException
     ) -> JSONResponse:
         return _error_response(exc.status_code, str(exc.detail))
+
+    @app.exception_handler(InventoryError)
+    async def inventory_error_handler(request: Request, exc: InventoryError) -> JSONResponse:
+        # Single place where service-layer errors are mapped onto HTTP errors.
+        return await http_exception_handler(
+            request, StarletteHTTPException(status_code=exc.status_code, detail=str(exc))
+        )
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(
