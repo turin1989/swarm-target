@@ -224,6 +224,34 @@ def test_list_movements_pagination(client, item, loc_a):
     assert [m["id"] for m in r.json()] == [3, 4]
 
 
+@pytest.mark.parametrize("qty", [0, -1, -10])
+@pytest.mark.parametrize(
+    "kind,payload",
+    [
+        ("receive", {"to_location_id": 1}),
+        ("ship", {"from_location_id": 1}),
+        ("transfer", {"from_location_id": 1, "to_location_id": 2}),
+    ],
+)
+def test_movement_non_positive_qty_422(client, item, loc_a, loc_b, kind, payload, qty):
+    r = _move(client, item_id=item["id"], kind=kind, qty=qty, **payload)
+    assert r.status_code == 422
+    # no movement row is written
+    assert client.get("/movements").json() == []
+
+
+def test_movement_non_positive_qty_leaves_stock_untouched(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    r = _move(client, item_id=item["id"], kind="ship", qty=0, from_location_id=loc_a["id"])
+    assert r.status_code == 422
+
+    # only the initial receive exists; stock is unchanged
+    movements = client.get("/movements").json()
+    assert len(movements) == 1
+    assert movements[0]["kind"] == "receive"
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 5
+
+
 def test_transfer_same_location_rejected(client, item, loc_a):
     _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
     r = _move(
