@@ -45,6 +45,9 @@ class LocationCreate(BaseModel):
 
 class LocationUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=200)
+    code: Optional[str] = Field(
+        None, min_length=1, max_length=32, pattern=r"^[A-Z0-9][A-Z0-9-]{0,31}$"
+    )
     active: Optional[bool] = None
 
 
