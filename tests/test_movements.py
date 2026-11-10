@@ -192,6 +192,31 @@ def test_movement_reference_max_length_64(client, item, loc_a):
     assert too_long.status_code == 422
 
 
+def test_get_movement_by_id(client, item, loc_a):
+    created = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=5,
+        to_location_id=loc_a["id"],
+        note="initial",
+        reference="PO-1",
+    ).json()
+    r = client.get(f"/movements/{created['id']}")
+    assert r.status_code == 200
+    # same shape (and content) as the POST response
+    assert r.json() == created
+
+
+def test_get_movement_unknown_id_404(client):
+    r = client.get("/movements/999")
+    assert r.status_code == 404
+    # uniform error shape (T050): {"error": {"code": ..., "message": ...}}
+    body = r.json()
+    assert body["error"]["code"] == "not_found"
+    assert body["error"]["message"] == "movement 999 not found"
+
+
 def test_list_movements_pagination(client, item, loc_a):
     for _ in range(4):
         _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
