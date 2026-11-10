@@ -106,6 +106,3 @@ def test_search_sorted_by_name_and_limited(client):
 def test_search_requires_query(client):
     assert client.get("/search").status_code == 422
     assert client.get("/search", params={"q": ""}).status_code == 422
-
-# SWARM_SMOKE_FAULT: deliberate unused import; corrector should remove this line/import.
-import math  # noqa: E402
