@@ -40,7 +40,7 @@ def test_stock_raises_typed_not_found(client):
     """Service layer raises NotFoundError and the app maps it to a 404."""
     r = client.post(
         "/movements",
-        json={"item_id": 999, "kind": "receive", "qty": 1, "to_location_id": 1},
+        json={"item_id": 999, "kind": "receive", "quantity": 1, "to_location_id": 1},
     )
     assert r.status_code == 404
     body = r.json()
@@ -52,7 +52,7 @@ def test_stock_raises_typed_validation_error(client, item):
     """Missing location maps to a 400 via the InventoryError handler."""
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 1},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 1},
     )
     assert r.status_code == 400
     body = r.json()
@@ -122,7 +122,7 @@ def test_400_uniform_shape_from_service_validation_error(client, item, loc_a):
         json={
             "item_id": item["id"],
             "kind": "transfer",
-            "qty": 1,
+            "quantity": 1,
             "from_location_id": loc_a["id"],
             "to_location_id": loc_a["id"],
         },
