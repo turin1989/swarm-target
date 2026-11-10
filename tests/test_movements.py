@@ -359,6 +359,102 @@ def test_note_at_max_length_accepted(client, item, loc_a):
     assert r.json()["note"] == "n" * 500
 
 
+def test_movement_reference_stored_and_returned(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=5,
+        to_location_id=loc_a["id"],
+        reference="PO-12345",
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["reference"] == "PO-12345"
+
+    # returned on GET as well
+    movements = client.get("/movements").json()
+    assert movements[0]["reference"] == "PO-12345"
+
+
+def test_movement_reference_defaults_to_none(client, item, loc_a):
+    r = _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
+    assert r.status_code == 201, r.text
+    assert r.json()["reference"] is None
+    assert client.get("/movements").json()[0]["reference"] is None
+
+
+def test_movement_reference_explicit_null_accepted(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=1,
+        to_location_id=loc_a["id"],
+        reference=None,
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["reference"] is None
+
+
+def test_movement_reference_at_max_length_accepted(client, item, loc_a):
+    ref = "R" * 64
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=1,
+        to_location_id=loc_a["id"],
+        reference=ref,
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["reference"] == ref
+    assert client.get("/movements").json()[0]["reference"] == ref
+
+
+def test_movement_reference_over_max_length_rejected(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=1,
+        to_location_id=loc_a["id"],
+        reference="R" * 65,
+    )
+    assert r.status_code == 422, r.text
+    assert client.get("/movements").json() == []
+
+
+def test_movement_reference_on_all_kinds(client, item, loc_a, loc_b):
+    _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=10,
+        to_location_id=loc_a["id"],
+        reference="PO-1",
+    )
+    _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=3,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+        reference="XFER-2",
+    )
+    _move(
+        client,
+        item_id=item["id"],
+        kind="ship",
+        qty=2,
+        from_location_id=loc_a["id"],
+        reference="SO-3",
+    )
+    movements = client.get("/movements").json()
+    assert [m["reference"] for m in movements] == ["PO-1", "XFER-2", "SO-3"]
+
+
 def test_note_over_max_length_rejected(client, item, loc_a):
     r = _move(
         client,
