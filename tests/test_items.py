@@ -195,6 +195,37 @@ def test_get_item_exposes_reorder_level_not_reorder_point(client, item):
     assert "reorder_point" not in body
 
 
+def test_create_item_with_reorder_level_and_barcode_together(client):
+    """T049 rename combined with T025 barcode: both fields work in one payload."""
+    r = client.post(
+        "/items",
+        json={
+            "sku": "RLBC-1",
+            "name": "Both",
+            "reorder_level": 3,
+            "barcode": "RLBC-0001",
+        },
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["reorder_level"] == 3
+    assert body["barcode"] == "RLBC-0001"
+    assert "reorder_point" not in body
+
+
+def test_create_item_with_barcode_and_legacy_reorder_point_returns_422(client):
+    r = client.post(
+        "/items",
+        json={
+            "sku": "RLBC-2",
+            "name": "Legacy",
+            "reorder_point": 3,
+            "barcode": "RLBC-0002",
+        },
+    )
+    assert r.status_code == 422
+
+
 def test_items_table_column_renamed_in_schema(tmp_path):
     from inventory import db
 
