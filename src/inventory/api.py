@@ -93,6 +93,7 @@ _ITEM_SORT_COLUMNS = {"id", "name", "sku"}
 
 @router.get("/items", response_model=ItemPage)
 def list_items(
+    response: Response,
     active: Optional[bool] = None,
     sku: Optional[str] = None,
     barcode: Optional[str] = None,
@@ -118,6 +119,7 @@ def list_items(
         params.append(barcode)
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
     total = conn.execute(f"SELECT COUNT(*) FROM items{where}", params).fetchone()[0]
+    response.headers["X-Total-Count"] = str(total)
     rows = conn.execute(
         f"SELECT * FROM items{where} ORDER BY {sort_column} {direction} LIMIT ? OFFSET ?",
         [*params, limit, offset],
