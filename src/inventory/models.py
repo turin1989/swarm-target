@@ -77,6 +77,11 @@ class ItemStock(BaseModel):
     levels: list[StockLevel]
 
 
+class LocationStock(BaseModel):
+    location_id: int
+    levels: list[StockLevel]
+
+
 class LowStockEntry(BaseModel):
     item_id: int
     sku: str
