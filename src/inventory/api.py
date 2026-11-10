@@ -63,7 +63,7 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
     try:
         cur = conn.execute(
             """
-            INSERT INTO items (sku, name, description, unit_price, reorder_point, created_at, barcode)
+            INSERT INTO items (sku, name, description, unit_price, reorder_level, created_at, barcode)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
@@ -71,7 +71,7 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
                 payload.name,
                 payload.description,
                 payload.unit_price,
-                payload.reorder_point,
+                payload.reorder_level,
                 utc_now_iso(),
                 payload.barcode,
             ),
@@ -95,7 +95,7 @@ def create_items_bulk(
         try:
             cur = conn.execute(
                 """
-                INSERT INTO items (sku, name, description, unit_price, reorder_point, created_at)
+                INSERT INTO items (sku, name, description, unit_price, reorder_level, created_at)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (
@@ -103,7 +103,7 @@ def create_items_bulk(
                     entry.name,
                     entry.description,
                     entry.unit_price,
-                    entry.reorder_point,
+                    entry.reorder_level,
                     utc_now_iso(),
                 ),
             )

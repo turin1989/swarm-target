@@ -19,7 +19,7 @@ def test_create_item_returns_201_and_fields(client):
     assert body["sku"] == "A-1"
     assert body["name"] == "Alpha"
     assert body["unit_price"] == 1.25
-    assert body["reorder_point"] == 0
+    assert body["reorder_level"] == 0
     assert body["active"] is True
 
 
@@ -72,30 +72,30 @@ def test_update_item_zero_unit_price_ok(client, item):
     assert r.json()["unit_price"] == 0
 
 
-# --- reorder_point validation (T009) --------------------------------------------
+# --- reorder_level validation (T009) --------------------------------------------
 
 
-def test_create_item_negative_reorder_point_422(client):
-    r = client.post("/items", json={"sku": "NEG-RP", "name": "Neg", "reorder_point": -1})
+def test_create_item_negative_reorder_level_422(client):
+    r = client.post("/items", json={"sku": "NEG-RP", "name": "Neg", "reorder_level": -1})
     assert r.status_code == 422
 
 
-def test_create_item_zero_reorder_point_ok(client):
-    r = client.post("/items", json={"sku": "ZERO-RP", "name": "Zero", "reorder_point": 0})
+def test_create_item_zero_reorder_level_ok(client):
+    r = client.post("/items", json={"sku": "ZERO-RP", "name": "Zero", "reorder_level": 0})
     assert r.status_code == 201
-    assert r.json()["reorder_point"] == 0
+    assert r.json()["reorder_level"] == 0
 
 
-def test_update_item_negative_reorder_point_422(client, item):
-    r = client.put(f"/items/{item['id']}", json={"reorder_point": -5})
+def test_update_item_negative_reorder_level_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_level": -5})
     assert r.status_code == 422
     # item unchanged
-    assert client.get(f"/items/{item['id']}").json()["reorder_point"] == item["reorder_point"]
+    assert client.get(f"/items/{item['id']}").json()["reorder_level"] == item["reorder_level"]
 
 
-def test_update_item_zero_reorder_point_accepted(client, item):
-    # Zero is a valid reorder_point and must not be rejected by validation.
-    r = client.put(f"/items/{item['id']}", json={"reorder_point": 0})
+def test_update_item_zero_reorder_level_accepted(client, item):
+    # Zero is a valid reorder_level and must not be rejected by validation.
+    r = client.put(f"/items/{item['id']}", json={"reorder_level": 0})
     assert r.status_code == 200
 
 
