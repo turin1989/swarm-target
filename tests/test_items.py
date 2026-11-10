@@ -24,6 +24,27 @@ def test_create_item_duplicate_sku_conflicts(client, item):
     assert r.status_code == 409
 
 
+def test_create_item_normalises_sku_trim_and_uppercase(client):
+    r = client.post("/items", json={"sku": "  abc-1 ", "name": "Alpha"})
+    assert r.status_code == 201
+    assert r.json()["sku"] == "ABC-1"
+    # stored normalised, not just echoed back
+    r = client.get("/items/by-sku/ABC-1")
+    assert r.status_code == 200
+    assert r.json()["sku"] == "ABC-1"
+
+
+def test_create_item_duplicate_sku_conflicts_case_insensitively(client):
+    assert client.post("/items", json={"sku": "  abc-1 ", "name": "Alpha"}).status_code == 201
+    assert client.post("/items", json={"sku": "ABC-1", "name": "Dup"}).status_code == 409
+    assert client.post("/items", json={"sku": "abc-1", "name": "Dup"}).status_code == 409
+
+
+def test_create_item_whitespace_only_sku_rejected(client):
+    r = client.post("/items", json={"sku": "   ", "name": "Blank"})
+    assert r.status_code == 422
+
+
 def test_create_item_requires_sku_and_name(client):
     assert client.post("/items", json={"name": "x"}).status_code == 422
     assert client.post("/items", json={"sku": "x"}).status_code == 422
