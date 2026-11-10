@@ -4,6 +4,7 @@ import sqlite3
 from datetime import datetime, timezone
 
 from inventory.models import Movement, MovementCreate, StockLevel
+from inventory.services.errors import ConflictError, NotFoundError, ValidationError
 
 
 def _row_to_movement(row: sqlite3.Row) -> Movement:
@@ -11,14 +12,6 @@ def _row_to_movement(row: sqlite3.Row) -> Movement:
     data = dict(row)
     data["quantity"] = data.pop("qty")
     return Movement(**data)
-
-
-class StockError(Exception):
-    """Raised when a movement cannot be applied."""
-
-    def __init__(self, message: str, status_code: int = 400) -> None:
-        super().__init__(message)
-        self.status_code = status_code
 
 
 def get_stock_level(conn: sqlite3.Connection, item_id: int, location_id: int) -> int:
@@ -84,31 +77,30 @@ def _require_available(
 ) -> None:
     available = get_stock_level(conn, item_id, location_id)
     if qty > available:
-        raise StockError(
-            f"insufficient stock at location {location_id}: have {available}, need {qty}",
-            status_code=409,
+        raise ConflictError(
+            f"insufficient stock at location {location_id}: have {available}, need {qty}"
         )
 
 
 def _require_location(conn: sqlite3.Connection, location_id: int | None, field: str) -> int:
     if location_id is None:
-        raise StockError(f"{field} is required for this movement kind")
+        raise ValidationError(f"{field} is required for this movement kind")
     row = conn.execute("SELECT id FROM locations WHERE id = ?", (location_id,)).fetchone()
     if row is None:
-        raise StockError(f"location {location_id} not found", status_code=404)
+        raise NotFoundError(f"location {location_id} not found")
     return location_id
 
 
 def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
     """Validate and apply a stock movement, returning the persisted record."""
     if m.quantity <= 0:
-        raise StockError("quantity must be a positive integer", status_code=422)
+        raise ValidationError("quantity must be a positive integer", status_code=422)
 
     item = conn.execute("SELECT id, active FROM items WHERE id = ?", (m.item_id,)).fetchone()
     if item is None:
-        raise StockError(f"item {m.item_id} not found", status_code=404)
+        raise NotFoundError(f"item {m.item_id} not found")
     if not item["active"]:
-        raise StockError(f"item {m.item_id} is inactive", status_code=409)
+        raise ConflictError(f"item {m.item_id} is inactive")
 
     if m.kind == "receive":
         to_id = _require_location(conn, m.to_location_id, "to_location_id")
@@ -121,17 +113,17 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
         from_id = _require_location(conn, m.from_location_id, "from_location_id")
         to_id = _require_location(conn, m.to_location_id, "to_location_id")
         if from_id == to_id:
-            raise StockError("cannot transfer to the same location")
+            raise ValidationError("cannot transfer to the same location")
         _require_available(conn, m.item_id, from_id, m.quantity)
         _adjust(conn, m.item_id, from_id, -m.quantity)
         _adjust(conn, m.item_id, to_id, m.quantity)
     elif m.kind == "adjust":
         if m.from_location_id is not None:
-            raise StockError("from_location_id must be null for adjust movements")
+            raise ValidationError("from_location_id must be null for adjust movements")
         to_id = _require_location(conn, m.to_location_id, "to_location_id")
         _set_level(conn, m.item_id, to_id, m.quantity)
     else:  # pragma: no cover - guarded by the Literal type
-        raise StockError(f"unknown movement kind {m.kind!r}")
+        raise ValidationError(f"unknown movement kind {m.kind!r}")
 
     created_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     cur = conn.execute(
@@ -159,7 +151,7 @@ def reverse_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
     original = get_movement(conn, movement_id)
 
     if original.kind == "adjust":
-        raise StockError("adjust movements cannot be reversed")
+        raise ValidationError("adjust movements cannot be reversed")
 
     if original.kind == "receive":
         kind = "ship"
@@ -182,7 +174,7 @@ def reverse_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
 def get_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
     row = conn.execute("SELECT * FROM movements WHERE id = ?", (movement_id,)).fetchone()
     if row is None:
-        raise StockError(f"movement {movement_id} not found", status_code=404)
+        raise NotFoundError(f"movement {movement_id} not found")
     return _row_to_movement(row)
 
 
