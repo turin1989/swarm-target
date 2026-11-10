@@ -274,9 +274,14 @@ def _row_to_location(row: sqlite3.Row) -> Location:
 def create_location(
     payload: LocationCreate, conn: sqlite3.Connection = Depends(get_db)
 ) -> Location:
-    cur = conn.execute(
-        "INSERT INTO locations (code, name) VALUES (?, ?)", (payload.code, payload.name)
-    )
+    try:
+        cur = conn.execute(
+            "INSERT INTO locations (code, name) VALUES (?, ?)", (payload.code, payload.name)
+        )
+    except sqlite3.IntegrityError:
+        raise HTTPException(
+            status_code=409, detail=f"location code {payload.code!r} already exists"
+        )
     row = conn.execute("SELECT * FROM locations WHERE id = ?", (cur.lastrowid,)).fetchone()
     return _row_to_location(row)
 
