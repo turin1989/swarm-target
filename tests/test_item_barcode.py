@@ -25,7 +25,7 @@ def test_duplicate_barcode_conflicts_409(client):
     assert r.status_code == 201
     r = client.post("/items", json={"sku": "BC-2", "name": "Two", "barcode": "DUP-123"})
     assert r.status_code == 409
-    assert "DUP-123" in r.json()["detail"]
+    assert "DUP-123" in r.json()["error"]["message"]
 
 
 def test_multiple_items_without_barcode_are_allowed(client):
@@ -42,7 +42,7 @@ def test_list_items_filter_by_barcode(client):
     client.post("/items", json={"sku": "F3", "name": "f3"})
     r = client.get("/items", params={"barcode": "BC-BBB"})
     assert r.status_code == 200
-    items = r.json()
+    items = r.json()["items"]
     assert len(items) == 1
     assert items[0]["sku"] == "F2"
     assert items[0]["barcode"] == "BC-BBB"
@@ -52,15 +52,15 @@ def test_list_items_filter_by_unknown_barcode_returns_empty(client):
     client.post("/items", json={"sku": "F1", "name": "f1", "barcode": "BC-AAA"})
     r = client.get("/items", params={"barcode": "NOPE"})
     assert r.status_code == 200
-    assert r.json() == []
+    assert r.json()["items"] == []
 
 
 def test_list_items_barcode_filter_combines_with_active(client):
     r = client.post("/items", json={"sku": "F1", "name": "f1", "barcode": "BC-AAA"})
     item_id = r.json()["id"]
     client.put(f"/items/{item_id}", json={"active": False})
-    assert client.get("/items", params={"barcode": "BC-AAA", "active": "true"}).json() == []
-    got = client.get("/items", params={"barcode": "BC-AAA", "active": "false"}).json()
+    assert client.get("/items", params={"barcode": "BC-AAA", "active": "true"}).json()["items"] == []
+    got = client.get("/items", params={"barcode": "BC-AAA", "active": "false"}).json()["items"]
     assert [i["sku"] for i in got] == ["F1"]
 
 
@@ -105,4 +105,4 @@ def test_duplicate_sku_still_reports_sku_conflict(client):
     client.post("/items", json={"sku": "SAME", "name": "a", "barcode": "X-1"})
     r = client.post("/items", json={"sku": "SAME", "name": "b", "barcode": "X-2"})
     assert r.status_code == 409
-    assert "SAME" in r.json()["detail"]
+    assert "SAME" in r.json()["error"]["message"]
