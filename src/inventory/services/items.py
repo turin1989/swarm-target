@@ -1,10 +1,16 @@
 """Item persistence helpers (CRUD against the ``items`` table)."""
 
 import sqlite3
+from datetime import datetime, timezone
 from typing import Optional
 
 from inventory.models import Item, ItemCreate, ItemUpdate
 from inventory.services.errors import ConflictError
+
+
+def utc_now_iso() -> str:
+    """Current UTC time as ISO-8601 with a ``Z`` suffix, e.g. 2026-01-02T03:04:05Z."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _row_to_item(row: sqlite3.Row) -> Item:
@@ -33,8 +39,8 @@ def create_item(conn: sqlite3.Connection, payload: ItemCreate) -> Item:
     try:
         cur = conn.execute(
             """
-            INSERT INTO items (sku, name, description, unit_price, reorder_level)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO items (sku, name, description, unit_price, reorder_level, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
                 payload.sku,
@@ -42,6 +48,7 @@ def create_item(conn: sqlite3.Connection, payload: ItemCreate) -> Item:
                 payload.description,
                 payload.unit_price,
                 payload.reorder_level,
+                utc_now_iso(),
             ),
         )
     except sqlite3.IntegrityError:

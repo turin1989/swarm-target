@@ -84,10 +84,17 @@ def create_items_bulk(
         try:
             cur = conn.execute(
                 """
-                INSERT INTO items (sku, name, description, unit_price, reorder_level)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO items (sku, name, description, unit_price, reorder_level, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (entry.sku, entry.name, entry.description, entry.unit_price, entry.reorder_level),
+                (
+                    entry.sku,
+                    entry.name,
+                    entry.description,
+                    entry.unit_price,
+                    entry.reorder_level,
+                    items_service.utc_now_iso(),
+                ),
             )
         except sqlite3.IntegrityError:
             conn.rollback()
