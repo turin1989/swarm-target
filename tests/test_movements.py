@@ -465,6 +465,132 @@ def test_movements_created_at_column_persisted(client, item, loc_a):
     assert created.utcoffset().total_seconds() == 0
 
 
+def test_movement_reference_round_trips_on_post_and_get(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        quantity=2,
+        to_location_id=loc_a["id"],
+        reference="PO-12345",
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["reference"] == "PO-12345"
+
+    listed = client.get("/movements").json()
+    assert len(listed) == 1
+    assert listed[0]["reference"] == "PO-12345"
+
+
+def test_movement_reference_defaults_to_null(client, item, loc_a):
+    r = _move(client, item_id=item["id"], kind="receive", quantity=1, to_location_id=loc_a["id"])
+    assert r.status_code == 201
+    assert "reference" in r.json()
+    assert r.json()["reference"] is None
+    assert client.get("/movements").json()[0]["reference"] is None
+
+
+def test_movement_reference_explicit_null_accepted(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        quantity=1,
+        to_location_id=loc_a["id"],
+        reference=None,
+    )
+    assert r.status_code == 201
+    assert r.json()["reference"] is None
+
+
+def test_movement_reference_exactly_64_chars_accepted(client, item, loc_a):
+    ref = "R" * 64
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        quantity=1,
+        to_location_id=loc_a["id"],
+        reference=ref,
+    )
+    assert r.status_code == 201
+    assert r.json()["reference"] == ref
+
+
+def test_movement_reference_longer_than_64_chars_rejected_422(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        quantity=1,
+        to_location_id=loc_a["id"],
+        reference="R" * 65,
+    )
+    assert r.status_code == 422
+    # nothing was recorded
+    assert client.get("/movements").json() == []
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 0
+
+
+def test_movements_reference_column_persisted():
+    """The reference value is stored in a movements table column."""
+    from inventory.db import SCHEMA, connect
+    from inventory.models import MovementCreate
+    from inventory.services.stock import apply_movement
+
+    conn = connect(":memory:")
+    conn.executescript(SCHEMA)
+    columns = [row[1] for row in conn.execute("PRAGMA table_info(movements)").fetchall()]
+    assert "reference" in columns
+
+    conn.execute("INSERT INTO items (sku, name) VALUES ('S-1', 'Thing')")
+    conn.execute("INSERT INTO locations (code, name) VALUES ('WH-A', 'Warehouse A')")
+    m = apply_movement(
+        conn,
+        MovementCreate(
+            item_id=1, kind="receive", quantity=2, to_location_id=1, reference="PO-999"
+        ),
+    )
+    assert m.reference == "PO-999"
+    row = conn.execute("SELECT reference FROM movements WHERE id = ?", (m.id,)).fetchone()
+    assert row["reference"] == "PO-999"
+
+
+def test_init_db_adds_reference_column_to_old_database(tmp_path):
+    """init_db migrates pre-existing databases that lack movements.reference."""
+    import sqlite3
+
+    from inventory import db
+
+    path = str(tmp_path / "old.db")
+    conn = sqlite3.connect(path)
+    conn.execute(
+        """
+        CREATE TABLE movements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_id INTEGER NOT NULL,
+            kind TEXT NOT NULL,
+            qty INTEGER NOT NULL,
+            from_location_id INTEGER,
+            to_location_id INTEGER,
+            note TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    db.init_db(path)
+    conn = sqlite3.connect(path)
+    try:
+        columns = [row[1] for row in conn.execute("PRAGMA table_info(movements)").fetchall()]
+    finally:
+        conn.close()
+    assert "reference" in columns
+
+
 def test_movement_note_exactly_500_chars_accepted(client, item, loc_a):
     note = "x" * 500
     r = _move(
