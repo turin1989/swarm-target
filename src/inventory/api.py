@@ -79,9 +79,13 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
     return _fetch_item(conn, cur.lastrowid)
 
 
+_SORTABLE_ITEM_COLUMNS = {"id", "name", "sku"}
+
+
 @router.get("/items", response_model=ItemPage)
 def list_items(
     active: Optional[bool] = None,
+    sort: str = Query("id", pattern=r"^-?(id|name|sku)$"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     conn: sqlite3.Connection = Depends(get_db),
@@ -91,9 +95,15 @@ def list_items(
     if active is not None:
         where = " WHERE active = ?"
         where_params.append(int(active))
+    direction = "ASC"
+    if sort.startswith("-"):
+        direction = "DESC"
+        sort = sort[1:]
+    if sort not in _SORTABLE_ITEM_COLUMNS:  # defence in depth; pattern already enforces
+        raise HTTPException(status_code=422, detail=f"invalid sort field {sort!r}")
     total = conn.execute(f"SELECT COUNT(*) FROM items{where}", where_params).fetchone()[0]
     rows = conn.execute(
-        f"SELECT * FROM items{where} ORDER BY id LIMIT ? OFFSET ?",
+        f"SELECT * FROM items{where} ORDER BY {sort} {direction} LIMIT ? OFFSET ?",
         [*where_params, limit, offset],
     ).fetchall()
     return ItemPage(
