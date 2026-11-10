@@ -109,3 +109,14 @@ def test_invalid_code_does_not_create_location(client):
     r = client.get("/locations")
     assert r.status_code == 200
     assert all(loc["code"] != "bad-code" for loc in r.json())
+
+
+def test_invalid_code_uses_uniform_error_shape(client):
+    # T034 validation errors must follow the T050 error envelope.
+    r = client.post("/locations", json={"code": "wh a", "name": "Bad"})
+    assert r.status_code == 422
+    body = r.json()
+    assert set(body) == {"error"}
+    assert set(body["error"]) == {"code", "message"}
+    assert body["error"]["code"] == "validation_error"
+    assert "code" in body["error"]["message"]
