@@ -54,12 +54,14 @@ class LocationCreate(BaseModel):
 class LocationUpdate(BaseModel):
     code: Optional[str] = Field(default=None, min_length=1, max_length=32)
     name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    active: Optional[bool] = None
 
 
 class Location(BaseModel):
     id: int
     code: str
     name: str
+    active: bool = True
 
 
 class MovementCreate(BaseModel):
