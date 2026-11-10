@@ -182,6 +182,16 @@ def update_location(
     updates = payload.model_dump(exclude_unset=True)
     if "name" in updates and updates["name"] is not None:
         conn.execute("UPDATE locations SET name = ? WHERE id = ?", (updates["name"], location_id))
+    if "code" in updates and updates["code"] is not None:
+        try:
+            conn.execute(
+                "UPDATE locations SET code = ? WHERE id = ?", (updates["code"], location_id)
+            )
+        except sqlite3.IntegrityError:
+            raise HTTPException(
+                status_code=409,
+                detail=f"location code {updates['code']!r} already exists",
+            )
     if "active" in updates and updates["active"] is not None:
         conn.execute(
             "UPDATE locations SET active = ? WHERE id = ?",
