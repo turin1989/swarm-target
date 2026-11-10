@@ -206,6 +206,85 @@ def test_list_locations_without_filter_returns_all(client, loc_a, loc_b):
     assert {loc["id"] for loc in r.json()} == {loc_a["id"], loc_b["id"]}
 
 
+# --- T012: PUT /locations/{id} renames a location --------------------------------
+
+
+def test_location_update_model_exists_with_optional_name_and_code():
+    from inventory.models import LocationUpdate
+
+    fields = LocationUpdate.model_fields
+    assert "name" in fields
+    assert "code" in fields
+    # both optional: an empty payload must validate
+    empty = LocationUpdate()
+    assert empty.name is None
+    assert empty.code is None
+
+
+def test_put_location_renames_name(client, loc_a):
+    r = client.put(f"/locations/{loc_a['id']}", json={"name": "Main Warehouse"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["id"] == loc_a["id"]
+    assert body["name"] == "Main Warehouse"
+    assert body["code"] == loc_a["code"]  # code unchanged
+
+    got = client.get(f"/locations/{loc_a['id']}")
+    assert got.status_code == 200
+    assert got.json()["name"] == "Main Warehouse"
+
+
+def test_put_location_updates_code(client, loc_a):
+    r = client.put(f"/locations/{loc_a['id']}", json={"code": "WH-NEW"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["code"] == "WH-NEW"
+    assert body["name"] == loc_a["name"]  # name unchanged
+
+    got = client.get(f"/locations/{loc_a['id']}")
+    assert got.status_code == 200
+    assert got.json()["code"] == "WH-NEW"
+
+
+def test_put_location_updates_name_and_code_together(client, loc_a):
+    r = client.put(
+        f"/locations/{loc_a['id']}", json={"name": "Renamed", "code": "WH-R"}
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["name"] == "Renamed"
+    assert body["code"] == "WH-R"
+
+
+def test_put_location_empty_payload_is_noop(client, loc_a):
+    r = client.put(f"/locations/{loc_a['id']}", json={})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["name"] == loc_a["name"]
+    assert body["code"] == loc_a["code"]
+
+
+def test_put_location_unknown_id_returns_404(client):
+    r = client.put("/locations/424242", json={"name": "Ghost", "code": "GH-1"})
+    assert r.status_code == 404, r.text
+
+
+def test_put_location_invalid_code_rejected_422(client, loc_a):
+    r = client.put(f"/locations/{loc_a['id']}", json={"code": "bad code"})
+    assert r.status_code == 422, r.text
+    # unchanged
+    got = client.get(f"/locations/{loc_a['id']}")
+    assert got.json()["code"] == loc_a["code"]
+
+
+def test_put_location_duplicate_code_returns_409(client, loc_a, loc_b):
+    r = client.put(f"/locations/{loc_b['id']}", json={"code": loc_a["code"]})
+    assert r.status_code == 409, r.text
+    # unchanged
+    got = client.get(f"/locations/{loc_b['id']}")
+    assert got.json()["code"] == loc_b["code"]
+
+
 # --- T013: DELETE /locations/{id} ----------------------------------------------
 
 
