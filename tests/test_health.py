@@ -1,8 +1,9 @@
 """Health endpoint database connectivity checks."""
 
+from fastapi.testclient import TestClient
+
 from inventory import __version__
 from inventory.main import create_app
-from fastapi.testclient import TestClient
 
 
 def test_health_reports_db_ok(client):
