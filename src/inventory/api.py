@@ -1,6 +1,7 @@
 """HTTP routes."""
 
 import sqlite3
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -21,6 +22,11 @@ from inventory.models import (
 from inventory.services import reports, search, stock
 
 router = APIRouter()
+
+
+def _utc_now_iso() -> str:
+    """Current UTC time as ISO-8601 with a trailing Z, e.g. 2026-01-02T03:04:05Z."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _row_to_item(row: sqlite3.Row) -> Item:
@@ -44,8 +50,8 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
     try:
         cur = conn.execute(
             """
-            INSERT INTO items (sku, name, description, unit_price, reorder_point, barcode)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO items (sku, name, description, unit_price, reorder_point, barcode, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 payload.sku,
@@ -54,6 +60,7 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
                 payload.unit_price,
                 payload.reorder_point,
                 payload.barcode,
+                _utc_now_iso(),
             ),
         )
     except sqlite3.IntegrityError as exc:
@@ -130,6 +137,17 @@ def item_stock(item_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Item
         total=stock.total_stock(conn, item_id),
         levels=stock.get_item_levels(conn, item_id),
     )
+
+
+@router.get("/items/{item_id}/movements", response_model=list[Movement])
+def item_movements(
+    item_id: int,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    conn: sqlite3.Connection = Depends(get_db),
+) -> list[Movement]:
+    _fetch_item(conn, item_id)
+    return stock.list_movements(conn, item_id=item_id, limit=limit, offset=offset)
 
 
 # --- locations ---------------------------------------------------------------

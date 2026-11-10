@@ -180,11 +180,108 @@ def test_movement_invalid_kind_422(client, item, loc_a):
     assert r.status_code == 422
 
 
+@pytest.mark.parametrize("qty", [0, -1, -10])
+@pytest.mark.parametrize("kind", ["receive", "ship", "transfer", "adjust"])
+def test_movement_non_positive_qty_422(client, item, loc_a, loc_b, kind, qty):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind=kind,
+        qty=qty,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    assert r.status_code == 422
+    # No movement row must be written.
+    assert client.get("/movements").json() == []
+
+
+def test_non_positive_qty_does_not_change_stock(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    r = _move(client, item_id=item["id"], kind="ship", qty=-3, from_location_id=loc_a["id"])
+    assert r.status_code == 422
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 5
+    assert len(client.get("/movements").json()) == 1
+
+
+def test_apply_movement_rejects_non_positive_qty_directly():
+    """The shared stock service guards against qty <= 0 even when the
+    Pydantic validation layer is bypassed."""
+    from inventory.models import MovementCreate
+    from inventory.services import stock
+
+    bad = MovementCreate.model_construct(
+        item_id=1,
+        kind="receive",
+        qty=0,
+        from_location_id=None,
+        to_location_id=1,
+        note="",
+    )
+    with pytest.raises(stock.StockError) as exc_info:
+        stock.apply_movement(conn=_fake_conn(), m=bad)
+    assert exc_info.value.status_code == 422
+
+
+class _fake_conn:
+    """apply_movement must reject before touching the database."""
+
+    def execute(self, *a, **kw):  # pragma: no cover - should never be called
+        raise AssertionError("database must not be touched for invalid qty")
+
+
 def test_list_movements_pagination(client, item, loc_a):
     for _ in range(4):
         _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
     r = client.get("/movements", params={"limit": 2, "offset": 2})
     assert [m["id"] for m in r.json()] == [3, 4]
+
+
+# --- per-item movement history -------------------------------------------------
+
+
+def test_item_movements_only_returns_that_items_history(client, item, loc_a):
+    other = client.post(
+        "/items", json={"sku": "GADGET-1", "name": "Gadget", "unit_price": 1.0}
+    ).json()
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    _move(client, item_id=other["id"], kind="receive", qty=9, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="ship", qty=2, from_location_id=loc_a["id"])
+
+    r = client.get(f"/items/{item['id']}/movements")
+    assert r.status_code == 200
+    body = r.json()
+    assert [m["id"] for m in body] == [1, 3]
+    assert all(m["item_id"] == item["id"] for m in body)
+    assert [m["kind"] for m in body] == ["receive", "ship"]
+
+
+def test_item_movements_ordered_by_id(client, item, loc_a):
+    for qty in (1, 2, 3):
+        _move(client, item_id=item["id"], kind="receive", qty=qty, to_location_id=loc_a["id"])
+    body = client.get(f"/items/{item['id']}/movements").json()
+    assert [m["id"] for m in body] == [1, 2, 3]
+    assert [m["qty"] for m in body] == [1, 2, 3]
+
+
+def test_item_movements_pagination(client, item, loc_a):
+    for _ in range(5):
+        _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
+    r = client.get(f"/items/{item['id']}/movements", params={"limit": 2, "offset": 1})
+    assert [m["id"] for m in r.json()] == [2, 3]
+    r = client.get(f"/items/{item['id']}/movements", params={"limit": 10, "offset": 4})
+    assert [m["id"] for m in r.json()] == [5]
+
+
+def test_item_movements_empty_for_item_without_history(client, item):
+    r = client.get(f"/items/{item['id']}/movements")
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_item_movements_unknown_item_404(client):
+    r = client.get("/items/999/movements")
+    assert r.status_code == 404
 
 
 def test_movement_note_too_long_422(client, item, loc_a):

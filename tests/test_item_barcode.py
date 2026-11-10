@@ -64,6 +64,24 @@ def test_list_items_barcode_filter_combines_with_active(client):
     assert [i["sku"] for i in got] == ["F1"]
 
 
+def test_item_with_barcode_also_has_created_at(client):
+    """Merged behaviour: barcode (T025) and created_at (T020) coexist on items."""
+    import re
+
+    r = client.post(
+        "/items", json={"sku": "BC-TS", "name": "Both", "barcode": "BC-WITH-TS"}
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["barcode"] == "BC-WITH-TS"
+    assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", body["created_at"])
+    # both fields persist on GET
+    r = client.get(f"/items/{body['id']}")
+    got = r.json()
+    assert got["barcode"] == "BC-WITH-TS"
+    assert got["created_at"] == body["created_at"]
+
+
 def test_duplicate_sku_still_reports_sku_conflict(client):
     client.post("/items", json={"sku": "SAME", "name": "a", "barcode": "X-1"})
     r = client.post("/items", json={"sku": "SAME", "name": "b", "barcode": "X-2"})

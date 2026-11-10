@@ -68,6 +68,9 @@ def _require_location(conn: sqlite3.Connection, location_id: int | None, field: 
 
 def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
     """Validate and apply a stock movement, returning the persisted record."""
+    if m.qty <= 0:
+        raise StockError("qty must be a positive integer", status_code=422)
+
     item = conn.execute("SELECT id FROM items WHERE id = ?", (m.item_id,)).fetchone()
     if item is None:
         raise StockError(f"item {m.item_id} not found", status_code=404)
@@ -108,8 +111,18 @@ def get_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
     return Movement(**dict(row))
 
 
-def list_movements(conn: sqlite3.Connection, limit: int = 100, offset: int = 0) -> list[Movement]:
-    rows = conn.execute(
-        "SELECT * FROM movements ORDER BY id LIMIT ? OFFSET ?", (limit, offset)
-    ).fetchall()
+def list_movements(
+    conn: sqlite3.Connection,
+    item_id: int | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[Movement]:
+    sql = "SELECT * FROM movements"
+    params: list = []
+    if item_id is not None:
+        sql += " WHERE item_id = ?"
+        params.append(item_id)
+    sql += " ORDER BY id LIMIT ? OFFSET ?"
+    params += [limit, offset]
+    rows = conn.execute(sql, params).fetchall()
     return [Movement(**dict(r)) for r in rows]
