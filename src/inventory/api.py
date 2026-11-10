@@ -114,9 +114,12 @@ def item_stock(item_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Item
 def create_location(
     payload: LocationCreate, conn: sqlite3.Connection = Depends(get_db)
 ) -> Location:
-    cur = conn.execute(
-        "INSERT INTO locations (code, name) VALUES (?, ?)", (payload.code, payload.name)
-    )
+    try:
+        cur = conn.execute(
+            "INSERT INTO locations (code, name) VALUES (?, ?)", (payload.code, payload.name)
+        )
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=409, detail=f"location code {payload.code!r} already exists")
     row = conn.execute("SELECT * FROM locations WHERE id = ?", (cur.lastrowid,)).fetchone()
     return Location(**dict(row))
 
