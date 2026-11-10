@@ -2,6 +2,7 @@
 
 import os
 import sqlite3
+import uuid
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -46,6 +47,13 @@ def create_app(db_path: str | None = None) -> FastAPI:
     app.add_exception_handler(InventoryError, inventory_error_handler)
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(RequestValidationError, request_validation_error_handler)
+
+    @app.middleware("http")
+    async def request_id_middleware(request: Request, call_next):
+        request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        return response
 
     @app.get("/health")
     def health() -> JSONResponse:
