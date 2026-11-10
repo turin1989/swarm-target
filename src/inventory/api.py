@@ -299,6 +299,14 @@ def create_movement(
         raise HTTPException(status_code=exc.status_code, detail=str(exc))
 
 
+@router.get("/movements/{movement_id}", response_model=Movement)
+def get_movement(movement_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Movement:
+    try:
+        return stock.get_movement(conn, movement_id)
+    except stock.StockError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+
+
 @router.get("/movements", response_model=list[Movement])
 def list_movements(
     item_id: Optional[int] = None,
