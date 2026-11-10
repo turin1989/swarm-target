@@ -10,7 +10,6 @@ from inventory.services.errors import (
     ValidationError,
 )
 
-
 # --- exception hierarchy -------------------------------------------------------
 
 
