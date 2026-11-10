@@ -2,25 +2,29 @@
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 MovementKind = Literal["receive", "ship", "transfer"]
 
 
 class ItemCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     sku: str = Field(..., min_length=1, max_length=64)
     name: str = Field(..., min_length=1, max_length=200)
     description: str = Field(default="", max_length=2000)
     unit_price: float = 0.0
-    reorder_point: int = Field(default=0, ge=0)
+    reorder_level: int = Field(default=0, ge=0)
     barcode: Optional[str] = None
 
 
 class ItemUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: Optional[str] = None
     description: Optional[str] = Field(default=None, max_length=2000)
     unit_price: Optional[float] = None
-    reorder_point: Optional[int] = Field(default=None, ge=0)
+    reorder_level: Optional[int] = Field(default=None, ge=0)
     active: Optional[bool] = None
 
 
@@ -30,14 +34,26 @@ class Item(BaseModel):
     name: str
     description: str
     unit_price: float
-    reorder_point: int
+    reorder_level: int
     active: bool
     barcode: Optional[str] = None
+
+
+class ItemPage(BaseModel):
+    items: list[Item]
+    total: int
+    limit: int
+    offset: int
 
 
 class LocationCreate(BaseModel):
     code: str = Field(..., min_length=1, max_length=32)
     name: str = Field(..., min_length=1, max_length=200)
+
+
+class LocationUpdate(BaseModel):
+    code: Optional[str] = Field(default=None, min_length=1, max_length=32)
+    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
 
 
 class Location(BaseModel):
@@ -49,7 +65,7 @@ class Location(BaseModel):
 class MovementCreate(BaseModel):
     item_id: int
     kind: MovementKind
-    qty: int
+    qty: int = Field(..., gt=0)
     from_location_id: Optional[int] = None
     to_location_id: Optional[int] = None
     note: str = ""
@@ -89,4 +105,4 @@ class LowStockEntry(BaseModel):
     sku: str
     name: str
     total_qty: int
-    reorder_point: int
+    reorder_level: int

@@ -70,6 +70,9 @@ def _require_location(conn: sqlite3.Connection, location_id: int | None, field: 
 
 def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
     """Validate and apply a stock movement, returning the persisted record."""
+    if m.qty <= 0:
+        raise StockError("qty must be a positive integer", status_code=422)
+
     item = conn.execute("SELECT id FROM items WHERE id = ?", (m.item_id,)).fetchone()
     if item is None:
         raise StockError(f"item {m.item_id} not found", status_code=404)
@@ -105,6 +108,34 @@ def get_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
     if row is None:
         raise StockError(f"movement {movement_id} not found", status_code=404)
     return Movement(**dict(row))
+
+
+def reverse_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
+    """Create and apply a new movement that undoes an existing one."""
+    original = get_movement(conn, movement_id)
+
+    if original.kind == "receive":
+        kind = "ship"
+        from_location_id = original.to_location_id
+        to_location_id = None
+    elif original.kind == "ship":
+        kind = "receive"
+        from_location_id = None
+        to_location_id = original.from_location_id
+    else:  # transfer
+        kind = "transfer"
+        from_location_id = original.to_location_id
+        to_location_id = original.from_location_id
+
+    reversal = MovementCreate(
+        item_id=original.item_id,
+        kind=kind,
+        qty=original.qty,
+        from_location_id=from_location_id,
+        to_location_id=to_location_id,
+        note=f"reversal of {movement_id}",
+    )
+    return apply_movement(conn, reversal)
 
 
 def list_movements(conn: sqlite3.Connection, limit: int = 100, offset: int = 0) -> list[Movement]:
