@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS items (
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     unit_price REAL NOT NULL DEFAULT 0,
-    reorder_point INTEGER NOT NULL DEFAULT 0,
+    reorder_level INTEGER NOT NULL DEFAULT 0,
     active INTEGER NOT NULL DEFAULT 1,
     barcode TEXT UNIQUE
 );
@@ -69,6 +69,8 @@ def init_db(path: str) -> None:
 def _migrate(conn: sqlite3.Connection) -> None:
     """Lightweight in-place migrations for existing databases."""
     cols = {row["name"] for row in conn.execute("PRAGMA table_info(items)")}
+    if "reorder_point" in cols:
+        conn.execute("ALTER TABLE items RENAME COLUMN reorder_point TO reorder_level")
     if "barcode" not in cols:
         conn.execute("ALTER TABLE items ADD COLUMN barcode TEXT")
         conn.execute(
