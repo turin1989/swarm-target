@@ -109,8 +109,8 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
     created_at = _utc_now_iso()
     cur = conn.execute(
         """
-        INSERT INTO movements (item_id, kind, qty, from_location_id, to_location_id, note, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO movements (item_id, kind, qty, from_location_id, to_location_id, note, reference, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             m.item_id,
@@ -119,6 +119,7 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
             m.from_location_id,
             m.to_location_id,
             m.note,
+            m.reference,
             created_at,
         ),
     )
