@@ -15,7 +15,7 @@ def test_create_item_returns_201_and_fields(client):
     assert body["sku"] == "A-1"
     assert body["name"] == "Alpha"
     assert body["unit_price"] == 1.25
-    assert body["reorder_point"] == 0
+    assert body["reorder_level"] == 0
     assert body["active"] is True
 
 
@@ -49,21 +49,68 @@ def test_list_items_ordered_by_id(client):
         client.post("/items", json={"sku": sku, "name": sku})
     r = client.get("/items")
     assert r.status_code == 200
-    assert [i["sku"] for i in r.json()] == ["C", "A", "B"]
+    assert [i["sku"] for i in r.json()["items"]] == ["C", "A", "B"]
 
 
 def test_list_items_limit(client):
     for n in range(5):
         client.post("/items", json={"sku": f"S{n}", "name": f"N{n}"})
     r = client.get("/items", params={"limit": 2})
-    assert [i["sku"] for i in r.json()] == ["S0", "S1"]
+    assert [i["sku"] for i in r.json()["items"]] == ["S0", "S1"]
 
 
 def test_list_items_filter_active(client, item):
     client.post("/items", json={"sku": "INACTIVE", "name": "Old"})
     client.put("/items/2", json={"active": False})
-    assert [i["sku"] for i in client.get("/items", params={"active": "true"}).json()] == ["WIDGET-1"]
-    assert [i["sku"] for i in client.get("/items", params={"active": "false"}).json()] == ["INACTIVE"]
+    assert [
+        i["sku"] for i in client.get("/items", params={"active": "true"}).json()["items"]
+    ] == ["WIDGET-1"]
+    assert [
+        i["sku"] for i in client.get("/items", params={"active": "false"}).json()["items"]
+    ] == ["INACTIVE"]
+
+
+# --- pagination envelope ---------------------------------------------------------
+
+
+def test_list_items_returns_envelope_shape(client):
+    for n in range(3):
+        client.post("/items", json={"sku": f"E{n}", "name": f"E{n}"})
+    r = client.get("/items")
+    assert r.status_code == 200
+    body = r.json()
+    assert set(body) == {"items", "total", "limit", "offset"}
+    assert body["total"] == 3
+    assert body["limit"] == 100
+    assert body["offset"] == 0
+    assert [i["sku"] for i in body["items"]] == ["E0", "E1", "E2"]
+
+
+def test_list_items_total_ignores_pagination(client):
+    for n in range(5):
+        client.post("/items", json={"sku": f"P{n}", "name": f"P{n}"})
+    r = client.get("/items", params={"limit": 2, "offset": 1})
+    body = r.json()
+    assert body["total"] == 5
+    assert body["limit"] == 2
+    assert body["offset"] == 1
+    assert [i["sku"] for i in body["items"]] == ["P1", "P2"]
+
+
+def test_list_items_total_respects_filters(client, item):
+    client.post("/items", json={"sku": "INACTIVE", "name": "Old"})
+    client.put("/items/2", json={"active": False})
+    body = client.get("/items", params={"active": "true", "limit": 1}).json()
+    assert body["total"] == 1
+    assert [i["sku"] for i in body["items"]] == ["WIDGET-1"]
+
+
+def test_list_items_offset_past_end_empty_items_but_total_set(client):
+    for n in range(2):
+        client.post("/items", json={"sku": f"O{n}", "name": f"O{n}"})
+    body = client.get("/items", params={"offset": 10}).json()
+    assert body["items"] == []
+    assert body["total"] == 2
 
 
 def test_update_item_name_and_price(client, item):
@@ -102,6 +149,94 @@ def test_delete_item_cascades_stock(client, item, loc_a):
     )
     assert client.delete(f"/items/{item['id']}").status_code == 204
     assert client.get("/movements").json() == []
+
+
+# --- reorder_level (renamed from reorder_point) ---------------------------------
+
+
+def test_create_item_accepts_reorder_level(client):
+    r = client.post("/items", json={"sku": "RL-1", "name": "Reorderable", "reorder_level": 7})
+    assert r.status_code == 201
+    body = r.json()
+    assert body["reorder_level"] == 7
+    assert "reorder_point" not in body
+    # persisted and returned on GET
+    body = client.get(f"/items/{body['id']}").json()
+    assert body["reorder_level"] == 7
+    assert "reorder_point" not in body
+
+
+def test_create_item_with_legacy_reorder_point_returns_422(client):
+    r = client.post("/items", json={"sku": "RP-1", "name": "Legacy", "reorder_point": 7})
+    assert r.status_code == 422
+    assert r.json()["error"]["code"] == "validation_error"
+    # nothing was created
+    assert client.get("/items").json() == []
+
+
+def test_update_item_with_legacy_reorder_point_returns_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": 9})
+    assert r.status_code == 422
+    assert r.json()["error"]["code"] == "validation_error"
+    # item unchanged
+    assert client.get(f"/items/{item['id']}").json() == item
+
+
+def test_update_item_accepts_reorder_level_field(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_level": 9})
+    assert r.status_code == 200
+    assert "reorder_point" not in r.json()
+
+
+def test_items_table_uses_reorder_level_column(tmp_path):
+    from inventory import db as db_module
+
+    path = str(tmp_path / "schema.db")
+    db_module.init_db(path)
+    conn = db_module.connect(path)
+    try:
+        cols = {row["name"] for row in conn.execute("PRAGMA table_info(items)")}
+    finally:
+        conn.close()
+    assert "reorder_level" in cols
+    assert "reorder_point" not in cols
+
+
+def test_legacy_reorder_point_column_is_migrated(tmp_path):
+    import sqlite3
+
+    from inventory import db as db_module
+
+    path = str(tmp_path / "legacy.db")
+    conn = sqlite3.connect(path)
+    conn.execute(
+        """
+        CREATE TABLE items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sku TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            unit_price REAL NOT NULL DEFAULT 0,
+            reorder_point INTEGER NOT NULL DEFAULT 0,
+            active INTEGER NOT NULL DEFAULT 1,
+            barcode TEXT UNIQUE
+        )
+        """
+    )
+    conn.execute("INSERT INTO items (sku, name, reorder_point) VALUES ('OLD-1', 'Old', 4)")
+    conn.commit()
+    conn.close()
+
+    db_module.init_db(path)
+    conn = db_module.connect(path)
+    try:
+        cols = {row["name"] for row in conn.execute("PRAGMA table_info(items)")}
+        row = conn.execute("SELECT reorder_level FROM items WHERE sku = 'OLD-1'").fetchone()
+    finally:
+        conn.close()
+    assert "reorder_level" in cols
+    assert "reorder_point" not in cols
+    assert row["reorder_level"] == 4
 
 
 def test_delete_item_with_stock_conflicts(client, item, loc_a):
@@ -185,7 +320,7 @@ def test_list_items_filter_by_barcode(client):
     client.post("/items", json={"sku": "F3", "name": "f3"})
     r = client.get("/items", params={"barcode": "CODE-2"})
     assert r.status_code == 200
-    body = r.json()
+    body = r.json()["items"]
     assert len(body) == 1
     assert body[0]["sku"] == "F2"
     assert body[0]["barcode"] == "CODE-2"
@@ -195,15 +330,18 @@ def test_list_items_filter_by_unknown_barcode_returns_empty(client):
     client.post("/items", json={"sku": "F1", "name": "f1", "barcode": "CODE-1"})
     r = client.get("/items", params={"barcode": "NOPE"})
     assert r.status_code == 200
-    assert r.json() == []
+    assert r.json()["items"] == []
+    assert r.json()["total"] == 0
 
 
 def test_list_items_filter_barcode_combined_with_active(client):
     client.post("/items", json={"sku": "F1", "name": "f1", "barcode": "CODE-1"})
     client.put("/items/1", json={"active": False})
-    assert client.get("/items", params={"barcode": "CODE-1", "active": "true"}).json() == []
+    assert (
+        client.get("/items", params={"barcode": "CODE-1", "active": "true"}).json()["items"] == []
+    )
     r = client.get("/items", params={"barcode": "CODE-1", "active": "false"})
-    assert [i["sku"] for i in r.json()] == ["F1"]
+    assert [i["sku"] for i in r.json()["items"]] == ["F1"]
 
 
 # --- description length --------------------------------------------------------
@@ -239,42 +377,42 @@ def test_update_item_description_at_limit_ok(client, item):
     assert r.json()["description"] == "x" * 2000
 
 
-def test_create_item_negative_reorder_point_422(client):
+def test_create_item_negative_reorder_level_422(client):
     r = client.post(
         "/items",
-        json={"sku": "NEG-1", "name": "Neg", "reorder_point": -1},
+        json={"sku": "NEG-1", "name": "Neg", "reorder_level": -1},
     )
     assert r.status_code == 422
 
 
-def test_create_item_zero_reorder_point_ok(client):
+def test_create_item_zero_reorder_level_ok(client):
     r = client.post(
         "/items",
-        json={"sku": "ZERO-1", "name": "Zero", "reorder_point": 0},
+        json={"sku": "ZERO-1", "name": "Zero", "reorder_level": 0},
     )
     assert r.status_code == 201
-    assert r.json()["reorder_point"] == 0
+    assert r.json()["reorder_level"] == 0
 
 
-def test_create_item_with_barcode_and_negative_reorder_point_422(client):
+def test_create_item_with_barcode_and_negative_reorder_level_422(client):
     # Both merged features must coexist: barcode is accepted as a field,
-    # but a negative reorder_point is still rejected with 422.
+    # but a negative reorder_level is still rejected with 422.
     r = client.post(
         "/items",
-        json={"sku": "BC-NEG", "name": "Neg", "barcode": "BC-123", "reorder_point": -1},
+        json={"sku": "BC-NEG", "name": "Neg", "barcode": "BC-123", "reorder_level": -1},
     )
     assert r.status_code == 422
     assert r.json()["error"]["code"] == "validation_error"
 
 
-def test_update_item_negative_reorder_point_422(client, item):
-    r = client.put(f"/items/{item['id']}", json={"reorder_point": -5})
+def test_update_item_negative_reorder_level_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_level": -5})
     assert r.status_code == 422
     # item unchanged
     assert client.get(f"/items/{item['id']}").json() == item
 
 
-def test_update_item_nonnegative_reorder_point_not_rejected(client, item):
-    # Non-negative reorder_point values must pass validation (no 422).
-    r = client.put(f"/items/{item['id']}", json={"reorder_point": 7})
+def test_update_item_nonnegative_reorder_level_not_rejected(client, item):
+    # Non-negative reorder_level values must pass validation (no 422).
+    r = client.put(f"/items/{item['id']}", json={"reorder_level": 7})
     assert r.status_code == 200

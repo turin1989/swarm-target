@@ -3,7 +3,7 @@
 
 def _seed(client, sku, name, reorder, qty, loc, price=1.0):
     item = client.post(
-        "/items", json={"sku": sku, "name": name, "reorder_point": reorder, "unit_price": price}
+        "/items", json={"sku": sku, "name": name, "reorder_level": reorder, "unit_price": price}
     ).json()
     if qty:
         client.post(
@@ -13,7 +13,7 @@ def _seed(client, sku, name, reorder, qty, loc, price=1.0):
     return item
 
 
-def test_low_stock_lists_items_below_reorder_point(client, loc_a):
+def test_low_stock_lists_items_below_reorder_level(client, loc_a):
     _seed(client, "LOW", "Low", reorder=5, qty=2, loc=loc_a)
     _seed(client, "OK", "Fine", reorder=5, qty=10, loc=loc_a)
     r = client.get("/reports/low-stock")
@@ -25,25 +25,25 @@ def test_low_stock_lists_items_below_reorder_point(client, loc_a):
         "sku": "LOW",
         "name": "Low",
         "total_qty": 2,
-        "reorder_point": 5,
+        "reorder_level": 5,
     }
 
 
-def test_low_stock_includes_items_exactly_at_reorder_point(client, loc_a):
+def test_low_stock_includes_items_exactly_at_reorder_level(client, loc_a):
     _seed(client, "EDGE", "Edge", reorder=5, qty=5, loc=loc_a)
     _seed(client, "ABOVE", "Above", reorder=5, qty=6, loc=loc_a)
     entries = client.get("/reports/low-stock").json()
     assert [e["sku"] for e in entries] == ["EDGE"]
     assert entries[0]["total_qty"] == 5
-    assert entries[0]["reorder_point"] == 5
+    assert entries[0]["reorder_level"] == 5
 
 
-def test_low_stock_includes_zero_reorder_point_with_zero_stock(client, loc_a):
+def test_low_stock_includes_zero_reorder_level_with_zero_stock(client, loc_a):
     _seed(client, "ZERO", "Zero", reorder=0, qty=0, loc=loc_a)
     assert [e["sku"] for e in client.get("/reports/low-stock").json()] == ["ZERO"]
 
 
-def test_low_stock_excludes_items_strictly_above_reorder_point(client, loc_a):
+def test_low_stock_excludes_items_strictly_above_reorder_level(client, loc_a):
     _seed(client, "PLENTY", "Plenty", reorder=3, qty=4, loc=loc_a)
     assert client.get("/reports/low-stock").json() == []
 
@@ -57,6 +57,13 @@ def test_low_stock_excludes_inactive(client, loc_a):
     item = _seed(client, "GONE", "Gone", reorder=5, qty=0, loc=loc_a)
     client.put(f"/items/{item['id']}", json={"active": False})
     assert client.get("/reports/low-stock").json() == []
+
+
+def test_low_stock_entries_expose_reorder_level_not_reorder_point(client, loc_a):
+    _seed(client, "LOW", "Low", reorder=5, qty=2, loc=loc_a)
+    entries = client.get("/reports/low-stock").json()
+    assert entries[0]["reorder_level"] == 5
+    assert "reorder_point" not in entries[0]
 
 
 def test_low_stock_sorted_by_sku(client, loc_a):
@@ -99,6 +106,17 @@ def test_low_stock_unknown_location_returns_404(client, loc_a):
     assert "9999" in body["error"]["message"]
 
 
+def test_low_stock_scoped_to_location_exposes_reorder_level_not_reorder_point(
+    client, loc_a, loc_b
+):
+    # The location-scoped report must also use the renamed field.
+    _seed(client, "SCOPED", "Scoped", reorder=5, qty=2, loc=loc_a)
+    entries = client.get("/reports/low-stock", params={"location_id": loc_a["id"]}).json()
+    assert [e["sku"] for e in entries] == ["SCOPED"]
+    assert entries[0]["reorder_level"] == 5
+    assert "reorder_point" not in entries[0]
+
+
 def test_low_stock_without_location_param_unchanged(client, loc_a, loc_b):
     # 3 at A + 3 at B = 6 total, which is at the reorder point of 6 -> included.
     item = _seed(client, "SUM", "Sum", reorder=6, qty=3, loc=loc_a)
@@ -115,6 +133,38 @@ def test_inventory_value(client, loc_a):
     _seed(client, "P1", "p1", reorder=0, qty=3, loc=loc_a, price=2.0)
     _seed(client, "P2", "p2", reorder=0, qty=1, loc=loc_a, price=10.0)
     assert client.get("/reports/value").json() == {"value": 16.0}
+
+
+def test_inventory_value_filtered_by_location(client, loc_a, loc_b):
+    _seed(client, "P1", "p1", reorder=0, qty=3, loc=loc_a, price=2.0)
+    _seed(client, "P2", "p2", reorder=0, qty=1, loc=loc_b, price=10.0)
+    r = client.get("/reports/value", params={"location_id": loc_a["id"]})
+    assert r.status_code == 200
+    assert r.json() == {"value": 6.0}
+    r = client.get("/reports/value", params={"location_id": loc_b["id"]})
+    assert r.status_code == 200
+    assert r.json() == {"value": 10.0}
+
+
+def test_inventory_value_unknown_location_returns_404(client, loc_a):
+    _seed(client, "P1", "p1", reorder=0, qty=3, loc=loc_a, price=2.0)
+    r = client.get("/reports/value", params={"location_id": 9999})
+    assert r.status_code == 404
+
+
+def test_inventory_value_without_filter_unchanged(client, loc_a, loc_b):
+    _seed(client, "P1", "p1", reorder=0, qty=3, loc=loc_a, price=2.0)
+    _seed(client, "P2", "p2", reorder=0, qty=1, loc=loc_b, price=10.0)
+    r = client.get("/reports/value")
+    assert r.status_code == 200
+    assert r.json() == {"value": 16.0}
+
+
+def test_inventory_value_filtered_empty_location_is_zero(client, loc_a, loc_b):
+    _seed(client, "P1", "p1", reorder=0, qty=3, loc=loc_a, price=2.0)
+    r = client.get("/reports/value", params={"location_id": loc_b["id"]})
+    assert r.status_code == 200
+    assert r.json() == {"value": 0.0}
 
 
 def test_search_by_name_substring(client):
