@@ -85,6 +85,65 @@ def test_list_items_ordered_by_id(client):
     assert [i["sku"] for i in r.json()] == ["C", "A", "B"]
 
 
+def test_list_items_sort_default_is_id(client):
+    for sku in ["C", "A", "B"]:
+        client.post("/items", json={"sku": sku, "name": sku.lower()})
+    r = client.get("/items")
+    assert [i["sku"] for i in r.json()] == ["C", "A", "B"]
+
+
+def test_list_items_sort_by_name(client):
+    for sku, name in [("S1", "Charlie"), ("S2", "Alpha"), ("S3", "Bravo")]:
+        client.post("/items", json={"sku": sku, "name": name})
+    r = client.get("/items", params={"sort": "name"})
+    assert r.status_code == 200
+    assert [i["name"] for i in r.json()] == ["Alpha", "Bravo", "Charlie"]
+
+
+def test_list_items_sort_by_sku(client):
+    for sku in ["C", "A", "B"]:
+        client.post("/items", json={"sku": sku, "name": sku})
+    r = client.get("/items", params={"sort": "sku"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["A", "B", "C"]
+
+
+def test_list_items_sort_by_id_explicit(client):
+    for sku in ["C", "A", "B"]:
+        client.post("/items", json={"sku": sku, "name": sku})
+    r = client.get("/items", params={"sort": "id"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["C", "A", "B"]
+
+
+def test_list_items_sort_descending(client):
+    for sku, name in [("S1", "Charlie"), ("S2", "Alpha"), ("S3", "Bravo")]:
+        client.post("/items", json={"sku": sku, "name": name})
+    r = client.get("/items", params={"sort": "-name"})
+    assert r.status_code == 200
+    assert [i["name"] for i in r.json()] == ["Charlie", "Bravo", "Alpha"]
+
+    r = client.get("/items", params={"sort": "-sku"})
+    assert [i["sku"] for i in r.json()] == ["S3", "S2", "S1"]
+
+    r = client.get("/items", params={"sort": "-id"})
+    assert [i["sku"] for i in r.json()] == ["S3", "S2", "S1"]
+
+
+def test_list_items_sort_invalid_422(client):
+    for bad in ["unit_price", "name; DROP TABLE items", "-", "--name", ""]:
+        r = client.get("/items", params={"sort": bad})
+        assert r.status_code == 422, bad
+
+
+def test_list_items_sort_combines_with_active_filter(client):
+    for sku, name in [("S1", "Charlie"), ("S2", "Alpha"), ("S3", "Bravo")]:
+        client.post("/items", json={"sku": sku, "name": name})
+    client.put("/items/2", json={"active": False})
+    r = client.get("/items", params={"sort": "name", "active": "true"})
+    assert [i["name"] for i in r.json()] == ["Bravo", "Charlie"]
+
+
 def test_list_items_limit(client):
     for n in range(5):
         client.post("/items", json={"sku": f"S{n}", "name": f"N{n}"})
@@ -203,3 +262,31 @@ def test_update_item_omitting_reorder_point_leaves_it_untouched(client, item):
     assert r.status_code == 200
     assert r.json()["reorder_point"] == 5
     assert client.get(f"/items/{item['id']}").json()["reorder_point"] == 5
+
+
+def test_create_item_description_too_long_422(client):
+    r = client.post(
+        "/items",
+        json={"sku": "LONG-1", "name": "Long", "description": "x" * 2001},
+    )
+    assert r.status_code == 422
+
+
+def test_create_item_description_at_limit_ok(client):
+    r = client.post(
+        "/items",
+        json={"sku": "LONG-2", "name": "Long", "description": "x" * 2000},
+    )
+    assert r.status_code == 201
+    assert r.json()["description"] == "x" * 2000
+
+
+def test_update_item_description_too_long_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"description": "x" * 2001})
+    assert r.status_code == 422
+
+
+def test_update_item_description_at_limit_ok(client, item):
+    r = client.put(f"/items/{item['id']}", json={"description": "x" * 2000})
+    assert r.status_code == 200
+    assert r.json()["description"] == "x" * 2000
