@@ -99,6 +99,49 @@ def test_update_item_zero_reorder_point_accepted(client, item):
     assert r.status_code == 200
 
 
+# --- reorder_point update persistence (T004) -------------------------------------
+
+
+def test_update_item_reorder_point_persists_and_returned(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": 12})
+    assert r.status_code == 200
+    assert r.json()["reorder_point"] == 12
+    # persisted
+    assert client.get(f"/items/{item['id']}").json()["reorder_point"] == 12
+
+
+def test_update_item_reorder_point_with_other_fields(client, item):
+    r = client.put(
+        f"/items/{item['id']}",
+        json={"reorder_point": 7, "name": "Renamed", "unit_price": 9.99},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["reorder_point"] == 7
+    assert body["name"] == "Renamed"
+    assert body["unit_price"] == 9.99
+    stored = client.get(f"/items/{item['id']}").json()
+    assert stored["reorder_point"] == 7
+    assert stored["name"] == "Renamed"
+    assert stored["unit_price"] == 9.99
+
+
+def test_update_item_omitting_reorder_point_leaves_it_untouched(client, item):
+    assert item["reorder_point"] == 5
+    r = client.put(f"/items/{item['id']}", json={"name": "NewName"})
+    assert r.status_code == 200
+    assert r.json()["reorder_point"] == 5
+    assert client.get(f"/items/{item['id']}").json()["reorder_point"] == 5
+
+
+def test_update_item_zero_reorder_point_persists(client, item):
+    # item starts with reorder_point=5; setting it to 0 must persist.
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": 0})
+    assert r.status_code == 200
+    assert r.json()["reorder_point"] == 0
+    assert client.get(f"/items/{item['id']}").json()["reorder_point"] == 0
+
+
 def test_update_item_description_too_long_422(client, item):
     r = client.put(f"/items/{item['id']}", json={"description": "d" * 2001})
     assert r.status_code == 422
