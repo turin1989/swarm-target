@@ -321,6 +321,48 @@ def test_adjust_recorded_in_movements_list(client, item, loc_a):
     assert movements[0]["note"] == "count"
 
 
+# --- GET /movements/{id} (T015) -------------------------------------------------
+
+
+def test_get_movement_matches_post_response(client, item, loc_a):
+    created = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=10,
+        to_location_id=loc_a["id"],
+        note="initial",
+    ).json()
+    r = client.get(f"/movements/{created['id']}")
+    assert r.status_code == 200
+    assert r.json() == created
+
+
+def test_get_movement_second_record(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    created = _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=2,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    ).json()
+    r = client.get(f"/movements/{created['id']}")
+    assert r.status_code == 200
+    body = r.json()
+    assert body == created
+    assert body["kind"] == "transfer"
+    assert body["from_location_id"] == loc_a["id"]
+    assert body["to_location_id"] == loc_b["id"]
+
+
+def test_get_movement_unknown_id_404(client):
+    r = client.get("/movements/999")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "movement 999 not found"
+
+
 # --- DELETE /locations/{id} (T013) --------------------------------------------
 
 
