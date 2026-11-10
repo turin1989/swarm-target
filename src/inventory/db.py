@@ -18,9 +18,13 @@ CREATE TABLE IF NOT EXISTS items (
 
 CREATE TABLE IF NOT EXISTS locations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    code TEXT NOT NULL,
+    code TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL
 );
+
+-- Enforce uniqueness of location codes on databases created before the
+-- UNIQUE column constraint existed (CREATE TABLE IF NOT EXISTS won't alter them).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_locations_code ON locations(code);
 
 CREATE TABLE IF NOT EXISTS stock_levels (
     item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
