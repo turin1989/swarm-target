@@ -3,15 +3,38 @@
 import os
 import sqlite3
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from inventory import __version__
-from inventory.api import inventory_error_handler, router
+from inventory.api import error_body, inventory_error_handler, router
 from inventory.db import connect, init_db
 from inventory.services.errors import InventoryError
 
 DEFAULT_DB_PATH = "inventory.db"
+
+
+def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+    """Convert HTTPException to the uniform error response shape."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=error_body(exc.status_code, str(exc.detail)),
+    )
+
+
+def request_validation_error_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """Convert request validation errors to the uniform error response shape."""
+    parts = []
+    for err in exc.errors():
+        loc = ".".join(str(p) for p in err.get("loc", ()))
+        msg = err.get("msg", "invalid")
+        parts.append(f"{loc}: {msg}" if loc else msg)
+    message = "; ".join(parts) or "validation error"
+    return JSONResponse(status_code=422, content=error_body(422, message))
 
 
 def create_app(db_path: str | None = None) -> FastAPI:
@@ -21,6 +44,8 @@ def create_app(db_path: str | None = None) -> FastAPI:
     app.state.db_path = db_path
     app.include_router(router)
     app.add_exception_handler(InventoryError, inventory_error_handler)
+    app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+    app.add_exception_handler(RequestValidationError, request_validation_error_handler)
 
     @app.get("/health")
     def health() -> JSONResponse:

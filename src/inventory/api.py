@@ -25,10 +25,27 @@ from inventory.services.errors import InventoryError
 router = APIRouter()
 
 
+_STATUS_TO_ERROR_CODE = {
+    400: "bad_request",
+    404: "not_found",
+    409: "conflict",
+    422: "validation_error",
+}
+
+
+def error_body(status_code: int, message: str) -> dict:
+    """Build the uniform error response body for a status code and message."""
+    code = _STATUS_TO_ERROR_CODE.get(
+        status_code, "internal_error" if status_code >= 500 else "bad_request"
+    )
+    return {"error": {"code": code, "message": message}}
+
+
 def inventory_error_handler(request: Request, exc: InventoryError) -> JSONResponse:
     """Map any InventoryError to its HTTP response in one place."""
-    http_exc = HTTPException(status_code=exc.status_code, detail=str(exc))
-    return JSONResponse(status_code=http_exc.status_code, content={"detail": http_exc.detail})
+    return JSONResponse(
+        status_code=exc.status_code, content=error_body(exc.status_code, str(exc))
+    )
 
 
 def _row_to_item(row: sqlite3.Row) -> Item:
