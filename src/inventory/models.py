@@ -12,14 +12,14 @@ class ItemCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     description: str = ""
     unit_price: float = 0.0
-    reorder_point: int = 0
+    reorder_point: int = Field(default=0, ge=0)
 
 
 class ItemUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     unit_price: Optional[float] = None
-    reorder_point: Optional[int] = None
+    reorder_point: Optional[int] = Field(default=None, ge=0)
     active: Optional[bool] = None
 
 
