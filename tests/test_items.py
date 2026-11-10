@@ -88,6 +88,37 @@ def test_list_items_filter_active(client, item):
     assert inactive_page["total"] == 1
 
 
+def test_list_items_filter_sku_exact_match(client, item):
+    client.post("/items", json={"sku": "WIDGET-10", "name": "Other"})
+    body = client.get("/items", params={"sku": "WIDGET-1"}).json()
+    assert [i["sku"] for i in body["items"]] == ["WIDGET-1"]
+    assert body["total"] == 1
+
+
+def test_list_items_filter_sku_unknown_returns_empty_list(client, item):
+    r = client.get("/items", params={"sku": "NOPE"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["items"] == []
+    assert body["total"] == 0
+
+
+def test_list_items_filter_sku_combines_with_active(client, item):
+    client.post("/items", json={"sku": "GADGET-1", "name": "Gadget"})
+    client.put("/items/2", json={"active": False})
+    # matching sku but wrong active state -> empty
+    body = client.get("/items", params={"sku": "GADGET-1", "active": "true"}).json()
+    assert body["items"] == []
+    assert body["total"] == 0
+    # matching sku and matching active state -> single result
+    body = client.get("/items", params={"sku": "GADGET-1", "active": "false"}).json()
+    assert [i["sku"] for i in body["items"]] == ["GADGET-1"]
+    assert body["total"] == 1
+    # active-only filter still works alongside a sku filter elsewhere
+    body = client.get("/items", params={"sku": "WIDGET-1", "active": "true"}).json()
+    assert [i["sku"] for i in body["items"]] == ["WIDGET-1"]
+
+
 def test_list_items_envelope_shape(client):
     for n in range(3):
         client.post("/items", json={"sku": f"E{n}", "name": f"E{n}"})
