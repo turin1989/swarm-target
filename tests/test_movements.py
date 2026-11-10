@@ -502,3 +502,121 @@ def test_delete_location_with_zero_qty_stock_row(client, item, loc_a):
     r = client.delete(f"/locations/{loc_a['id']}")
     assert r.status_code == 204
     assert client.get(f"/locations/{loc_a['id']}").status_code == 404
+
+
+# --- optional reference (T043) ------------------------------------------------
+
+
+def test_movement_with_reference_returned_on_post(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=5,
+        to_location_id=loc_a["id"],
+        reference="PO-12345",
+    )
+    assert r.status_code == 201
+    assert r.json()["reference"] == "PO-12345"
+
+
+def test_movement_reference_defaults_to_none(client, item, loc_a):
+    r = _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    assert r.status_code == 201
+    assert r.json()["reference"] is None
+
+
+def test_movement_reference_returned_on_get(client, item, loc_a):
+    _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=5,
+        to_location_id=loc_a["id"],
+        reference="PO-777",
+    )
+    _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
+
+    listed = client.get("/movements").json()
+    assert [m["reference"] for m in listed] == ["PO-777", None]
+
+    by_item = client.get(f"/items/{item['id']}/movements").json()
+    assert [m["reference"] for m in by_item] == ["PO-777", None]
+
+
+def test_movement_reference_max_64_chars(client, item, loc_a):
+    ok = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=1,
+        to_location_id=loc_a["id"],
+        reference="R" * 64,
+    )
+    assert ok.status_code == 201
+    assert ok.json()["reference"] == "R" * 64
+
+    too_long = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=1,
+        to_location_id=loc_a["id"],
+        reference="R" * 65,
+    )
+    assert too_long.status_code == 422
+
+
+def test_movement_reference_persisted_in_db_column(client, item, loc_a, tmp_path):
+    _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=2,
+        to_location_id=loc_a["id"],
+        reference="PO-DB",
+    )
+    import sqlite3
+
+    conn = sqlite3.connect(str(tmp_path / "test.db"))
+    try:
+        (ref,) = conn.execute("SELECT reference FROM movements WHERE id = 1").fetchone()
+    finally:
+        conn.close()
+    assert ref == "PO-DB"
+
+
+def test_init_db_adds_reference_column_to_existing_db(tmp_path):
+    import sqlite3
+
+    from inventory import db
+
+    path = str(tmp_path / "old.db")
+    conn = sqlite3.connect(path)
+    try:
+        conn.executescript(
+            """
+            CREATE TABLE movements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                item_id INTEGER NOT NULL,
+                kind TEXT NOT NULL,
+                qty INTEGER NOT NULL,
+                from_location_id INTEGER,
+                to_location_id INTEGER,
+                note TEXT NOT NULL DEFAULT ''
+            );
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    db.init_db(path)
+    db.init_db(path)  # idempotent
+
+    conn = sqlite3.connect(path)
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(movements)").fetchall()}
+    finally:
+        conn.close()
+    assert "reference" in cols
