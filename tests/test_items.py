@@ -58,7 +58,7 @@ def test_get_item(client, item):
 def test_get_missing_item_404(client):
     r = client.get("/items/999")
     assert r.status_code == 404
-    assert "not found" in r.json()["detail"]
+    assert "not found" in r.json()["error"]["message"]
 
 
 def test_list_items_ordered_by_id(client):
@@ -172,7 +172,7 @@ def test_delete_item(client, item):
 def test_delete_missing_item_404(client):
     r = client.delete("/items/42")
     assert r.status_code == 404
-    assert r.json()["detail"] == "item 42 not found"
+    assert r.json()["error"]["message"] == "item 42 not found"
 
 
 def test_delete_item_twice_second_404(client, item):
@@ -180,7 +180,7 @@ def test_delete_item_twice_second_404(client, item):
     assert client.delete(f"/items/{item_id}").status_code == 204
     r = client.delete(f"/items/{item_id}")
     assert r.status_code == 404
-    assert r.json()["detail"] == f"item {item_id} not found"
+    assert r.json()["error"]["message"] == f"item {item_id} not found"
 
 
 def test_delete_item_cascades_stock(client, item, loc_a):
@@ -204,7 +204,7 @@ def test_delete_item_with_stock_conflicts(client, item, loc_a):
     )
     r = client.delete(f"/items/{item['id']}")
     assert r.status_code == 409
-    assert "7" in r.json()["detail"]
+    assert "7" in r.json()["error"]["message"]
     # item is untouched
     assert client.get(f"/items/{item['id']}").status_code == 200
 
@@ -217,7 +217,7 @@ def test_delete_item_with_stock_across_locations_conflicts(client, item, loc_a, 
         )
     r = client.delete(f"/items/{item['id']}")
     assert r.status_code == 409
-    assert "4" in r.json()["detail"]
+    assert "4" in r.json()["error"]["message"]
 
 
 def test_delete_item_allowed_after_stock_returns_to_zero(client, item, loc_a):
@@ -333,7 +333,7 @@ def test_get_item_by_sku_exact_match_only(client, item):
 def test_get_item_by_unknown_sku_404(client):
     r = client.get("/items/by-sku/NOPE-99")
     assert r.status_code == 404
-    assert r.json()["detail"] == "sku NOPE-99 not found"
+    assert r.json()["error"]["message"] == "sku NOPE-99 not found"
 
 
 def test_get_item_by_sku_does_not_shadow_get_by_id(client, item):
