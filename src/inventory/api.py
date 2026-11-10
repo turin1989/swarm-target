@@ -50,6 +50,28 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
         raise HTTPException(status_code=409, detail=f"sku {payload.sku!r} already exists")
 
 
+@router.post("/items/bulk", response_model=list[Item], status_code=201)
+def create_items_bulk(
+    payload: list[ItemCreate], conn: sqlite3.Connection = Depends(get_db)
+) -> list[Item]:
+    if not payload:
+        raise HTTPException(status_code=422, detail="item list must not be empty")
+    created: list[Item] = []
+    item = None
+    try:
+        for item in payload:
+            created.append(items_service.create_item(conn, item))
+    except sqlite3.IntegrityError as exc:
+        conn.rollback()
+        if item is not None and "barcode" in str(exc):
+            raise HTTPException(
+                status_code=409, detail=f"barcode {item.barcode!r} already exists"
+            )
+        sku = item.sku if item is not None else None
+        raise HTTPException(status_code=409, detail=f"sku {sku!r} already exists")
+    return created
+
+
 _ITEM_SORT_COLUMNS = {"id", "name", "sku"}
 
 
