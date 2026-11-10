@@ -2,9 +2,9 @@
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-MovementKind = Literal["receive", "ship", "transfer"]
+MovementKind = Literal["receive", "ship", "transfer", "adjust"]
 
 
 class ItemCreate(BaseModel):
@@ -13,6 +13,14 @@ class ItemCreate(BaseModel):
     description: str = Field("", max_length=2000)
     unit_price: float = Field(0.0, ge=0)
     reorder_point: int = 0
+
+    @field_validator("sku")
+    @classmethod
+    def normalise_sku(cls, value: str) -> str:
+        normalised = value.strip().upper()
+        if not normalised:
+            raise ValueError("sku must not be empty or whitespace only")
+        return normalised
 
 
 class ItemUpdate(BaseModel):
@@ -46,10 +54,16 @@ class LocationCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
 
 
+class LocationUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=200)
+    active: Optional[bool] = None
+
+
 class Location(BaseModel):
     id: int
     code: str
     name: str
+    active: bool = True
 
 
 class MovementCreate(BaseModel):
@@ -58,7 +72,7 @@ class MovementCreate(BaseModel):
     qty: int = Field(..., gt=0)
     from_location_id: Optional[int] = None
     to_location_id: Optional[int] = None
-    note: str = ""
+    note: str = Field("", max_length=500)
 
 
 class Movement(BaseModel):
@@ -69,6 +83,7 @@ class Movement(BaseModel):
     from_location_id: Optional[int]
     to_location_id: Optional[int]
     note: str
+    created_at: str
 
 
 class StockLevel(BaseModel):
@@ -94,3 +109,4 @@ class LowStockEntry(BaseModel):
     name: str
     total_qty: int
     reorder_point: int
+    shortfall: int = Field(..., ge=0)

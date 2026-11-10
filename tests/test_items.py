@@ -30,6 +30,25 @@ def test_create_item_requires_sku_and_name(client):
     assert client.post("/items", json={"sku": "", "name": "x"}).status_code == 422
 
 
+def test_create_item_sku_is_trimmed_and_uppercased(client):
+    r = client.post("/items", json={"sku": "  abc-1 ", "name": "Alpha"})
+    assert r.status_code == 201
+    assert r.json()["sku"] == "ABC-1"
+    # stored normalised, retrievable by normalised sku
+    assert client.get("/items/by-sku/ABC-1").status_code == 200
+
+
+def test_create_item_duplicate_sku_after_normalisation_conflicts(client):
+    assert client.post("/items", json={"sku": "  abc-1 ", "name": "Alpha"}).status_code == 201
+    assert client.post("/items", json={"sku": "ABC-1", "name": "Dup"}).status_code == 409
+    assert client.post("/items", json={"sku": "abc-1", "name": "Dup"}).status_code == 409
+
+
+def test_create_item_whitespace_only_sku_422(client):
+    r = client.post("/items", json={"sku": "   ", "name": "Blank"})
+    assert r.status_code == 422
+
+
 def test_get_item(client, item):
     r = client.get(f"/items/{item['id']}")
     assert r.status_code == 200
@@ -173,8 +192,60 @@ def test_delete_item_cascades_stock(client, item, loc_a):
         "/movements",
         json={"item_id": item["id"], "kind": "receive", "qty": 3, "to_location_id": loc_a["id"]},
     )
+    # stock must be zero before the item can be deleted
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "ship", "qty": 3, "from_location_id": loc_a["id"]},
+    )
     client.delete(f"/items/{item['id']}")
     assert client.get("/movements").json() == []
+
+
+def test_delete_item_with_stock_409(client, item, loc_a):
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "qty": 7, "to_location_id": loc_a["id"]},
+    )
+    r = client.delete(f"/items/{item['id']}")
+    assert r.status_code == 409
+    # error message mentions the remaining quantity
+    assert r.json()["error"]["code"] == "conflict"
+    assert "7" in r.json()["error"]["message"]
+    # item is untouched
+    assert client.get(f"/items/{item['id']}").status_code == 200
+
+
+def test_delete_item_with_stock_409_detail_sums_locations(client, item, loc_a, loc_b):
+    for loc, qty in [(loc_a, 2), (loc_b, 3)]:
+        client.post(
+            "/movements",
+            json={"item_id": item["id"], "kind": "receive", "qty": qty, "to_location_id": loc["id"]},
+        )
+    r = client.delete(f"/items/{item['id']}")
+    assert r.status_code == 409
+    assert r.json()["error"]["code"] == "conflict"
+    assert "5" in r.json()["error"]["message"]
+
+
+def test_delete_item_after_stock_shipped_out_succeeds(client, item, loc_a):
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "qty": 4, "to_location_id": loc_a["id"]},
+    )
+    assert client.delete(f"/items/{item['id']}").status_code == 409
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "ship", "qty": 4, "from_location_id": loc_a["id"]},
+    )
+    r = client.delete(f"/items/{item['id']}")
+    assert r.status_code == 204
+    assert client.get(f"/items/{item['id']}").status_code == 404
+
+
+def test_delete_item_zero_stock_deletes_as_before(client, item):
+    r = client.delete(f"/items/{item['id']}")
+    assert r.status_code == 204
+    assert client.get(f"/items/{item['id']}").status_code == 404
 
 
 def test_create_item_description_too_long_422(client):
@@ -225,3 +296,27 @@ def test_update_item_zero_unit_price_ok(client, item):
     r = client.put(f"/items/{item['id']}", json={"unit_price": 0})
     assert r.status_code == 200
     assert r.json()["unit_price"] == 0
+
+
+def test_get_item_by_sku(client, item):
+    r = client.get(f"/items/by-sku/{item['sku']}")
+    assert r.status_code == 200
+    assert r.json() == item
+
+
+def test_get_item_by_sku_same_shape_as_get_by_id(client, item):
+    by_sku = client.get(f"/items/by-sku/{item['sku']}").json()
+    by_id = client.get(f"/items/{item['id']}").json()
+    assert by_sku == by_id
+
+
+def test_get_item_by_sku_unknown_404(client):
+    r = client.get("/items/by-sku/NOPE-99")
+    assert r.status_code == 404
+    assert r.json()["error"]["message"] == "sku NOPE-99 not found"
+
+
+def test_get_item_by_sku_does_not_shadow_get_by_id(client, item):
+    r = client.get(f"/items/{item['id']}")
+    assert r.status_code == 200
+    assert r.json()["id"] == item["id"]

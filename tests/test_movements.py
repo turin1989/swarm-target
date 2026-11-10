@@ -11,7 +11,7 @@ def test_create_and_list_locations(client, loc_a, loc_b):
     r = client.get("/locations")
     assert r.status_code == 200
     assert [loc["code"] for loc in r.json()] == ["WH-A", "WH-B"]
-    assert loc_a == {"id": 1, "code": "WH-A", "name": "Warehouse A"}
+    assert loc_a == {"id": 1, "code": "WH-A", "name": "Warehouse A", "active": True}
 
 
 def test_get_location(client, loc_a):
@@ -144,13 +144,13 @@ def test_ship_more_than_on_hand_409(client, item, loc_a):
     _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
     r = _move(client, item_id=item["id"], kind="ship", qty=6, from_location_id=loc_a["id"])
     assert r.status_code == 409
-    assert "insufficient" in r.json()["detail"]
+    assert "insufficient" in r.json()["error"]["message"]
 
 
 def test_ship_from_empty_location_409(client, item, loc_a):
     r = _move(client, item_id=item["id"], kind="ship", qty=1, from_location_id=loc_a["id"])
     assert r.status_code == 409
-    assert "insufficient" in r.json()["detail"]
+    assert "insufficient" in r.json()["error"]["message"]
 
 
 def test_ship_exact_stock_allowed(client, item, loc_a):
@@ -171,7 +171,7 @@ def test_transfer_more_than_source_stock_409(client, item, loc_a, loc_b):
         to_location_id=loc_b["id"],
     )
     assert r.status_code == 409
-    assert "insufficient" in r.json()["detail"]
+    assert "insufficient" in r.json()["error"]["message"]
 
 
 def test_insufficient_stock_writes_no_movement_and_leaves_stock_unchanged(
@@ -344,3 +344,28 @@ def test_filter_movements_no_matches(client, item, mixed_movements):
     r = client.get("/movements", params={"item_id": 999})
     assert r.status_code == 200
     assert r.json() == []
+
+
+def test_note_at_max_length_accepted(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=1,
+        to_location_id=loc_a["id"],
+        note="n" * 500,
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["note"] == "n" * 500
+
+
+def test_note_over_max_length_rejected(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=1,
+        to_location_id=loc_a["id"],
+        note="n" * 501,
+    )
+    assert r.status_code == 422, r.text

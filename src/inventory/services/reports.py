@@ -19,7 +19,54 @@ def low_stock(conn: sqlite3.Connection) -> list[LowStockEntry]:
         ORDER BY i.sku
         """
     ).fetchall()
-    return [LowStockEntry(**dict(r)) for r in rows]
+    return [
+        LowStockEntry(
+            **dict(r), shortfall=max(0, r["reorder_point"] - r["total_qty"])
+        )
+        for r in rows
+    ]
+
+
+def movements_summary(conn: sqlite3.Connection) -> dict[str, dict[str, int]]:
+    """Per-kind count and total quantity of movements.
+
+    All known kinds are always present; kinds with no movements report zeros.
+    """
+    summary: dict[str, dict[str, int]] = {
+        kind: {"count": 0, "qty": 0} for kind in ("receive", "ship", "transfer")
+    }
+    rows = conn.execute(
+        """
+        SELECT kind, COUNT(*) AS count, COALESCE(SUM(qty), 0) AS qty
+        FROM movements
+        GROUP BY kind
+        """
+    ).fetchall()
+    for row in rows:
+        if row["kind"] in summary:
+            summary[row["kind"]] = {"count": row["count"], "qty": row["qty"]}
+    return summary
+
+
+def stats(conn: sqlite3.Connection) -> dict[str, int]:
+    """Entity counts plus the total number of stock units on hand."""
+    row = conn.execute(
+        """
+        SELECT
+            (SELECT COUNT(*) FROM items) AS items,
+            (SELECT COUNT(*) FROM items WHERE active = 1) AS active_items,
+            (SELECT COUNT(*) FROM locations) AS locations,
+            (SELECT COUNT(*) FROM movements) AS movements,
+            (SELECT COALESCE(SUM(qty), 0) FROM stock_levels) AS total_units
+        """
+    ).fetchone()
+    return {
+        "items": row["items"],
+        "active_items": row["active_items"],
+        "locations": row["locations"],
+        "movements": row["movements"],
+        "total_units": row["total_units"],
+    }
 
 
 def inventory_value(conn: sqlite3.Connection, location_id: int | None = None) -> float:
