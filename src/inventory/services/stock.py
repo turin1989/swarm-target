@@ -159,6 +159,48 @@ def get_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
     return Movement(**dict(row))
 
 
+def reverse_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
+    """Create and apply a movement that undoes the given movement.
+
+    receive -> ship, ship -> receive, transfer -> transfer with the
+    locations swapped. Raises StockError (404) if the movement does not
+    exist, and StockError (409) for kinds that cannot be reversed.
+    """
+    original = get_movement(conn, movement_id)
+    note = f"reversal of {movement_id}"
+    if original.kind == "receive":
+        reversal = MovementCreate(
+            item_id=original.item_id,
+            kind="ship",
+            qty=original.qty,
+            from_location_id=original.to_location_id,
+            note=note,
+        )
+    elif original.kind == "ship":
+        reversal = MovementCreate(
+            item_id=original.item_id,
+            kind="receive",
+            qty=original.qty,
+            to_location_id=original.from_location_id,
+            note=note,
+        )
+    elif original.kind == "transfer":
+        reversal = MovementCreate(
+            item_id=original.item_id,
+            kind="transfer",
+            qty=original.qty,
+            from_location_id=original.to_location_id,
+            to_location_id=original.from_location_id,
+            note=note,
+        )
+    else:
+        raise StockError(
+            f"movement {movement_id} of kind {original.kind!r} cannot be reversed",
+            status_code=409,
+        )
+    return apply_movement(conn, reversal)
+
+
 def list_movements(
     conn: sqlite3.Connection,
     item_id: int | None = None,
