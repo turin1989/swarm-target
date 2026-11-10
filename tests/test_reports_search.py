@@ -270,3 +270,44 @@ def test_search_query_of_exactly_100_chars_is_accepted(client):
     r = client.get("/search", params={"q": "x" * 100})
     assert r.status_code == 200
     assert r.json() == []
+
+
+def test_search_matches_description_substring(client):
+    client.post("/items", json={"sku": "D1", "name": "Hammer", "description": "foo grade steel"})
+    client.post("/items", json={"sku": "D2", "name": "Wrench", "description": "chrome plated"})
+    r = client.get("/search", params={"q": "foo"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["D1"]
+
+
+def test_search_description_match_is_case_insensitive(client):
+    client.post("/items", json={"sku": "D1", "name": "Hammer", "description": "Heavy Duty Foo"})
+    client.post("/items", json={"sku": "D2", "name": "Wrench", "description": "plain"})
+    for q in ("foo", "FOO", "Foo"):
+        assert [i["sku"] for i in client.get("/search", params={"q": q}).json()] == ["D1"], q
+
+
+def test_search_no_duplicates_when_sku_name_and_description_all_match(client):
+    client.post(
+        "/items",
+        json={"sku": "FOO-1", "name": "foo thing", "description": "a foo for everything"},
+    )
+    r = client.get("/search", params={"q": "foo"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["FOO-1"]
+
+
+def test_search_description_matches_preserve_name_ordering(client):
+    client.post("/items", json={"sku": "O1", "name": "Zeta", "description": "has foo inside"})
+    client.post("/items", json={"sku": "O2", "name": "Alpha", "description": "also foo here"})
+    client.post("/items", json={"sku": "FOO-3", "name": "Mid", "description": "no match word"})
+    names = [i["name"] for i in client.get("/search", params={"q": "foo"}).json()]
+    assert names == ["Alpha", "Mid", "Zeta"]
+
+
+def test_search_description_wildcards_are_escaped(client):
+    client.post("/items", json={"sku": "W1", "name": "Pct", "description": "100% cotton"})
+    client.post("/items", json={"sku": "W2", "name": "Other", "description": "100 wool"})
+    r = client.get("/search", params={"q": "100%"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["W1"]
