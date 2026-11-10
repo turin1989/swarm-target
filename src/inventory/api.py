@@ -44,6 +44,24 @@ def _fetch_item(conn: sqlite3.Connection, item_id: int) -> Item:
 
 # --- items -------------------------------------------------------------------
 
+_SORTABLE_ITEM_COLUMNS = {"id", "name", "sku"}
+
+
+def _parse_items_sort(sort: str) -> str:
+    """Translate a sort query value into an ORDER BY clause; 422 if invalid."""
+    direction = "ASC"
+    column = sort
+    if sort.startswith("-"):
+        direction = "DESC"
+        column = sort[1:]
+    if column not in _SORTABLE_ITEM_COLUMNS:
+        allowed = ", ".join(sorted(_SORTABLE_ITEM_COLUMNS))
+        raise HTTPException(
+            status_code=422,
+            detail=f"invalid sort {sort!r}: must be one of {allowed}, optionally prefixed with '-'",
+        )
+    return f"{column} {direction}"
+
 
 @router.post("/items", response_model=Item, status_code=201)
 def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db)) -> Item:
@@ -78,10 +96,12 @@ def list_items(
     active: Optional[bool] = None,
     sku: Optional[str] = None,
     barcode: Optional[str] = None,
+    sort: str = Query("id"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     conn: sqlite3.Connection = Depends(get_db),
 ) -> list[Item]:
+    order_by = _parse_items_sort(sort)
     params: list = []
     clauses: list[str] = []
     if active is not None:
@@ -98,7 +118,7 @@ def list_items(
         where = " WHERE " + " AND ".join(clauses)
     total = conn.execute(f"SELECT COUNT(*) FROM items{where}", params).fetchone()[0]
     response.headers["X-Total-Count"] = str(total)
-    sql = f"SELECT * FROM items{where} ORDER BY id LIMIT ? OFFSET ?"
+    sql = f"SELECT * FROM items{where} ORDER BY {order_by} LIMIT ? OFFSET ?"
     params += [limit, offset]
     return [_row_to_item(r) for r in conn.execute(sql, params).fetchall()]
 
