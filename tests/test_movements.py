@@ -419,7 +419,7 @@ def test_adjust_unknown_location_404(client, item):
 def test_item_movements_lists_only_that_item_ordered_by_id(client, item, loc_a):
     other = client.post(
         "/items",
-        json={"sku": "OTHER-1", "name": "Other", "unit_price": 1.0, "reorder_point": 1},
+        json={"sku": "OTHER-1", "name": "Other", "unit_price": 1.0, "reorder_level": 1},
     ).json()
     _move(client, item_id=item["id"], kind="receive", quantity=5, to_location_id=loc_a["id"])
     _move(client, item_id=other["id"], kind="receive", quantity=2, to_location_id=loc_a["id"])
@@ -473,7 +473,7 @@ def mixed_movements(client, item, loc_a, loc_b):
     """Two items with a mix of movement kinds; returns both item dicts."""
     other = client.post(
         "/items",
-        json={"sku": "OTHER-44", "name": "Other", "unit_price": 1.0, "reorder_point": 1},
+        json={"sku": "OTHER-44", "name": "Other", "unit_price": 1.0, "reorder_level": 1},
     ).json()
     _move(client, item_id=item["id"], kind="receive", quantity=10, to_location_id=loc_a["id"])  # id 1
     _move(client, item_id=other["id"], kind="receive", quantity=5, to_location_id=loc_a["id"])  # id 2

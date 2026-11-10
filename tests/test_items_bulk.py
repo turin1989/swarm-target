@@ -6,7 +6,7 @@ def test_bulk_create_returns_201_with_created_items(client):
         "/items/bulk",
         json=[
             {"sku": "B-1", "name": "Bulk One", "unit_price": 1.5},
-            {"sku": "B-2", "name": "Bulk Two", "reorder_point": 3},
+            {"sku": "B-2", "name": "Bulk Two", "reorder_level": 3},
         ],
     )
     assert r.status_code == 201, r.text
@@ -15,7 +15,7 @@ def test_bulk_create_returns_201_with_created_items(client):
     assert body[0]["name"] == "Bulk One"
     assert body[0]["unit_price"] == 1.5
     assert body[0]["active"] is True
-    assert body[1]["reorder_point"] == 3
+    assert body[1]["reorder_level"] == 3
     assert all(i["id"] for i in body)
 
     # all items are persisted

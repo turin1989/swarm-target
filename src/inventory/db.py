@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS items (
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     unit_price REAL NOT NULL DEFAULT 0,
-    reorder_point INTEGER NOT NULL DEFAULT 0,
+    reorder_level INTEGER NOT NULL DEFAULT 0,
     active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     barcode TEXT UNIQUE
@@ -69,6 +69,14 @@ def init_db(path: str) -> None:
     conn = connect(path)
     try:
         conn.executescript(SCHEMA)
+        # Migration: items.reorder_point was renamed to items.reorder_level.
+        item_cols = {
+            r["name"] for r in conn.execute("PRAGMA table_info('items')").fetchall()
+        }
+        if "reorder_point" in item_cols and "reorder_level" not in item_cols:
+            conn.execute(
+                "ALTER TABLE items RENAME COLUMN reorder_point TO reorder_level"
+            )
         # Migration: older databases may lack locations.active.
         location_cols = {
             r["name"] for r in conn.execute("PRAGMA table_info('locations')").fetchall()
