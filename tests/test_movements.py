@@ -127,7 +127,7 @@ def test_transfer_same_location_rejected(client, item, loc_a):
         to_location_id=loc_a["id"],
     )
     assert r.status_code == 400
-    assert "same location" in r.json()["detail"]
+    assert "same location" in r.json()["error"]["message"]
 
 
 def test_transfer_same_location_writes_no_movement(client, item, loc_a):
@@ -649,6 +649,114 @@ def test_reactivated_item_accepts_movements_again(client, item, loc_a):
     r = _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
     assert r.status_code == 201
     assert client.get(f"/items/{item['id']}/stock").json()["total"] == 1
+
+
+# --- insufficient stock (T005) -------------------------------------------------
+
+
+def test_ship_more_than_on_hand_409(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    r = _move(client, item_id=item["id"], kind="ship", qty=6, from_location_id=loc_a["id"])
+    assert r.status_code == 409
+    assert "insufficient" in r.json()["error"]["message"]
+
+
+def test_ship_with_no_stock_at_all_409(client, item, loc_a):
+    r = _move(client, item_id=item["id"], kind="ship", qty=1, from_location_id=loc_a["id"])
+    assert r.status_code == 409
+    assert "insufficient" in r.json()["error"]["message"]
+
+
+def test_ship_exact_stock_is_allowed(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    r = _move(client, item_id=item["id"], kind="ship", qty=5, from_location_id=loc_a["id"])
+    assert r.status_code == 201
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 0
+
+
+def test_ship_insufficient_writes_no_movement_and_stock_unchanged(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    before = client.get("/movements").json()
+    r = _move(client, item_id=item["id"], kind="ship", qty=99, from_location_id=loc_a["id"])
+    assert r.status_code == 409
+    assert client.get("/movements").json() == before
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 5
+    assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "qty": 5}]
+
+
+def test_transfer_more_than_source_stock_409(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=3, to_location_id=loc_a["id"])
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=4,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    assert r.status_code == 409
+    assert "insufficient" in r.json()["error"]["message"]
+
+
+def test_transfer_checks_source_not_destination_stock(client, item, loc_a, loc_b):
+    # Plenty of stock at the destination must not satisfy the source check.
+    _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_b["id"])
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=1,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    assert r.status_code == 409
+    assert "insufficient" in r.json()["error"]["message"]
+
+
+def test_transfer_insufficient_writes_no_movement_and_stock_unchanged(
+    client, item, loc_a, loc_b
+):
+    _move(client, item_id=item["id"], kind="receive", qty=3, to_location_id=loc_a["id"])
+    before = client.get("/movements").json()
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=4,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    assert r.status_code == 409
+    assert client.get("/movements").json() == before
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 3
+    assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "qty": 3}]
+
+
+def test_transfer_exact_source_stock_is_allowed(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=3, to_location_id=loc_a["id"])
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=3,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    assert r.status_code == 201
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 3
+    assert s["levels"] == [
+        {"item_id": item["id"], "location_id": loc_a["id"], "qty": 0},
+        {"item_id": item["id"], "location_id": loc_b["id"], "qty": 3},
+    ]
+
+
+def test_insufficient_stock_uses_conflict_error_code(client, item, loc_a):
+    r = _move(client, item_id=item["id"], kind="ship", qty=1, from_location_id=loc_a["id"])
+    assert r.status_code == 409
+    assert r.json()["error"]["code"] == "conflict"
 
 
 # --- GET /movements filters (T044) --------------------------------------------
