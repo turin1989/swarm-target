@@ -119,3 +119,27 @@ def test_update_item_zero_unit_price_accepted(client, item):
     r = client.put(f"/items/{item['id']}", json={"unit_price": 0})
     assert r.status_code == 200
     assert r.json()["unit_price"] == 0
+
+
+def test_create_item_negative_reorder_point_rejected(client):
+    r = client.post("/items", json={"sku": "NEG-RP-1", "name": "NegRP", "reorder_point": -1})
+    assert r.status_code == 422
+
+
+def test_create_item_zero_reorder_point_accepted(client):
+    r = client.post("/items", json={"sku": "ZERO-RP-1", "name": "ZeroRP", "reorder_point": 0})
+    assert r.status_code == 201
+    assert r.json()["reorder_point"] == 0
+
+
+def test_update_item_negative_reorder_point_rejected(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": -3})
+    assert r.status_code == 422
+    # unchanged
+    assert client.get(f"/items/{item['id']}").json()["reorder_point"] == item["reorder_point"]
+
+
+def test_update_item_zero_reorder_point_accepted(client, item):
+    # Zero is a valid (non-negative) reorder_point and must not be rejected.
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": 0})
+    assert r.status_code == 200
