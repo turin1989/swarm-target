@@ -39,7 +39,9 @@ def test_get_item(client, item):
 def test_get_missing_item_404(client):
     r = client.get("/items/999")
     assert r.status_code == 404
-    assert "not found" in r.json()["detail"]
+    body = r.json()
+    assert body["error"]["code"] == "not_found"
+    assert "not found" in body["error"]["message"]
 
 
 def test_list_items_ordered_by_id(client):
@@ -109,7 +111,9 @@ def test_delete_item_with_stock_conflicts(client, item, loc_a):
     )
     r = client.delete(f"/items/{item['id']}")
     assert r.status_code == 409
-    assert "7" in r.json()["detail"]
+    body = r.json()
+    assert body["error"]["code"] == "conflict"
+    assert "7" in body["error"]["message"]
     # item still exists
     assert client.get(f"/items/{item['id']}").status_code == 200
 
@@ -123,7 +127,7 @@ def test_delete_item_with_stock_detail_mentions_remaining_quantity(client, item,
     r = client.delete(f"/items/{item['id']}")
     assert r.status_code == 409
     # total across all locations is reported
-    assert "5" in r.json()["detail"]
+    assert "5" in r.json()["error"]["message"]
 
 
 def test_delete_item_after_stock_drained_succeeds(client, item, loc_a):
@@ -139,6 +143,70 @@ def test_delete_item_after_stock_drained_succeeds(client, item, loc_a):
     r = client.delete(f"/items/{item['id']}")
     assert r.status_code == 204
     assert client.get(f"/items/{item['id']}").status_code == 404
+
+
+# --- barcode -------------------------------------------------------------------
+
+
+def test_create_item_without_barcode_defaults_to_null(client):
+    r = client.post("/items", json={"sku": "NB-1", "name": "No Barcode"})
+    assert r.status_code == 201
+    assert r.json()["barcode"] is None
+
+
+def test_create_item_with_barcode(client):
+    r = client.post("/items", json={"sku": "BC-1", "name": "Barcoded", "barcode": "123456789"})
+    assert r.status_code == 201
+    assert r.json()["barcode"] == "123456789"
+    # persisted and returned on GET
+    r = client.get(f"/items/{r.json()['id']}")
+    assert r.json()["barcode"] == "123456789"
+
+
+def test_duplicate_barcode_conflicts(client):
+    r = client.post("/items", json={"sku": "BC-1", "name": "One", "barcode": "DUP-CODE"})
+    assert r.status_code == 201
+    r = client.post("/items", json={"sku": "BC-2", "name": "Two", "barcode": "DUP-CODE"})
+    assert r.status_code == 409
+    body = r.json()
+    assert body["error"]["code"] == "conflict"
+    assert "barcode" in body["error"]["message"]
+
+
+def test_multiple_items_without_barcode_allowed(client):
+    assert client.post("/items", json={"sku": "N1", "name": "n1"}).status_code == 201
+    assert client.post("/items", json={"sku": "N2", "name": "n2"}).status_code == 201
+    assert client.post("/items", json={"sku": "N3", "name": "n3", "barcode": None}).status_code == 201
+
+
+def test_list_items_filter_by_barcode(client):
+    client.post("/items", json={"sku": "F1", "name": "f1", "barcode": "CODE-1"})
+    client.post("/items", json={"sku": "F2", "name": "f2", "barcode": "CODE-2"})
+    client.post("/items", json={"sku": "F3", "name": "f3"})
+    r = client.get("/items", params={"barcode": "CODE-2"})
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 1
+    assert body[0]["sku"] == "F2"
+    assert body[0]["barcode"] == "CODE-2"
+
+
+def test_list_items_filter_by_unknown_barcode_returns_empty(client):
+    client.post("/items", json={"sku": "F1", "name": "f1", "barcode": "CODE-1"})
+    r = client.get("/items", params={"barcode": "NOPE"})
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_list_items_filter_barcode_combined_with_active(client):
+    client.post("/items", json={"sku": "F1", "name": "f1", "barcode": "CODE-1"})
+    client.put("/items/1", json={"active": False})
+    assert client.get("/items", params={"barcode": "CODE-1", "active": "true"}).json() == []
+    r = client.get("/items", params={"barcode": "CODE-1", "active": "false"})
+    assert [i["sku"] for i in r.json()] == ["F1"]
+
+
+# --- description length --------------------------------------------------------
 
 
 def test_create_item_description_too_long_422(client):
