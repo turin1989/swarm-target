@@ -242,3 +242,55 @@ def test_search_query_at_max_length_is_accepted(client):
 
 def test_search_whitespace_only_query_returns_422(client):
     assert client.get("/search", params={"q": "   "}).status_code == 422
+
+
+def test_search_matches_description_substring(client):
+    client.post(
+        "/items",
+        json={"sku": "S1", "name": "Widget", "description": "contains foo inside"},
+    )
+    client.post(
+        "/items",
+        json={"sku": "S2", "name": "Gadget", "description": "nothing relevant"},
+    )
+    r = client.get("/search", params={"q": "foo"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["S1"]
+
+
+def test_search_description_is_case_insensitive(client):
+    client.post(
+        "/items",
+        json={"sku": "S1", "name": "Widget", "description": "Premium FOO grade"},
+    )
+    lower = client.get("/search", params={"q": "foo"})
+    upper = client.get("/search", params={"q": "FOO"})
+    assert lower.status_code == upper.status_code == 200
+    assert [i["sku"] for i in lower.json()] == ["S1"]
+    assert lower.json() == upper.json()
+
+
+def test_search_no_duplicates_when_sku_name_and_description_all_match(client):
+    client.post(
+        "/items",
+        json={"sku": "FOO-1", "name": "foo thing", "description": "a foo item"},
+    )
+    r = client.get("/search", params={"q": "foo"})
+    assert r.status_code == 200
+    results = r.json()
+    assert [i["sku"] for i in results] == ["FOO-1"]
+    assert len(results) == 1
+
+
+def test_search_description_matches_keep_name_ordering(client):
+    client.post("/items", json={"sku": "D1", "name": "Zeta", "description": "has foo"})
+    client.post("/items", json={"sku": "D2", "name": "Alpha", "description": "also foo"})
+    client.post("/items", json={"sku": "D3", "name": "Mid foo name", "description": ""})
+    names = [i["name"] for i in client.get("/search", params={"q": "foo"}).json()]
+    assert names == ["Alpha", "Mid foo name", "Zeta"]
+
+
+def test_search_description_only_match_does_not_leak_unrelated_items(client):
+    client.post("/items", json={"sku": "A1", "name": "Anchor", "description": "steel foo bolt"})
+    client.post("/items", json={"sku": "A2", "name": "Anchor 2", "description": "steel bolt"})
+    assert [i["sku"] for i in client.get("/search", params={"q": "foo"}).json()] == ["A1"]
