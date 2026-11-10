@@ -137,3 +137,43 @@ def test_delete_item_allowed_after_stock_returns_to_zero(client, item, loc_a):
     )
     assert client.delete(f"/items/{item['id']}").status_code == 204
     assert client.get(f"/items/{item['id']}").status_code == 404
+
+
+def test_list_items_x_total_count_all_items(client):
+    for sku in ["A", "B", "C"]:
+        client.post("/items", json={"sku": sku, "name": sku})
+    r = client.get("/items")
+    assert r.status_code == 200
+    assert r.headers["X-Total-Count"] == "3"
+
+
+def test_list_items_x_total_count_ignores_limit_and_offset(client):
+    for i in range(5):
+        client.post("/items", json={"sku": f"SKU-{i}", "name": f"Item {i}"})
+    r = client.get("/items", params={"limit": 2, "offset": 1})
+    assert r.status_code == 200
+    assert len(r.json()) == 2
+    assert r.headers["X-Total-Count"] == "5"
+
+
+def test_list_items_x_total_count_respects_active_filter(client):
+    for i in range(4):
+        client.post("/items", json={"sku": f"SKU-{i}", "name": f"Item {i}"})
+    # deactivate the first item
+    client.put("/items/1", json={"active": False})
+
+    r = client.get("/items", params={"active": "true", "limit": 1})
+    assert r.status_code == 200
+    assert len(r.json()) == 1
+    assert r.headers["X-Total-Count"] == "3"
+
+    r = client.get("/items", params={"active": "false"})
+    assert r.status_code == 200
+    assert r.headers["X-Total-Count"] == "1"
+
+
+def test_list_items_x_total_count_zero_when_empty(client):
+    r = client.get("/items")
+    assert r.status_code == 200
+    assert r.json() == []
+    assert r.headers["X-Total-Count"] == "0"
