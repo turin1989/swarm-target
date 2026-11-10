@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from inventory import __version__
-from inventory.api import router
+from inventory.api import register_exception_handlers, router
 from inventory.db import connect, init_db
 
 DEFAULT_DB_PATH = "inventory.db"
@@ -20,6 +20,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
     app = FastAPI(title="Inventory", version=__version__)
     app.state.db_path = db_path
     app.include_router(router)
+    register_exception_handlers(app)
 
     @app.middleware("http")
     async def request_id_middleware(request: Request, call_next):

@@ -3,7 +3,8 @@
 import sqlite3
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi.exception_handlers import http_exception_handler
 
 from inventory.db import get_db
 from inventory.models import (
@@ -21,8 +22,24 @@ from inventory.models import (
 )
 from inventory.services import items as items_service
 from inventory.services import reports, search, stock
+from inventory.services.errors import InventoryError
 
 router = APIRouter()
+
+
+def register_exception_handlers(app: FastAPI) -> None:
+    """Translate domain errors into HTTP responses in one place.
+
+    Every ``InventoryError`` raised by the service layer is mapped to an
+    ``HTTPException`` with the status code carried by the exception, so
+    routes do not need per-route try/except blocks.
+    """
+
+    @app.exception_handler(InventoryError)
+    async def inventory_error_handler(request: Request, exc: InventoryError):
+        return await http_exception_handler(
+            request, HTTPException(status_code=exc.status_code, detail=str(exc))
+        )
 
 
 def _fetch_item(conn: sqlite3.Connection, item_id: int) -> Item:
@@ -231,10 +248,7 @@ def update_location(
 def location_stock(
     location_id: int, conn: sqlite3.Connection = Depends(get_db)
 ) -> LocationStock:
-    try:
-        levels = stock.get_location_levels(conn, location_id)
-    except stock.StockError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    levels = stock.get_location_levels(conn, location_id)
     return LocationStock(location_id=location_id, levels=levels)
 
 
@@ -272,10 +286,7 @@ def delete_location(location_id: int, conn: sqlite3.Connection = Depends(get_db)
 def create_movement(
     payload: MovementCreate, conn: sqlite3.Connection = Depends(get_db)
 ) -> Movement:
-    try:
-        return stock.apply_movement(conn, payload)
-    except stock.StockError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    return stock.apply_movement(conn, payload)
 
 
 @router.get("/movements", response_model=list[Movement])
