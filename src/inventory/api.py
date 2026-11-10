@@ -44,12 +44,23 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
     try:
         cur = conn.execute(
             """
-            INSERT INTO items (sku, name, description, unit_price, reorder_point)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO items (sku, name, description, unit_price, reorder_point, barcode)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (payload.sku, payload.name, payload.description, payload.unit_price, payload.reorder_point),
+            (
+                payload.sku,
+                payload.name,
+                payload.description,
+                payload.unit_price,
+                payload.reorder_point,
+                payload.barcode,
+            ),
         )
-    except sqlite3.IntegrityError:
+    except sqlite3.IntegrityError as exc:
+        if "barcode" in str(exc):
+            raise HTTPException(
+                status_code=409, detail=f"barcode {payload.barcode!r} already exists"
+            )
         raise HTTPException(status_code=409, detail=f"sku {payload.sku!r} already exists")
     return _fetch_item(conn, cur.lastrowid)
 
@@ -57,15 +68,22 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
 @router.get("/items", response_model=list[Item])
 def list_items(
     active: Optional[bool] = None,
+    barcode: Optional[str] = None,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     conn: sqlite3.Connection = Depends(get_db),
 ) -> list[Item]:
     sql = "SELECT * FROM items"
     params: list = []
+    conditions: list[str] = []
     if active is not None:
-        sql += " WHERE active = ?"
+        conditions.append("active = ?")
         params.append(int(active))
+    if barcode is not None:
+        conditions.append("barcode = ?")
+        params.append(barcode)
+    if conditions:
+        sql += " WHERE " + " AND ".join(conditions)
     sql += " ORDER BY id LIMIT ? OFFSET ?"
     params += [limit, offset]
     return [_row_to_item(r) for r in conn.execute(sql, params).fetchall()]
@@ -94,6 +112,12 @@ def update_item(
 
 @router.delete("/items/{item_id}", status_code=204)
 def delete_item(item_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Response:
+    remaining = stock.total_stock(conn, item_id)
+    if remaining > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"item {item_id} still has {remaining} units in stock",
+        )
     conn.execute("DELETE FROM items WHERE id = ?", (item_id,))
     return Response(status_code=204)
 
