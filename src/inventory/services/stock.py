@@ -1,9 +1,15 @@
 """Stock level bookkeeping and movement application."""
 
 import sqlite3
+from datetime import datetime, timezone
 
 from inventory.models import Movement, MovementCreate, StockLevel
 from inventory.services.errors import ConflictError, NotFoundError, ValidationError
+
+
+def _utc_now_iso() -> str:
+    """Current UTC time as ISO-8601 with a trailing Z, e.g. 2026-01-02T03:04:05Z."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def get_stock_level(conn: sqlite3.Connection, item_id: int, location_id: int) -> int:
@@ -131,10 +137,20 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
 
     cur = conn.execute(
         """
-        INSERT INTO movements (item_id, kind, qty, from_location_id, to_location_id, note, reference)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO movements
+            (item_id, kind, qty, from_location_id, to_location_id, note, reference, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (m.item_id, m.kind, m.quantity, m.from_location_id, m.to_location_id, m.note, m.reference),
+        (
+            m.item_id,
+            m.kind,
+            m.quantity,
+            m.from_location_id,
+            m.to_location_id,
+            m.note,
+            m.reference,
+            _utc_now_iso(),
+        ),
     )
     return get_movement(conn, cur.lastrowid)
 
