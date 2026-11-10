@@ -169,7 +169,7 @@ def test_adjust_only_touches_target_location(client, item, loc_a, loc_b):
 def test_adjust_requires_to_location(client, item, loc_a):
     r = _move(client, item_id=item["id"], kind="adjust", qty=1)
     assert r.status_code == 400
-    assert "required" in r.json()["detail"]
+    assert "required" in r.json()["error"]["message"]
 
 
 def test_adjust_rejects_from_location(client, item, loc_a, loc_b):
@@ -182,7 +182,7 @@ def test_adjust_rejects_from_location(client, item, loc_a, loc_b):
         to_location_id=loc_b["id"],
     )
     assert r.status_code == 400
-    assert "from_location_id" in r.json()["detail"]
+    assert "from_location_id" in r.json()["error"]["message"]
 
 
 def test_adjust_unknown_location_404(client, item):
@@ -219,7 +219,7 @@ def test_stock_empty_for_new_item(client, item):
 def test_movement_requires_locations(client, item, loc_a, kind, payload):
     r = _move(client, item_id=item["id"], kind=kind, qty=1, **payload)
     assert r.status_code == 400
-    assert "required" in r.json()["detail"]
+    assert "required" in r.json()["error"]["message"]
 
 
 def test_movement_unknown_location_404(client, item):
@@ -314,7 +314,7 @@ def test_get_movement_matches_post_response(client, item, loc_a):
 def test_get_movement_unknown_id_404(client):
     r = client.get("/movements/999")
     assert r.status_code == 404
-    assert r.json()["detail"] == "movement 999 not found"
+    assert r.json()["error"]["message"] == "movement 999 not found"
 
 
 # --- per-item movement history -------------------------------------------------
@@ -532,7 +532,7 @@ def test_reverse_is_persisted_as_new_movement(client, item, loc_a):
 def test_reverse_unknown_movement_404(client):
     r = client.post("/movements/999/reverse")
     assert r.status_code == 404
-    assert r.json()["detail"] == "movement 999 not found"
+    assert r.json()["error"]["message"] == "movement 999 not found"
 
 
 def test_reverse_movement_service_function(client, item, loc_a):
@@ -551,7 +551,7 @@ def test_reverse_movement_of_inactive_item_409(client, item, loc_a):
     assert r.status_code == 200
     r = client.post(f"/movements/{original['id']}/reverse")
     assert r.status_code == 409
-    assert "inactive" in r.json()["detail"]
+    assert "inactive" in r.json()["error"]["message"]
     # No reversal row was written; stock is unchanged.
     assert [m["id"] for m in client.get("/movements").json()] == [original["id"]]
     assert client.get(f"/items/{item['id']}/stock").json()["total"] == 5
@@ -579,7 +579,7 @@ def test_movement_for_inactive_item_409(client, item, loc_a, loc_b, kind, payloa
     _deactivate(client, item["id"])
     r = _move(client, item_id=item["id"], kind=kind, qty=1, **payload)
     assert r.status_code == 409
-    assert "inactive" in r.json()["detail"]
+    assert "inactive" in r.json()["error"]["message"]
     # No movement row must be written.
     assert client.get("/movements").json() == []
 
@@ -596,7 +596,7 @@ def test_inactive_item_movement_does_not_change_stock(client, item, loc_a, loc_b
     ]:
         r = _move(client, item_id=item["id"], kind=kind, qty=3, **payload)
         assert r.status_code == 409
-        assert "inactive" in r.json()["detail"]
+        assert "inactive" in r.json()["error"]["message"]
 
     s = client.get(f"/items/{item['id']}/stock").json()
     assert s["total"] == 5
