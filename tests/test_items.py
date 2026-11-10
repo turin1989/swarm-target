@@ -43,6 +43,33 @@ def test_create_item_description_at_limit_ok(client):
     assert r.json()["description"] == "d" * 2000
 
 
+# --- unit_price validation (T008) ----------------------------------------------
+
+
+def test_create_item_negative_unit_price_422(client):
+    r = client.post("/items", json={"sku": "NEG", "name": "Neg", "unit_price": -0.01})
+    assert r.status_code == 422
+
+
+def test_create_item_zero_unit_price_ok(client):
+    r = client.post("/items", json={"sku": "ZERO", "name": "Zero", "unit_price": 0})
+    assert r.status_code == 201
+    assert r.json()["unit_price"] == 0
+
+
+def test_update_item_negative_unit_price_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"unit_price": -1})
+    assert r.status_code == 422
+    # item unchanged
+    assert client.get(f"/items/{item['id']}").json()["unit_price"] == item["unit_price"]
+
+
+def test_update_item_zero_unit_price_ok(client, item):
+    r = client.put(f"/items/{item['id']}", json={"unit_price": 0})
+    assert r.status_code == 200
+    assert r.json()["unit_price"] == 0
+
+
 def test_update_item_description_too_long_422(client, item):
     r = client.put(f"/items/{item['id']}", json={"description": "d" * 2001})
     assert r.status_code == 422
