@@ -13,6 +13,7 @@ from inventory.models import (
     ItemUpdate,
     Location,
     LocationCreate,
+    LocationStock,
     LowStockEntry,
     Movement,
     MovementCreate,
@@ -159,6 +160,19 @@ def get_location(location_id: int, conn: sqlite3.Connection = Depends(get_db)) -
     return Location(**dict(row))
 
 
+@router.get("/locations/{location_id}/stock", response_model=LocationStock)
+def location_stock(
+    location_id: int, conn: sqlite3.Connection = Depends(get_db)
+) -> LocationStock:
+    row = conn.execute("SELECT id FROM locations WHERE id = ?", (location_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"location {location_id} not found")
+    return LocationStock(
+        location_id=location_id,
+        levels=stock.get_location_levels(conn, location_id),
+    )
+
+
 @router.delete("/locations/{location_id}", status_code=204)
 def delete_location(location_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Response:
     row = conn.execute("SELECT id FROM locations WHERE id = ?", (location_id,)).fetchone()
@@ -192,6 +206,14 @@ def create_movement(
 ) -> Movement:
     try:
         return stock.apply_movement(conn, payload)
+    except stock.StockError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+
+
+@router.get("/movements/{movement_id}", response_model=Movement)
+def get_movement(movement_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Movement:
+    try:
+        return stock.get_movement(conn, movement_id)
     except stock.StockError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc))
 

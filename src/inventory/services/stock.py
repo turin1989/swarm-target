@@ -29,6 +29,18 @@ def get_item_levels(conn: sqlite3.Connection, item_id: int) -> list[StockLevel]:
     return [StockLevel(**dict(r)) for r in rows]
 
 
+def get_location_levels(conn: sqlite3.Connection, location_id: int) -> list[StockLevel]:
+    rows = conn.execute(
+        """
+        SELECT item_id, location_id, qty FROM stock_levels
+        WHERE location_id = ? AND qty != 0
+        ORDER BY item_id
+        """,
+        (location_id,),
+    ).fetchall()
+    return [StockLevel(**dict(r)) for r in rows]
+
+
 def total_stock(conn: sqlite3.Connection, item_id: int) -> int:
     row = conn.execute(
         "SELECT COALESCE(SUM(qty), 0) AS total FROM stock_levels WHERE item_id = ?",
@@ -71,6 +83,8 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
     elif m.kind == "transfer":
         from_id = _require_location(conn, m.from_location_id, "from_location_id")
         _require_location(conn, m.to_location_id, "to_location_id")
+        if m.from_location_id == m.to_location_id:
+            raise StockError("cannot transfer to the same location")
         _adjust(conn, m.item_id, from_id, -m.qty)
         _adjust(conn, m.item_id, from_id, m.qty)
     else:  # pragma: no cover - guarded by the Literal type
