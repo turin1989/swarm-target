@@ -58,3 +58,13 @@ def test_bulk_create_invalid_item_returns_422_and_creates_nothing(client):
     r = client.post("/items/bulk", json=[{"sku": "OK-1", "name": "ok"}, {"name": "no sku"}])
     assert r.status_code == 422
     assert client.get("/items/by-sku/OK-1").status_code == 404
+
+
+def test_bulk_endpoint_delegates_item_sql_to_service_layer():
+    """api.create_items_bulk must not contain inline item SQL (FIX-PR527-RED)."""
+    import inspect
+
+    from inventory import api
+
+    source = inspect.getsource(api.create_items_bulk)
+    assert "INSERT INTO items" not in source

@@ -22,6 +22,7 @@ from inventory.models import (
     MovementKind,
 )
 from inventory.services import reports, search, stock
+from inventory.services.items_bulk import BulkSkuConflictError, insert_items
 
 router = APIRouter()
 
@@ -70,28 +71,11 @@ def create_items_bulk(
     payload: list[ItemCreate] = Body(..., min_length=1),
     conn: sqlite3.Connection = Depends(get_db),
 ) -> list[Item]:
-    created_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    created_ids: list[int] = []
-    for item in payload:
-        try:
-            cur = conn.execute(
-                """
-                INSERT INTO items (sku, name, description, unit_price, reorder_point, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    item.sku,
-                    item.name,
-                    item.description,
-                    item.unit_price,
-                    item.reorder_point,
-                    created_at,
-                ),
-            )
-        except sqlite3.IntegrityError:
-            conn.rollback()
-            raise HTTPException(status_code=409, detail=f"sku {item.sku!r} already exists")
-        created_ids.append(cur.lastrowid)
+    try:
+        created_ids = insert_items(conn, payload)
+    except BulkSkuConflictError as exc:
+        conn.rollback()
+        raise HTTPException(status_code=409, detail=str(exc))
     return [_fetch_item(conn, item_id) for item_id in created_ids]
 
 
