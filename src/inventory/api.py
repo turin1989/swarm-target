@@ -3,9 +3,11 @@
 import sqlite3
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.exception_handlers import http_exception_handler
 
 from inventory.db import get_db
+from inventory.services.errors import InventoryError
 from inventory.models import (
     Item,
     ItemCreate,
@@ -21,6 +23,17 @@ from inventory.services import items as items_service
 from inventory.services import reports, search, stock
 
 router = APIRouter()
+
+
+async def inventory_error_handler(request: Request, exc: InventoryError):
+    """Map service-layer InventoryError exceptions to HTTP responses.
+
+    Registered on the app in ``create_app``; this is the single place where
+    service errors are converted to ``HTTPException`` responses.
+    """
+    return await http_exception_handler(
+        request, HTTPException(status_code=exc.status_code, detail=str(exc))
+    )
 
 
 def _fetch_item(conn: sqlite3.Connection, item_id: int) -> Item:
@@ -218,10 +231,7 @@ def delete_location(location_id: int, conn: sqlite3.Connection = Depends(get_db)
 def create_movement(
     payload: MovementCreate, conn: sqlite3.Connection = Depends(get_db)
 ) -> Movement:
-    try:
-        return stock.apply_movement(conn, payload)
-    except stock.StockError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    return stock.apply_movement(conn, payload)
 
 
 @router.get("/movements", response_model=list[Movement])

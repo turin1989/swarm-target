@@ -3,14 +3,7 @@
 import sqlite3
 
 from inventory.models import Movement, MovementCreate, StockLevel
-
-
-class StockError(Exception):
-    """Raised when a movement cannot be applied."""
-
-    def __init__(self, message: str, status_code: int = 400) -> None:
-        super().__init__(message)
-        self.status_code = status_code
+from inventory.services.errors import ConflictError, NotFoundError, ValidationError
 
 
 def get_stock_level(conn: sqlite3.Connection, item_id: int, location_id: int) -> int:
@@ -59,23 +52,23 @@ def _set_level(conn: sqlite3.Connection, item_id: int, location_id: int, qty: in
 
 def _require_location(conn: sqlite3.Connection, location_id: int | None, field: str) -> int:
     if location_id is None:
-        raise StockError(f"{field} is required for this movement kind")
+        raise ValidationError(f"{field} is required for this movement kind")
     row = conn.execute("SELECT id FROM locations WHERE id = ?", (location_id,)).fetchone()
     if row is None:
-        raise StockError(f"location {location_id} not found", status_code=404)
+        raise NotFoundError(f"location {location_id} not found")
     return location_id
 
 
 def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
     """Validate and apply a stock movement, returning the persisted record."""
     if m.qty <= 0:
-        raise StockError("qty must be a positive integer", status_code=422)
+        raise ValidationError("qty must be a positive integer", status_code=422)
 
     item = conn.execute("SELECT id, active FROM items WHERE id = ?", (m.item_id,)).fetchone()
     if item is None:
-        raise StockError(f"item {m.item_id} not found", status_code=404)
+        raise NotFoundError(f"item {m.item_id} not found")
     if not item["active"]:
-        raise StockError(f"item {m.item_id} is inactive", status_code=409)
+        raise ConflictError(f"item {m.item_id} is inactive")
 
     if m.kind == "receive":
         to_id = _require_location(conn, m.to_location_id, "to_location_id")
@@ -87,16 +80,16 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
         from_id = _require_location(conn, m.from_location_id, "from_location_id")
         to_id = _require_location(conn, m.to_location_id, "to_location_id")
         if from_id == to_id:
-            raise StockError("cannot transfer to the same location")
+            raise ValidationError("cannot transfer to the same location")
         _adjust(conn, m.item_id, from_id, -m.qty)
         _adjust(conn, m.item_id, from_id, m.qty)
     elif m.kind == "adjust":
         if m.from_location_id is not None:
-            raise StockError("from_location_id must be null for adjust movements")
+            raise ValidationError("from_location_id must be null for adjust movements")
         to_id = _require_location(conn, m.to_location_id, "to_location_id")
         _set_level(conn, m.item_id, to_id, m.qty)
     else:  # pragma: no cover - guarded by the Literal type
-        raise StockError(f"unknown movement kind {m.kind!r}")
+        raise ValidationError(f"unknown movement kind {m.kind!r}")
 
     cur = conn.execute(
         """
@@ -111,7 +104,7 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
 def get_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
     row = conn.execute("SELECT * FROM movements WHERE id = ?", (movement_id,)).fetchone()
     if row is None:
-        raise StockError(f"movement {movement_id} not found", status_code=404)
+        raise NotFoundError(f"movement {movement_id} not found")
     return Movement(**dict(row))
 
 
