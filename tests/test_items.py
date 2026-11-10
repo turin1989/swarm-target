@@ -499,3 +499,42 @@ def test_x_total_count_when_offset_beyond_results(client):
     assert r.status_code == 200
     assert r.json()["items"] == []
     assert r.headers["X-Total-Count"] == "3"
+
+
+def test_list_items_filter_by_sku_exact_match(client):
+    client.post("/items", json={"sku": "WIDGET-1", "name": "Widget"})
+    client.post("/items", json={"sku": "WIDGET-10", "name": "Widget Ten"})
+    client.post("/items", json={"sku": "GADGET-1", "name": "Gadget"})
+    r = client.get("/items", params={"sku": "WIDGET-1"})
+    assert r.status_code == 200
+    items = r.json()["items"]
+    assert [i["sku"] for i in items] == ["WIDGET-1"]
+    assert r.json()["total"] == 1
+
+
+def test_list_items_filter_by_unknown_sku_returns_empty_list(client, item):
+    r = client.get("/items", params={"sku": "NO-SUCH-SKU"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["items"] == []
+    assert body["total"] == 0
+
+
+def test_list_items_sku_filter_combines_with_active_filter(client):
+    a = client.post("/items", json={"sku": "COMBO-1", "name": "Combo"}).json()
+    client.post("/items", json={"sku": "COMBO-2", "name": "Combo Two"})
+    # matching sku + matching active
+    r = client.get("/items", params={"sku": "COMBO-1", "active": "true"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()["items"]] == ["COMBO-1"]
+    # matching sku but non-matching active -> empty
+    r = client.get("/items", params={"sku": "COMBO-1", "active": "false"})
+    assert r.status_code == 200
+    assert r.json()["items"] == []
+    # deactivate and query again
+    assert client.put(f"/items/{a['id']}", json={"active": False}).status_code == 200
+    r = client.get("/items", params={"sku": "COMBO-1", "active": "false"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()["items"]] == ["COMBO-1"]
+    r = client.get("/items", params={"sku": "COMBO-1", "active": "true"})
+    assert r.json()["items"] == []

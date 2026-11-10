@@ -100,16 +100,21 @@ _SORTABLE_ITEM_COLUMNS = {"id", "name", "sku"}
 def list_items(
     response: Response,
     active: Optional[bool] = None,
+    sku: Optional[str] = None,
     sort: str = Query("id", pattern=r"^-?(id|name|sku)$"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     conn: sqlite3.Connection = Depends(get_db),
 ) -> ItemPage:
-    where = ""
+    conditions: list[str] = []
     where_params: list = []
     if active is not None:
-        where = " WHERE active = ?"
+        conditions.append("active = ?")
         where_params.append(int(active))
+    if sku is not None:
+        conditions.append("sku = ?")
+        where_params.append(sku)
+    where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
     direction = "ASC"
     if sort.startswith("-"):
         direction = "DESC"
