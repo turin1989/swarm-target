@@ -1,9 +1,9 @@
 """HTTP routes."""
 
 import sqlite3
-from typing import Optional
+from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 
 from inventory.db import get_db, utc_now_iso
 from inventory.models import (
@@ -59,6 +59,35 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=409, detail=f"sku {payload.sku!r} already exists")
     return _fetch_item(conn, cur.lastrowid)
+
+
+@router.post("/items/bulk", response_model=list[Item], status_code=201)
+def create_items_bulk(
+    payload: Annotated[list[ItemCreate], Body(min_length=1)],
+    conn: sqlite3.Connection = Depends(get_db),
+) -> list[Item]:
+    created_ids: list[int] = []
+    for entry in payload:
+        try:
+            cur = conn.execute(
+                """
+                INSERT INTO items (sku, name, description, unit_price, reorder_point, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    entry.sku,
+                    entry.name,
+                    entry.description,
+                    entry.unit_price,
+                    entry.reorder_point,
+                    utc_now_iso(),
+                ),
+            )
+        except sqlite3.IntegrityError:
+            # get_db rolls back the whole transaction, so nothing is created.
+            raise HTTPException(status_code=409, detail=f"sku {entry.sku!r} already exists")
+        created_ids.append(cur.lastrowid)
+    return [_fetch_item(conn, item_id) for item_id in created_ids]
 
 
 @router.get("/items", response_model=list[Item])
