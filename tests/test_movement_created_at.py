@@ -21,7 +21,12 @@ def _assert_valid_created_at(value):
 def movement(client, item, loc_a):
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 7, "to_location_id": loc_a["id"]},
+        json={
+            "item_id": item["id"],
+            "kind": "receive",
+            "quantity": 7,
+            "to_location_id": loc_a["id"],
+        },
     )
     assert r.status_code == 201, r.text
     return r.json()

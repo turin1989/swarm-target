@@ -25,7 +25,7 @@ def test_duplicate_barcode_conflicts_409(client):
     assert r.status_code == 201
     r = client.post("/items", json={"sku": "BC-2", "name": "Two", "barcode": "DUP-123"})
     assert r.status_code == 409
-    assert "DUP-123" in r.json()["detail"]
+    assert "DUP-123" in r.json()["error"]["message"]
 
 
 def test_multiple_items_without_barcode_are_allowed(client):
@@ -105,4 +105,4 @@ def test_duplicate_sku_still_reports_sku_conflict(client):
     client.post("/items", json={"sku": "SAME", "name": "a", "barcode": "X-1"})
     r = client.post("/items", json={"sku": "SAME", "name": "b", "barcode": "X-2"})
     assert r.status_code == 409
-    assert "SAME" in r.json()["detail"]
+    assert "SAME" in r.json()["error"]["message"]

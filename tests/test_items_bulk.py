@@ -41,7 +41,7 @@ def test_bulk_create_existing_sku_conflicts_and_creates_nothing(client, item):
         ],
     )
     assert r.status_code == 409
-    assert item["sku"] in r.json()["detail"]
+    assert item["sku"] in r.json()["error"]["message"]
     # atomic: nothing from the batch was created
     listing = client.get("/items")
     assert [i["sku"] for i in listing.json()] == [item["sku"]]

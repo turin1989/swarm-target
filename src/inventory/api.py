@@ -4,7 +4,8 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import JSONResponse
 
 from inventory.db import get_db
 from inventory.models import (
@@ -14,14 +15,51 @@ from inventory.models import (
     ItemUpdate,
     Location,
     LocationCreate,
+    LocationStock,
     LocationUpdate,
     LowStockEntry,
     Movement,
     MovementCreate,
+    MovementKind,
 )
 from inventory.services import reports, search, stock
+from inventory.services.errors import InventoryError
 
 router = APIRouter()
+
+_ERROR_CODES = {
+    400: "bad_request",
+    404: "not_found",
+    409: "conflict",
+    422: "validation_error",
+}
+
+
+def _error_code_for_status(status_code: int) -> str:
+    code = _ERROR_CODES.get(status_code)
+    if code is not None:
+        return code
+    if 400 <= status_code < 500:
+        return "bad_request"
+    return "internal_error"
+
+
+def error_response(status_code: int, message: str) -> JSONResponse:
+    """Uniform error body: {"error": {"code": "<snake_case>", "message": "<text>"}}."""
+    return JSONResponse(
+        status_code=status_code,
+        content={"error": {"code": _error_code_for_status(status_code), "message": message}},
+    )
+
+
+def inventory_error_handler(request: Request, exc: InventoryError) -> JSONResponse:
+    """Translate service-layer errors into HTTP responses in one place.
+
+    Registered on the application (see ``inventory.main.create_app``) so no
+    route needs its own try/except around service calls. The response body
+    uses the uniform error shape shared by every 4xx/5xx response.
+    """
+    return error_response(exc.status_code, str(exc))
 
 
 def _utc_now_iso() -> str:
@@ -177,7 +215,7 @@ def update_item(
 ) -> Item:
     _fetch_item(conn, item_id)
     updates = payload.model_dump(exclude_unset=True)
-    allowed = {"name", "description", "unit_price", "active"}
+    allowed = {"name", "description", "unit_price", "reorder_level", "active"}
     updates = {k: v for k, v in updates.items() if k in allowed and v is not None}
     if updates:
         if "active" in updates:
@@ -224,6 +262,12 @@ def item_movements(
 # --- locations ---------------------------------------------------------------
 
 
+def _row_to_location(row: sqlite3.Row) -> Location:
+    data = dict(row)
+    data["active"] = bool(data["active"])
+    return Location(**data)
+
+
 @router.post("/locations", response_model=Location, status_code=201)
 def create_location(
     payload: LocationCreate, conn: sqlite3.Connection = Depends(get_db)
@@ -232,13 +276,21 @@ def create_location(
         "INSERT INTO locations (code, name) VALUES (?, ?)", (payload.code, payload.name)
     )
     row = conn.execute("SELECT * FROM locations WHERE id = ?", (cur.lastrowid,)).fetchone()
-    return Location(**dict(row))
+    return _row_to_location(row)
 
 
 @router.get("/locations", response_model=list[Location])
-def list_locations(conn: sqlite3.Connection = Depends(get_db)) -> list[Location]:
-    rows = conn.execute("SELECT * FROM locations ORDER BY id").fetchall()
-    return [Location(**dict(r)) for r in rows]
+def list_locations(
+    active: Optional[bool] = None, conn: sqlite3.Connection = Depends(get_db)
+) -> list[Location]:
+    sql = "SELECT * FROM locations"
+    params: list = []
+    if active is not None:
+        sql += " WHERE active = ?"
+        params.append(int(active))
+    sql += " ORDER BY id"
+    rows = conn.execute(sql, params).fetchall()
+    return [_row_to_location(r) for r in rows]
 
 
 @router.get("/locations/{location_id}", response_model=Location)
@@ -246,7 +298,7 @@ def get_location(location_id: int, conn: sqlite3.Connection = Depends(get_db)) -
     row = conn.execute("SELECT * FROM locations WHERE id = ?", (location_id,)).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail=f"location {location_id} not found")
-    return Location(**dict(row))
+    return _row_to_location(row)
 
 
 @router.put("/locations/{location_id}", response_model=Location)
@@ -260,13 +312,23 @@ def update_location(
         k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None
     }
     if updates:
+        if "active" in updates:
+            updates["active"] = int(updates["active"])
         assignments = ", ".join(f"{k} = ?" for k in updates)
         conn.execute(
             f"UPDATE locations SET {assignments} WHERE id = ?",
             [*updates.values(), location_id],
         )
     row = conn.execute("SELECT * FROM locations WHERE id = ?", (location_id,)).fetchone()
-    return Location(**dict(row))
+    return _row_to_location(row)
+
+
+@router.get("/locations/{location_id}/stock", response_model=LocationStock)
+def location_stock(
+    location_id: int, conn: sqlite3.Connection = Depends(get_db)
+) -> LocationStock:
+    levels = stock.get_location_levels(conn, location_id)
+    return LocationStock(location_id=location_id, levels=levels)
 
 
 @router.delete("/locations/{location_id}", status_code=204)
@@ -303,35 +365,28 @@ def delete_location(location_id: int, conn: sqlite3.Connection = Depends(get_db)
 def create_movement(
     payload: MovementCreate, conn: sqlite3.Connection = Depends(get_db)
 ) -> Movement:
-    try:
-        return stock.apply_movement(conn, payload)
-    except stock.StockError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    return stock.apply_movement(conn, payload)
 
 
 @router.post("/movements/{movement_id}/reverse", response_model=Movement, status_code=201)
 def reverse_movement(movement_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Movement:
-    try:
-        return stock.reverse_movement(conn, movement_id)
-    except stock.StockError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    return stock.reverse_movement(conn, movement_id)
 
 
 @router.get("/movements/{movement_id}", response_model=Movement)
 def get_movement(movement_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Movement:
-    try:
-        return stock.get_movement(conn, movement_id)
-    except stock.StockError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    return stock.get_movement(conn, movement_id)
 
 
 @router.get("/movements", response_model=list[Movement])
 def list_movements(
+    item_id: Optional[int] = None,
+    kind: Optional[MovementKind] = None,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     conn: sqlite3.Connection = Depends(get_db),
 ) -> list[Movement]:
-    return stock.list_movements(conn, limit=limit, offset=offset)
+    return stock.list_movements(conn, item_id=item_id, kind=kind, limit=limit, offset=offset)
 
 
 # --- reports & search --------------------------------------------------------
@@ -370,8 +425,11 @@ def inventory_value_report(
 
 @router.get("/search", response_model=list[Item])
 def search_items(
-    q: str = Query(..., min_length=1),
+    q: str = Query(..., min_length=1, max_length=100),
     limit: int = Query(50, ge=1, le=500),
     conn: sqlite3.Connection = Depends(get_db),
 ) -> list[Item]:
-    return search.search_items(conn, q, limit=limit)
+    query = q.strip()
+    if not query:
+        raise HTTPException(status_code=422, detail="q must not be blank")
+    return search.search_items(conn, query, limit=limit)
