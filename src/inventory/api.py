@@ -1,10 +1,11 @@
 """HTTP routes."""
 
 import sqlite3
+from http import HTTPStatus
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from fastapi.exception_handlers import http_exception_handler
+from fastapi.responses import JSONResponse
 
 from inventory.db import get_db
 from inventory.models import (
@@ -23,16 +24,37 @@ from inventory.services.errors import InventoryError
 
 router = APIRouter()
 
+ERROR_CODES = {
+    400: "bad_request",
+    404: "not_found",
+    409: "conflict",
+    422: "validation_error",
+}
+
+
+def error_code_for_status(status_code: int) -> str:
+    """Return the snake_case error code for an HTTP status code."""
+    code = ERROR_CODES.get(status_code)
+    if code is None:
+        code = HTTPStatus(status_code).phrase.lower().replace(" ", "_").replace("-", "_")
+    return code
+
+
+def error_response(status_code: int, message: str) -> JSONResponse:
+    """Build the uniform error body: {"error": {"code": ..., "message": ...}}."""
+    return JSONResponse(
+        status_code=status_code,
+        content={"error": {"code": error_code_for_status(status_code), "message": message}},
+    )
+
 
 async def inventory_error_handler(request: Request, exc: InventoryError) -> Response:
-    """Map any service-layer InventoryError to the equivalent HTTPException.
+    """Map any service-layer InventoryError to the uniform error response.
 
     Registered once on the application (see ``inventory.main.create_app``) so
     individual routes never need their own try/except for service errors.
     """
-    return await http_exception_handler(
-        request, HTTPException(status_code=exc.status_code, detail=str(exc))
-    )
+    return error_response(exc.status_code, str(exc))
 
 
 def _row_to_item(row: sqlite3.Row) -> Item:

@@ -42,7 +42,9 @@ def test_service_raises_validation_error(client, item):
         "/movements", json={"item_id": item["id"], "kind": "receive", "qty": 1}
     )
     assert r.status_code == 400
-    assert "required" in r.json()["detail"]
+    body = r.json()
+    assert body["error"]["code"] == "bad_request"
+    assert "required" in body["error"]["message"]
 
 
 def test_service_raises_not_found_error(client, item):
@@ -52,7 +54,9 @@ def test_service_raises_not_found_error(client, item):
         json={"item_id": item["id"], "kind": "receive", "qty": 1, "to_location_id": 999},
     )
     assert r.status_code == 404
-    assert "not found" in r.json()["detail"]
+    body = r.json()
+    assert body["error"]["code"] == "not_found"
+    assert "not found" in body["error"]["message"]
 
 
 def test_not_found_error_response_includes_request_id(client, item):
