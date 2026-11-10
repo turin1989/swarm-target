@@ -15,7 +15,7 @@ def test_create_item_returns_201_and_fields(client):
     assert body["sku"] == "A-1"
     assert body["name"] == "Alpha"
     assert body["unit_price"] == 1.25
-    assert body["reorder_point"] == 0
+    assert body["reorder_level"] == 0
     assert body["active"] is True
 
 
@@ -218,6 +218,88 @@ def test_delete_item_allowed_after_stock_returns_to_zero(client, item, loc_a):
     )
     assert client.delete(f"/items/{item['id']}").status_code == 204
     assert client.get(f"/items/{item['id']}").status_code == 404
+
+
+"""Renamed field: reorder_point -> reorder_level (T049)."""
+
+
+def test_create_item_accepts_reorder_level(client):
+    r = client.post(
+        "/items", json={"sku": "RL-1", "name": "Renamed", "reorder_level": 7}
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["reorder_level"] == 7
+    assert "reorder_point" not in body
+
+
+def test_create_item_with_reorder_point_returns_422(client):
+    r = client.post(
+        "/items", json={"sku": "RP-1", "name": "Legacy", "reorder_point": 7}
+    )
+    assert r.status_code == 422
+
+
+def test_update_item_with_reorder_point_returns_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": 9})
+    assert r.status_code == 422
+
+
+def test_update_item_accepts_reorder_level_field(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_level": 9})
+    assert r.status_code == 200
+    assert "reorder_level" in r.json()
+
+
+def test_get_item_exposes_reorder_level_not_reorder_point(client, item):
+    body = client.get(f"/items/{item['id']}").json()
+    assert body["reorder_level"] == 5
+    assert "reorder_point" not in body
+
+
+def test_create_item_with_reorder_level_and_barcode_together(client):
+    """T049 rename combined with T025 barcode: both fields work in one payload."""
+    r = client.post(
+        "/items",
+        json={
+            "sku": "RLBC-1",
+            "name": "Both",
+            "reorder_level": 3,
+            "barcode": "RLBC-0001",
+        },
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["reorder_level"] == 3
+    assert body["barcode"] == "RLBC-0001"
+    assert "reorder_point" not in body
+
+
+def test_create_item_with_barcode_and_legacy_reorder_point_returns_422(client):
+    r = client.post(
+        "/items",
+        json={
+            "sku": "RLBC-2",
+            "name": "Legacy",
+            "reorder_point": 3,
+            "barcode": "RLBC-0002",
+        },
+    )
+    assert r.status_code == 422
+
+
+def test_items_table_column_renamed_in_schema(tmp_path):
+    from inventory import db
+
+    path = str(tmp_path / "schema.db")
+    db.init_db(path)
+    conn = db.connect(path)
+    try:
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(items)").fetchall()]
+    finally:
+        conn.close()
+    assert "reorder_level" in cols
+    assert "reorder_point" not in cols
 
 
 def test_get_item_by_sku(client, item):
