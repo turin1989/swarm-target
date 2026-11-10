@@ -69,6 +69,7 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
 def list_items(
     response: Response,
     active: Optional[bool] = None,
+    sort: str = Query("id", pattern=r"^-?(id|name|sku)$"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     conn: sqlite3.Connection = Depends(get_db),
@@ -80,8 +81,12 @@ def list_items(
         where_params.append(int(active))
     total = conn.execute(f"SELECT COUNT(*) FROM items{where}", where_params).fetchone()[0]
     response.headers["X-Total-Count"] = str(total)
+    direction = "ASC"
+    if sort.startswith("-"):
+        direction = "DESC"
+        sort = sort[1:]
     rows = conn.execute(
-        f"SELECT * FROM items{where} ORDER BY id LIMIT ? OFFSET ?",
+        f"SELECT * FROM items{where} ORDER BY {sort} {direction} LIMIT ? OFFSET ?",
         [*where_params, limit, offset],
     ).fetchall()
     return ItemPage(
