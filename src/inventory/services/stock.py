@@ -141,8 +141,20 @@ def get_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
     return _row_to_movement(row)
 
 
-def list_movements(conn: sqlite3.Connection, limit: int = 100, offset: int = 0) -> list[Movement]:
-    rows = conn.execute(
-        "SELECT * FROM movements ORDER BY id LIMIT ? OFFSET ?", (limit, offset)
-    ).fetchall()
+def list_movements(
+    conn: sqlite3.Connection,
+    item_id: int | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[Movement]:
+    """List movements ordered by id, optionally filtered to a single item."""
+    if item_id is not None:
+        rows = conn.execute(
+            "SELECT * FROM movements WHERE item_id = ? ORDER BY id LIMIT ? OFFSET ?",
+            (item_id, limit, offset),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM movements ORDER BY id LIMIT ? OFFSET ?", (limit, offset)
+        ).fetchall()
     return [_row_to_movement(r) for r in rows]
