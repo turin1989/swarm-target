@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from inventory.models import Item, ItemCreate, ItemUpdate
 
 # Columns a client is allowed to change via update_item.
-_UPDATABLE_FIELDS = {"name", "description", "unit_price", "reorder_point", "active"}
+_UPDATABLE_FIELDS = {"name", "description", "unit_price", "reorder_level", "active"}
 
 
 def row_to_item(row: sqlite3.Row) -> Item:
@@ -39,7 +39,7 @@ def create_item(conn: sqlite3.Connection, payload: ItemCreate) -> Item:
     created_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     cur = conn.execute(
         """
-        INSERT INTO items (sku, name, description, unit_price, reorder_point, created_at, barcode)
+        INSERT INTO items (sku, name, description, unit_price, reorder_level, created_at, barcode)
         VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         (
@@ -47,7 +47,7 @@ def create_item(conn: sqlite3.Connection, payload: ItemCreate) -> Item:
             payload.name,
             payload.description,
             payload.unit_price,
-            payload.reorder_point,
+            payload.reorder_level,
             created_at,
             payload.barcode,
         ),

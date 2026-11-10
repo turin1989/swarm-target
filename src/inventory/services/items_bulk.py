@@ -26,7 +26,7 @@ def insert_items(conn: sqlite3.Connection, payloads: list[ItemCreate]) -> list[i
         try:
             cur = conn.execute(
                 """
-                INSERT INTO items (sku, name, description, unit_price, reorder_point, created_at)
+                INSERT INTO items (sku, name, description, unit_price, reorder_level, created_at)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (
@@ -34,7 +34,7 @@ def insert_items(conn: sqlite3.Connection, payloads: list[ItemCreate]) -> list[i
                     item.name,
                     item.description,
                     item.unit_price,
-                    item.reorder_point,
+                    item.reorder_level,
                     created_at,
                 ),
             )
