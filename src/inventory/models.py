@@ -23,7 +23,7 @@ class ItemCreate(_RejectsReorderPoint):
     name: str = Field(..., min_length=1, max_length=200)
     description: str = ""
     unit_price: float = Field(default=0.0, ge=0)
-    reorder_level: int = 0
+    reorder_level: int = Field(default=0, ge=0)
     barcode: Optional[str] = Field(None, min_length=1, max_length=128)
 
     @field_validator("sku", mode="before")
@@ -38,7 +38,7 @@ class ItemUpdate(_RejectsReorderPoint):
     name: Optional[str] = None
     description: Optional[str] = None
     unit_price: Optional[float] = Field(None, ge=0)
-    reorder_level: Optional[int] = None
+    reorder_level: Optional[int] = Field(None, ge=0)
     active: Optional[bool] = None
 
 
@@ -62,12 +62,14 @@ class LocationCreate(BaseModel):
 class LocationUpdate(BaseModel):
     code: Optional[str] = Field(None, min_length=1, max_length=32)
     name: Optional[str] = Field(None, min_length=1, max_length=200)
+    active: Optional[bool] = None
 
 
 class Location(BaseModel):
     id: int
     code: str
     name: str
+    active: bool = True
 
 
 class MovementCreate(BaseModel):
@@ -102,6 +104,11 @@ class StockLevel(BaseModel):
 class ItemStock(BaseModel):
     item_id: int
     total: int
+    levels: list[StockLevel]
+
+
+class LocationStock(BaseModel):
+    location_id: int
     levels: list[StockLevel]
 
 

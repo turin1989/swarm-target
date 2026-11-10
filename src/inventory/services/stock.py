@@ -32,6 +32,28 @@ def get_item_levels(conn: sqlite3.Connection, item_id: int) -> list[StockLevel]:
     ]
 
 
+def get_location_levels(conn: sqlite3.Connection, location_id: int) -> list[StockLevel]:
+    """All non-zero stock levels held at a location, ordered by item_id.
+
+    Raises StockError(404) if the location does not exist.
+    """
+    row = conn.execute("SELECT id FROM locations WHERE id = ?", (location_id,)).fetchone()
+    if row is None:
+        raise StockError(f"location {location_id} not found", status_code=404)
+    rows = conn.execute(
+        """
+        SELECT item_id, location_id, qty FROM stock_levels
+        WHERE location_id = ? AND qty != 0
+        ORDER BY item_id
+        """,
+        (location_id,),
+    ).fetchall()
+    return [
+        StockLevel(item_id=r["item_id"], location_id=r["location_id"], quantity=r["qty"])
+        for r in rows
+    ]
+
+
 def total_stock(conn: sqlite3.Connection, item_id: int) -> int:
     row = conn.execute(
         "SELECT COALESCE(SUM(qty), 0) AS total FROM stock_levels WHERE item_id = ?",
@@ -89,6 +111,10 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
     elif m.kind == "transfer":
         from_id = _require_location(conn, m.from_location_id, "from_location_id")
         to_id = _require_location(conn, m.to_location_id, "to_location_id")
+        if from_id == to_id:
+            raise StockError(
+                "cannot transfer to the same location", status_code=400
+            )
         _adjust(conn, m.item_id, from_id, -m.quantity)
         _adjust(conn, m.item_id, to_id, m.quantity)
     elif m.kind == "adjust":
@@ -162,14 +188,21 @@ def get_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
 def list_movements(
     conn: sqlite3.Connection,
     item_id: int | None = None,
+    kind: str | None = None,
     limit: int = 100,
     offset: int = 0,
 ) -> list[Movement]:
     sql = "SELECT * FROM movements"
     params: list = []
+    clauses: list[str] = []
     if item_id is not None:
-        sql += " WHERE item_id = ?"
+        clauses.append("item_id = ?")
         params.append(item_id)
+    if kind is not None:
+        clauses.append("kind = ?")
+        params.append(kind)
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
     sql += " ORDER BY id LIMIT ? OFFSET ?"
     params += [limit, offset]
     rows = conn.execute(sql, params).fetchall()
