@@ -269,6 +269,33 @@ def update_location(
     return _fetch_location(conn, location_id)
 
 
+@router.delete("/locations/{location_id}", status_code=204)
+def delete_location(
+    location_id: int, conn: sqlite3.Connection = Depends(get_db)
+) -> Response:
+    _fetch_location(conn, location_id)
+    holding = conn.execute(
+        "SELECT 1 FROM stock_levels WHERE location_id = ? AND qty != 0 LIMIT 1",
+        (location_id,),
+    ).fetchone()
+    if holding is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"location {location_id} holds stock and cannot be deleted",
+        )
+    conn.execute("DELETE FROM stock_levels WHERE location_id = ?", (location_id,))
+    conn.execute(
+        "UPDATE movements SET from_location_id = NULL WHERE from_location_id = ?",
+        (location_id,),
+    )
+    conn.execute(
+        "UPDATE movements SET to_location_id = NULL WHERE to_location_id = ?",
+        (location_id,),
+    )
+    conn.execute("DELETE FROM locations WHERE id = ?", (location_id,))
+    return Response(status_code=204)
+
+
 @router.get("/locations/{location_id}/stock", response_model=LocationStock)
 def location_stock(
     location_id: int, conn: sqlite3.Connection = Depends(get_db)
