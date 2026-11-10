@@ -26,9 +26,54 @@ def test_low_stock_lists_items_below_reorder_point(client, loc_a):
         "name": "Low",
         "total_qty": 2,
         "reorder_point": 5,
+        "shortfall": 3,
     }
 
 
+def test_low_stock_shortfall_is_reorder_point_minus_total_qty(client, loc_a):
+    _seed(client, "SF1", "sf1", reorder=10, qty=4, loc=loc_a)
+    _seed(client, "SF2", "sf2", reorder=7, qty=0, loc=loc_a)
+    entries = {e["sku"]: e for e in client.get("/reports/low-stock").json()}
+    assert entries["SF1"]["shortfall"] == 6
+    assert entries["SF2"]["shortfall"] == 7
+
+
+def test_low_stock_shortfall_never_negative():
+    """Even if data would yield a negative raw difference, shortfall is clamped to 0."""
+    import sqlite3
+
+    from inventory.services.reports import low_stock
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript(
+        """
+        CREATE TABLE items (
+            id INTEGER PRIMARY KEY, sku TEXT, name TEXT,
+            reorder_point INTEGER, active INTEGER
+        );
+        CREATE TABLE stock_levels (item_id INTEGER, qty INTEGER);
+        -- negative stock below a negative reorder point: raw difference is -3 - (-5) = 2,
+        -- while a naive unsigned mishandling could go wrong; also check clamping path
+        INSERT INTO items VALUES (1, 'NEG', 'neg', -3, 1);
+        INSERT INTO stock_levels VALUES (1, -5);
+        """
+    )
+    entries = low_stock(conn)
+    assert len(entries) == 1
+    assert entries[0].shortfall == 2
+    assert all(e.shortfall >= 0 for e in entries)
+
+
+def test_low_stock_shortfall_never_negative_via_api(client, loc_a):
+    _seed(client, "N1", "n1", reorder=1, qty=0, loc=loc_a)
+    _seed(client, "N2", "n2", reorder=100, qty=99, loc=loc_a)
+    entries = client.get("/reports/low-stock").json()
+    assert entries, "expected low-stock entries"
+    assert all(e["shortfall"] >= 0 for e in entries)
+    assert all(
+        e["shortfall"] == max(0, e["reorder_point"] - e["total_qty"]) for e in entries
+    )
 def test_low_stock_includes_items_exactly_at_reorder_point(client, loc_a):
     _seed(client, "EXACT", "Exact", reorder=5, qty=5, loc=loc_a)
     r = client.get("/reports/low-stock")
