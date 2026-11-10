@@ -321,6 +321,102 @@ def test_adjust_recorded_in_movements_list(client, item, loc_a):
     assert movements[0]["note"] == "count"
 
 
+# --- GET /items/{id}/movements (T032) -------------------------------------------
+
+
+def test_item_movements_empty(client, item):
+    r = client.get(f"/items/{item['id']}/movements")
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_item_movements_ordered_by_id(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=2,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    _move(client, item_id=item["id"], kind="ship", qty=1, from_location_id=loc_b["id"])
+
+    r = client.get(f"/items/{item['id']}/movements")
+    assert r.status_code == 200
+    movements = r.json()
+    assert [m["id"] for m in movements] == [1, 2, 3]
+    assert [m["kind"] for m in movements] == ["receive", "transfer", "ship"]
+    assert all(m["item_id"] == item["id"] for m in movements)
+
+
+def test_item_movements_only_includes_that_item(client, item, loc_a):
+    other = client.post(
+        "/items",
+        json={"sku": "OTHER-1", "name": "Other", "unit_price": 1.0, "reorder_point": 0},
+    ).json()
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    _move(client, item_id=other["id"], kind="receive", qty=9, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="ship", qty=1, from_location_id=loc_a["id"])
+
+    movements = client.get(f"/items/{item['id']}/movements").json()
+    assert [m["id"] for m in movements] == [1, 3]
+    assert all(m["item_id"] == item["id"] for m in movements)
+
+    other_movements = client.get(f"/items/{other['id']}/movements").json()
+    assert [m["id"] for m in other_movements] == [2]
+
+
+def test_item_movements_pagination(client, item, loc_a):
+    for _ in range(5):
+        _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
+    r = client.get(f"/items/{item['id']}/movements", params={"limit": 2, "offset": 2})
+    assert r.status_code == 200
+    assert [m["id"] for m in r.json()] == [3, 4]
+
+    r = client.get(f"/items/{item['id']}/movements", params={"limit": 2, "offset": 4})
+    assert [m["id"] for m in r.json()] == [5]
+
+
+def test_item_movements_unknown_item_404(client):
+    r = client.get("/items/999/movements")
+    assert r.status_code == 404
+
+
+def test_item_movements_invalid_pagination_422(client, item):
+    assert client.get(f"/items/{item['id']}/movements", params={"limit": 0}).status_code == 422
+    assert client.get(f"/items/{item['id']}/movements", params={"offset": -1}).status_code == 422
+
+
+def test_list_movements_service_filters_by_item():
+    """stock.list_movements supports an item_id filter at the service layer."""
+    from inventory.db import SCHEMA, connect
+    from inventory.services.stock import list_movements
+
+    conn = connect(":memory:")
+    conn.executescript(SCHEMA)
+    conn.execute(
+        "INSERT INTO items (sku, name, description, unit_price, reorder_point, active) "
+        "VALUES ('S1', 'Widget', '', 1.0, 0, 1)"
+    )
+    conn.execute(
+        "INSERT INTO items (sku, name, description, unit_price, reorder_point, active) "
+        "VALUES ('S2', 'Gadget', '', 1.0, 0, 1)"
+    )
+    conn.execute("INSERT INTO locations (code, name) VALUES ('WH-A', 'Warehouse A')")
+    for item_id in (1, 2, 1):
+        conn.execute(
+            "INSERT INTO movements (item_id, kind, qty, to_location_id) "
+            "VALUES (?, 'receive', 1, 1)",
+            (item_id,),
+        )
+
+    assert [m.id for m in list_movements(conn, item_id=1)] == [1, 3]
+    assert [m.id for m in list_movements(conn, item_id=2)] == [2]
+    assert [m.id for m in list_movements(conn)] == [1, 2, 3]
+    assert [m.id for m in list_movements(conn, item_id=1, limit=1, offset=1)] == [3]
+
+
 # --- DELETE /locations/{id} (T013) --------------------------------------------
 
 
