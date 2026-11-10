@@ -136,6 +136,70 @@ def test_movement_invalid_kind_422(client, item, loc_a):
     assert r.status_code == 422
 
 
+def test_adjust_sets_absolute_stock(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])
+    r = _move(client, item_id=item["id"], kind="adjust", qty=3, to_location_id=loc_a["id"])
+    assert r.status_code == 201
+    body = r.json()
+    assert body["kind"] == "adjust"
+    assert body["qty"] == 3
+    assert body["to_location_id"] == loc_a["id"]
+    assert body["from_location_id"] is None
+
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 3
+    assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "qty": 3}]
+
+
+def test_adjust_creates_level_when_none_exists(client, item, loc_a):
+    r = _move(client, item_id=item["id"], kind="adjust", qty=8, to_location_id=loc_a["id"])
+    assert r.status_code == 201
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 8
+    assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "qty": 8}]
+
+
+def test_adjust_only_affects_target_location(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", qty=7, to_location_id=loc_b["id"])
+    _move(client, item_id=item["id"], kind="adjust", qty=1, to_location_id=loc_b["id"])
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 6
+    assert [lvl["qty"] for lvl in s["levels"]] == [5, 1]
+
+
+def test_adjust_requires_to_location(client, item, loc_a):
+    r = _move(client, item_id=item["id"], kind="adjust", qty=1)
+    assert r.status_code == 400
+    assert "required" in r.json()["detail"]
+
+
+def test_adjust_rejects_from_location(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="adjust",
+        qty=1,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_a["id"],
+    )
+    assert r.status_code == 400
+    assert "from_location_id" in r.json()["detail"]
+
+
+def test_adjust_unknown_location_404(client, item):
+    r = _move(client, item_id=item["id"], kind="adjust", qty=1, to_location_id=123)
+    assert r.status_code == 404
+
+
+def test_adjust_is_recorded_in_movement_list(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="adjust", qty=4, to_location_id=loc_a["id"])
+    movements = client.get("/movements").json()
+    assert len(movements) == 1
+    assert movements[0]["kind"] == "adjust"
+    assert movements[0]["qty"] == 4
+
+
 @pytest.mark.parametrize("qty", [0, -1, -10])
 def test_movement_non_positive_qty_422(client, item, loc_a, qty):
     r = _move(client, item_id=item["id"], kind="receive", qty=qty, to_location_id=loc_a["id"])
@@ -154,6 +218,14 @@ def test_non_positive_qty_rejected_for_all_kinds(client, item, loc_a, loc_b, kin
     r = _move(client, item_id=item["id"], kind=kind, qty=0, **locs)
     assert r.status_code == 422
     assert client.get("/movements").json() == []
+
+
+def test_adjust_non_positive_qty_422(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    r = _move(client, item_id=item["id"], kind="adjust", qty=0, to_location_id=loc_a["id"])
+    assert r.status_code == 422
+    # stock is untouched
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 5
 
 
 def test_list_movements_pagination(client, item, loc_a):
