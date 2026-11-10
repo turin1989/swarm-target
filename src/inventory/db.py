@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS items (
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     unit_price REAL NOT NULL DEFAULT 0,
-    reorder_point INTEGER NOT NULL DEFAULT 0,
+    reorder_level INTEGER NOT NULL DEFAULT 0,
     active INTEGER NOT NULL DEFAULT 1,
     barcode TEXT UNIQUE,
     created_at TEXT NOT NULL
@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS items (
 CREATE TABLE IF NOT EXISTS locations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     code TEXT NOT NULL,
-    name TEXT NOT NULL
+    name TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS stock_levels (
@@ -61,6 +62,14 @@ def init_db(path: str) -> None:
     conn = connect(path)
     try:
         conn.executescript(SCHEMA)
+        # Migration: add locations.active for databases created before the column existed.
+        location_columns = {
+            r["name"] for r in conn.execute("PRAGMA table_info(locations)").fetchall()
+        }
+        if "active" not in location_columns:
+            conn.execute(
+                "ALTER TABLE locations ADD COLUMN active INTEGER NOT NULL DEFAULT 1"
+            )
         row = conn.execute("SELECT version FROM schema_version").fetchone()
         if row is None:
             conn.execute(
