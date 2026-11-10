@@ -97,6 +97,68 @@ def test_delete_item_cascades_stock(client, item, loc_a):
     assert client.get("/movements").json() == []
 
 
+# --- barcode -------------------------------------------------------------------
+
+
+def test_create_item_without_barcode_defaults_to_null(client):
+    r = client.post("/items", json={"sku": "NB-1", "name": "No Barcode"})
+    assert r.status_code == 201
+    assert r.json()["barcode"] is None
+
+
+def test_create_item_with_barcode(client):
+    r = client.post("/items", json={"sku": "BC-1", "name": "Barcoded", "barcode": "123456789"})
+    assert r.status_code == 201
+    assert r.json()["barcode"] == "123456789"
+    # persisted and returned on GET
+    r = client.get(f"/items/{r.json()['id']}")
+    assert r.json()["barcode"] == "123456789"
+
+
+def test_duplicate_barcode_conflicts(client):
+    r = client.post("/items", json={"sku": "BC-1", "name": "One", "barcode": "DUP-CODE"})
+    assert r.status_code == 201
+    r = client.post("/items", json={"sku": "BC-2", "name": "Two", "barcode": "DUP-CODE"})
+    assert r.status_code == 409
+    assert "barcode" in r.json()["detail"]
+
+
+def test_multiple_items_without_barcode_allowed(client):
+    assert client.post("/items", json={"sku": "N1", "name": "n1"}).status_code == 201
+    assert client.post("/items", json={"sku": "N2", "name": "n2"}).status_code == 201
+    assert client.post("/items", json={"sku": "N3", "name": "n3", "barcode": None}).status_code == 201
+
+
+def test_list_items_filter_by_barcode(client):
+    client.post("/items", json={"sku": "F1", "name": "f1", "barcode": "CODE-1"})
+    client.post("/items", json={"sku": "F2", "name": "f2", "barcode": "CODE-2"})
+    client.post("/items", json={"sku": "F3", "name": "f3"})
+    r = client.get("/items", params={"barcode": "CODE-2"})
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 1
+    assert body[0]["sku"] == "F2"
+    assert body[0]["barcode"] == "CODE-2"
+
+
+def test_list_items_filter_by_unknown_barcode_returns_empty(client):
+    client.post("/items", json={"sku": "F1", "name": "f1", "barcode": "CODE-1"})
+    r = client.get("/items", params={"barcode": "NOPE"})
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_list_items_filter_barcode_combined_with_active(client):
+    client.post("/items", json={"sku": "F1", "name": "f1", "barcode": "CODE-1"})
+    client.put("/items/1", json={"active": False})
+    assert client.get("/items", params={"barcode": "CODE-1", "active": "true"}).json() == []
+    r = client.get("/items", params={"barcode": "CODE-1", "active": "false"})
+    assert [i["sku"] for i in r.json()] == ["F1"]
+
+
+# --- description length --------------------------------------------------------
+
+
 def test_create_item_description_too_long_422(client):
     r = client.post(
         "/items",
