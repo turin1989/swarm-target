@@ -58,6 +58,9 @@ def _require_location(conn: sqlite3.Connection, location_id: int | None, field: 
 
 def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
     """Validate and apply a stock movement, returning the persisted record."""
+    if m.quantity <= 0:
+        raise ValidationError("quantity must be a positive integer")
+
     item = conn.execute(
         "SELECT id, active FROM items WHERE id = ?", (m.item_id,)
     ).fetchone()

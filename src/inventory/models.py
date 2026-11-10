@@ -60,7 +60,7 @@ class MovementCreate(BaseModel):
 
     item_id: int
     kind: MovementKind
-    quantity: int
+    quantity: int = Field(..., gt=0)
     from_location_id: Optional[int] = None
     to_location_id: Optional[int] = None
     note: str = Field(default="", max_length=500)

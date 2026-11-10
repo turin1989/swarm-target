@@ -264,6 +264,54 @@ def test_list_movements_pagination(client, item, loc_a):
     assert [m["id"] for m in r.json()] == [3, 4]
 
 
+@pytest.mark.parametrize("quantity", [0, -1, -10])
+def test_movement_non_positive_quantity_rejected_422(client, item, loc_a, quantity):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        quantity=quantity,
+        to_location_id=loc_a["id"],
+    )
+    assert r.status_code == 422
+    # no movement row is written
+    assert client.get("/movements").json() == []
+    # stock is unchanged
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 0
+
+
+@pytest.mark.parametrize(
+    "kind,payload",
+    [
+        ("receive", {"to_location_id": 1}),
+        ("ship", {"from_location_id": 1}),
+        ("transfer", {"from_location_id": 1, "to_location_id": 2}),
+    ],
+)
+def test_all_movement_kinds_reject_zero_quantity(client, item, loc_a, loc_b, kind, payload):
+    r = _move(client, item_id=item["id"], kind=kind, quantity=0, **payload)
+    assert r.status_code == 422
+    assert client.get("/movements").json() == []
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 0
+
+
+def test_apply_movement_rejects_non_positive_quantity_in_service():
+    """The service layer also guards against qty <= 0 when bypassing the model."""
+    from inventory.db import SCHEMA, connect
+    from inventory.models import MovementCreate
+    from inventory.services.errors import ValidationError
+    from inventory.services.stock import apply_movement
+
+    conn = connect(":memory:")
+    conn.executescript(SCHEMA)
+    bad = MovementCreate.model_construct(
+        item_id=1, kind="receive", quantity=0, from_location_id=None, to_location_id=1, note=""
+    )
+    with pytest.raises(ValidationError):
+        apply_movement(conn, bad)
+    assert conn.execute("SELECT COUNT(*) AS c FROM movements").fetchone()["c"] == 0
+
+
 def test_movement_note_longer_than_500_chars_rejected_422(client, item, loc_a):
     r = _move(
         client,
