@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS items (
 CREATE TABLE IF NOT EXISTS locations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     code TEXT NOT NULL UNIQUE,
-    name TEXT NOT NULL
+    name TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS stock_levels (
@@ -81,6 +82,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_locations_code ON locations(code)"
     )
+    loc_cols = {row["name"] for row in conn.execute("PRAGMA table_info(locations)")}
+    if "active" not in loc_cols:
+        conn.execute(
+            "ALTER TABLE locations ADD COLUMN active INTEGER NOT NULL DEFAULT 1"
+        )
     row = conn.execute("SELECT version FROM schema_version").fetchone()
     if row is None:
         conn.execute(
