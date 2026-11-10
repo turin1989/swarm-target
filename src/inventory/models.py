@@ -58,6 +58,13 @@ class LocationCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
 
 
+class LocationUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: Optional[str] = Field(default=None, pattern=r"^[A-Z0-9][A-Z0-9-]{0,31}$")
+    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+
+
 class Location(BaseModel):
     id: int
     code: str
