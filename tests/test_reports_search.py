@@ -8,7 +8,7 @@ def _seed(client, sku, name, reorder, qty, loc, price=1.0):
     if qty:
         client.post(
             "/movements",
-            json={"item_id": item["id"], "kind": "receive", "qty": qty, "to_location_id": loc["id"]},
+            json={"item_id": item["id"], "kind": "receive", "quantity": qty, "to_location_id": loc["id"]},
         )
     return item
 
@@ -57,7 +57,7 @@ def test_low_stock_scoped_to_location_includes_exact_match(client, loc_a, loc_b)
     item = _seed(client, "EDGE", "Edge", reorder=5, qty=5, loc=loc_a)
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 3, "to_location_id": loc_b["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 3, "to_location_id": loc_b["id"]},
     )
     assert client.get("/reports/low-stock").json() == []
     r = client.get("/reports/low-stock", params={"location_id": loc_a["id"]})
@@ -86,7 +86,7 @@ def test_low_stock_scoped_to_location_counts_only_that_location(client, loc_a, l
     item = _seed(client, "SPLIT", "Split", reorder=5, qty=2, loc=loc_a)
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 4, "to_location_id": loc_b["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 4, "to_location_id": loc_b["id"]},
     )
     # not low overall
     assert client.get("/reports/low-stock").json() == []
@@ -121,7 +121,7 @@ def test_low_stock_without_location_param_unchanged(client, loc_a, loc_b):
     item = _seed(client, "LOW", "Low", reorder=10, qty=3, loc=loc_a)
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 4, "to_location_id": loc_b["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 4, "to_location_id": loc_b["id"]},
     )
     r = client.get("/reports/low-stock")
     assert r.status_code == 200
@@ -140,7 +140,7 @@ def test_low_stock_shortfall_scoped_to_location(client, loc_a, loc_b):
     item = _seed(client, "SPLIT", "Split", reorder=5, qty=2, loc=loc_a)
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 4, "to_location_id": loc_b["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 4, "to_location_id": loc_b["id"]},
     )
     r = client.get("/reports/low-stock", params={"location_id": loc_a["id"]})
     assert [(e["sku"], e["shortfall"]) for e in r.json()] == [("SPLIT", 3)]
@@ -177,7 +177,7 @@ def test_inventory_value_scoped_to_location_sums_only_that_location(client, loc_
     item = _seed(client, "P1", "p1", reorder=0, qty=3, loc=loc_a, price=2.0)
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 5, "to_location_id": loc_b["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 5, "to_location_id": loc_b["id"]},
     )
     _seed(client, "P2", "p2", reorder=0, qty=1, loc=loc_b, price=10.0)
     r = client.get("/reports/value", params={"location_id": loc_a["id"]})
@@ -205,7 +205,7 @@ def test_inventory_value_without_location_param_unchanged(client, loc_a, loc_b):
     item = _seed(client, "P1", "p1", reorder=0, qty=3, loc=loc_a, price=2.0)
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 1, "to_location_id": loc_b["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 1, "to_location_id": loc_b["id"]},
     )
     assert client.get("/reports/value").json() == {"value": 8.0}
 
@@ -259,3 +259,63 @@ def test_search_case_insensitive_keeps_order_and_limit(client):
 def test_search_requires_query(client):
     assert client.get("/search").status_code == 422
     assert client.get("/search", params={"q": ""}).status_code == 422
+
+
+def test_search_by_description_substring(client):
+    client.post("/items", json={"sku": "D1", "name": "Alpha", "description": "a foo thing"})
+    client.post("/items", json={"sku": "D2", "name": "Beta", "description": "a bar thing"})
+    r = client.get("/search", params={"q": "foo"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["D1"]
+
+
+def test_search_no_duplicates_when_all_fields_match(client):
+    client.post(
+        "/items",
+        json={"sku": "FOO-1", "name": "foo item", "description": "the foo description"},
+    )
+    r = client.get("/search", params={"q": "foo"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["FOO-1"]
+
+
+def test_search_with_description_matches_sorted_by_name(client):
+    client.post("/items", json={"sku": "M1", "name": "Zeta", "description": "foo in desc"})
+    client.post("/items", json={"sku": "M2", "name": "Alpha foo", "description": ""})
+    client.post("/items", json={"sku": "M3", "name": "Middle", "description": "also foo here"})
+    names = [i["name"] for i in client.get("/search", params={"q": "foo"}).json()]
+    assert names == ["Alpha foo", "Middle", "Zeta"]
+
+
+def test_search_description_match_is_case_insensitive(client):
+    client.post("/items", json={"sku": "D1", "name": "Alpha", "description": "a Foo thing"})
+    client.post("/items", json={"sku": "D2", "name": "Beta", "description": "a bar thing"})
+    for q in ("foo", "FOO", "Foo", "fOo"):
+        r = client.get("/search", params={"q": q})
+        assert r.status_code == 200
+        assert [i["sku"] for i in r.json()] == ["D1"], q
+
+
+def test_search_trims_surrounding_whitespace(client):
+    client.post("/items", json={"sku": "BOLT-M8", "name": "Bolt"})
+    client.post("/items", json={"sku": "NUT-M8", "name": "Nut"})
+    r = client.get("/search", params={"q": "  bolt "})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["BOLT-M8"]
+    # behaves exactly like the already-trimmed query
+    assert r.json() == client.get("/search", params={"q": "bolt"}).json()
+
+
+def test_search_query_longer_than_100_chars_returns_422(client):
+    assert client.get("/search", params={"q": "x" * 101}).status_code == 422
+
+
+def test_search_query_of_exactly_100_chars_is_accepted(client):
+    r = client.get("/search", params={"q": "x" * 100})
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_search_whitespace_only_query_returns_422(client):
+    for q in (" ", "   ", "\t", " \t "):
+        assert client.get("/search", params={"q": q}).status_code == 422, repr(q)

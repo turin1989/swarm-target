@@ -1,8 +1,8 @@
 """GET /stats entity counts."""
 
 
-def _move(client, item, kind, qty, *, frm=None, to=None):
-    payload = {"item_id": item["id"], "kind": kind, "qty": qty}
+def _move(client, item, kind, quantity, *, frm=None, to=None):
+    payload = {"item_id": item["id"], "kind": kind, "quantity": quantity}
     if frm is not None:
         payload["from_location_id"] = frm["id"]
     if to is not None:

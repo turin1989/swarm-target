@@ -4,7 +4,7 @@
 def _receive(client, item_id, location_id, qty):
     r = client.post(
         "/movements",
-        json={"item_id": item_id, "kind": "receive", "qty": qty, "to_location_id": location_id},
+        json={"item_id": item_id, "kind": "receive", "quantity": qty, "to_location_id": location_id},
     )
     assert r.status_code == 201, r.text
 
@@ -37,9 +37,9 @@ def test_levels_listed_and_ordered_by_item_id(client, loc_a, loc_b):
     body = r.json()
     assert body["location_id"] == loc_a["id"]
     assert body["levels"] == [
-        {"item_id": item1["id"], "location_id": loc_a["id"], "qty": 3},
-        {"item_id": item2["id"], "location_id": loc_a["id"], "qty": 5},
-        {"item_id": item3["id"], "location_id": loc_a["id"], "qty": 7},
+        {"item_id": item1["id"], "location_id": loc_a["id"], "quantity": 3},
+        {"item_id": item2["id"], "location_id": loc_a["id"], "quantity": 5},
+        {"item_id": item3["id"], "location_id": loc_a["id"], "quantity": 7},
     ]
 
 
@@ -54,7 +54,7 @@ def test_zero_qty_levels_are_omitted(client, loc_a):
         json={
             "item_id": item2["id"],
             "kind": "ship",
-            "qty": 2,
+            "quantity": 2,
             "from_location_id": loc_a["id"],
         },
     )
@@ -64,7 +64,7 @@ def test_zero_qty_levels_are_omitted(client, loc_a):
     assert r.status_code == 200
     body = r.json()
     assert body["levels"] == [
-        {"item_id": item1["id"], "location_id": loc_a["id"], "qty": 4}
+        {"item_id": item1["id"], "location_id": loc_a["id"], "quantity": 4}
     ]
 
 
@@ -78,10 +78,11 @@ def test_service_function_exists_and_raises_for_unknown_location(tmp_path):
 
     from inventory.db import connect, init_db
     from inventory.services import stock
+    from inventory.services.errors import NotFoundError
 
     db_path = str(tmp_path / "svc.db")
     init_db(db_path)
     conn = connect(db_path)
-    with pytest.raises(stock.StockError) as exc_info:
+    with pytest.raises(NotFoundError) as exc_info:
         stock.get_location_levels(conn, 1234)
     assert exc_info.value.status_code == 404
