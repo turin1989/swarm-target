@@ -74,13 +74,13 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
 
 @router.get("/items", response_model=list[Item])
 def list_items(
+    response: Response,
     active: Optional[bool] = None,
     barcode: Optional[str] = None,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     conn: sqlite3.Connection = Depends(get_db),
 ) -> list[Item]:
-    sql = "SELECT * FROM items"
     params: list = []
     clauses: list[str] = []
     if active is not None:
@@ -89,9 +89,12 @@ def list_items(
     if barcode is not None:
         clauses.append("barcode = ?")
         params.append(barcode)
+    where = ""
     if clauses:
-        sql += " WHERE " + " AND ".join(clauses)
-    sql += " ORDER BY id LIMIT ? OFFSET ?"
+        where = " WHERE " + " AND ".join(clauses)
+    total = conn.execute(f"SELECT COUNT(*) FROM items{where}", params).fetchone()[0]
+    response.headers["X-Total-Count"] = str(total)
+    sql = f"SELECT * FROM items{where} ORDER BY id LIMIT ? OFFSET ?"
     params += [limit, offset]
     return [_row_to_item(r) for r in conn.execute(sql, params).fetchall()]
 
@@ -237,8 +240,16 @@ def low_stock_report(
 
 
 @router.get("/reports/value")
-def inventory_value_report(conn: sqlite3.Connection = Depends(get_db)) -> dict:
-    return {"value": reports.inventory_value(conn)}
+def inventory_value_report(
+    location_id: Optional[int] = None, conn: sqlite3.Connection = Depends(get_db)
+) -> dict:
+    if location_id is not None:
+        row = conn.execute(
+            "SELECT id FROM locations WHERE id = ?", (location_id,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"location {location_id} not found")
+    return {"value": reports.inventory_value(conn, location_id=location_id)}
 
 
 @router.get("/search", response_model=list[Item])

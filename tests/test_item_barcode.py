@@ -64,6 +64,25 @@ def test_list_items_barcode_filter_combines_with_active(client):
     assert [i["sku"] for i in got] == ["F1"]
 
 
+def test_list_items_x_total_count_respects_barcode_filter(client):
+    """Merged behaviour: X-Total-Count (m5-opt) reflects the barcode filter (T025)."""
+    client.post("/items", json={"sku": "F1", "name": "f1", "barcode": "BC-AAA"})
+    client.post("/items", json={"sku": "F2", "name": "f2", "barcode": "BC-BBB"})
+    client.post("/items", json={"sku": "F3", "name": "f3"})
+
+    r = client.get("/items", params={"barcode": "BC-BBB"})
+    assert r.status_code == 200
+    assert r.headers["X-Total-Count"] == "1"
+
+    r = client.get("/items", params={"barcode": "NOPE"})
+    assert r.status_code == 200
+    assert r.headers["X-Total-Count"] == "0"
+
+    # unfiltered count still covers all items
+    r = client.get("/items")
+    assert r.headers["X-Total-Count"] == "3"
+
+
 def test_item_with_barcode_also_has_created_at(client):
     """Merged behaviour: barcode (T025) and created_at (T020) coexist on items."""
     import re
