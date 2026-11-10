@@ -65,6 +65,52 @@ def test_low_stock_sorted_by_sku(client, loc_a):
     assert [e["sku"] for e in client.get("/reports/low-stock").json()] == ["A", "Z"]
 
 
+def test_low_stock_scoped_to_location_counts_only_that_location(client, loc_a, loc_b):
+    # 2 at A + 10 at B = 12 total, above reorder point of 5; at A alone it is low.
+    item = _seed(client, "SPLIT", "Split", reorder=5, qty=2, loc=loc_a)
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "qty": 10, "to_location_id": loc_b["id"]},
+    )
+    # Globally not low-stock.
+    assert client.get("/reports/low-stock").json() == []
+    # Scoped to A: only the 2 units there count.
+    r = client.get("/reports/low-stock", params={"location_id": loc_a["id"]})
+    assert r.status_code == 200
+    entries = r.json()
+    assert [e["sku"] for e in entries] == ["SPLIT"]
+    assert entries[0]["total_qty"] == 2
+    # Scoped to B: 10 units there, not low.
+    assert client.get("/reports/low-stock", params={"location_id": loc_b["id"]}).json() == []
+
+
+def test_low_stock_scoped_to_location_item_with_no_stock_there(client, loc_a, loc_b):
+    _seed(client, "ELSEWHERE", "Elsewhere", reorder=3, qty=5, loc=loc_b)
+    entries = client.get("/reports/low-stock", params={"location_id": loc_a["id"]}).json()
+    assert [e["sku"] for e in entries] == ["ELSEWHERE"]
+    assert entries[0]["total_qty"] == 0
+
+
+def test_low_stock_unknown_location_returns_404(client, loc_a):
+    r = client.get("/reports/low-stock", params={"location_id": 9999})
+    assert r.status_code == 404
+    body = r.json()
+    assert body["error"]["code"] == "not_found"
+    assert "9999" in body["error"]["message"]
+
+
+def test_low_stock_without_location_param_unchanged(client, loc_a, loc_b):
+    # 3 at A + 3 at B = 6 total, which is at the reorder point of 6 -> included.
+    item = _seed(client, "SUM", "Sum", reorder=6, qty=3, loc=loc_a)
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "qty": 3, "to_location_id": loc_b["id"]},
+    )
+    entries = client.get("/reports/low-stock").json()
+    assert [e["sku"] for e in entries] == ["SUM"]
+    assert entries[0]["total_qty"] == 6
+
+
 def test_inventory_value(client, loc_a):
     _seed(client, "P1", "p1", reorder=0, qty=3, loc=loc_a, price=2.0)
     _seed(client, "P2", "p2", reorder=0, qty=1, loc=loc_a, price=10.0)
@@ -89,6 +135,34 @@ def test_search_sorted_by_name_and_limited(client):
     for n, name in enumerate(["Cable C", "Cable A", "Cable B"]):
         client.post("/items", json={"sku": f"C{n}", "name": name})
     names = [i["name"] for i in client.get("/search", params={"q": "Cable", "limit": 2}).json()]
+    assert names == ["Cable A", "Cable B"]
+
+
+def test_search_by_name_is_case_insensitive(client):
+    client.post("/items", json={"sku": "S1", "name": "Blue Widget"})
+    client.post("/items", json={"sku": "S2", "name": "Red Gadget"})
+    lower = client.get("/search", params={"q": "widget"})
+    upper = client.get("/search", params={"q": "WIDGET"})
+    title = client.get("/search", params={"q": "Widget"})
+    assert lower.status_code == upper.status_code == title.status_code == 200
+    assert [i["sku"] for i in lower.json()] == ["S1"]
+    assert lower.json() == upper.json() == title.json()
+
+
+def test_search_by_sku_is_case_insensitive(client):
+    client.post("/items", json={"sku": "BOLT-M8", "name": "Bolt"})
+    client.post("/items", json={"sku": "NUT-M8", "name": "Nut"})
+    lower = client.get("/search", params={"q": "bolt-m8"})
+    upper = client.get("/search", params={"q": "BOLT-M8"})
+    mixed = client.get("/search", params={"q": "BoLt-M8"})
+    assert [i["sku"] for i in lower.json()] == ["BOLT-M8"]
+    assert lower.json() == upper.json() == mixed.json()
+
+
+def test_search_case_insensitive_keeps_order_and_limit(client):
+    for n, name in enumerate(["Cable C", "Cable A", "Cable B"]):
+        client.post("/items", json={"sku": f"C{n}", "name": name})
+    names = [i["name"] for i in client.get("/search", params={"q": "cable", "limit": 2}).json()]
     assert names == ["Cable A", "Cable B"]
 
 

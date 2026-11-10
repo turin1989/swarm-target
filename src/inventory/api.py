@@ -13,6 +13,7 @@ from inventory.models import (
     ItemUpdate,
     Location,
     LocationCreate,
+    LocationStock,
     LowStockEntry,
     Movement,
     MovementCreate,
@@ -159,6 +160,19 @@ def get_location(location_id: int, conn: sqlite3.Connection = Depends(get_db)) -
     return Location(**dict(row))
 
 
+@router.get("/locations/{location_id}/stock", response_model=LocationStock)
+def location_stock(
+    location_id: int, conn: sqlite3.Connection = Depends(get_db)
+) -> LocationStock:
+    row = conn.execute("SELECT id FROM locations WHERE id = ?", (location_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"location {location_id} not found")
+    return LocationStock(
+        location_id=location_id,
+        levels=stock.get_location_levels(conn, location_id),
+    )
+
+
 @router.delete("/locations/{location_id}", status_code=204)
 def delete_location(location_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Response:
     row = conn.execute("SELECT id FROM locations WHERE id = ?", (location_id,)).fetchone()
@@ -204,6 +218,14 @@ def reverse_movement(movement_id: int, conn: sqlite3.Connection = Depends(get_db
         raise HTTPException(status_code=exc.status_code, detail=str(exc))
 
 
+@router.get("/movements/{movement_id}", response_model=Movement)
+def get_movement(movement_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Movement:
+    try:
+        return stock.get_movement(conn, movement_id)
+    except stock.StockError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+
+
 @router.get("/movements", response_model=list[Movement])
 def list_movements(
     limit: int = Query(100, ge=1, le=500),
@@ -217,8 +239,18 @@ def list_movements(
 
 
 @router.get("/reports/low-stock", response_model=list[LowStockEntry])
-def low_stock_report(conn: sqlite3.Connection = Depends(get_db)) -> list[LowStockEntry]:
-    return reports.low_stock(conn)
+def low_stock_report(
+    location_id: Optional[int] = None, conn: sqlite3.Connection = Depends(get_db)
+) -> list[LowStockEntry]:
+    if location_id is not None:
+        row = conn.execute(
+            "SELECT 1 FROM locations WHERE id = ?", (location_id,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(
+                status_code=404, detail=f"location {location_id} not found"
+            )
+    return reports.low_stock(conn, location_id=location_id)
 
 
 @router.get("/reports/value")
