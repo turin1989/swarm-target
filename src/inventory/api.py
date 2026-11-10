@@ -3,7 +3,7 @@
 import sqlite3
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 
 from inventory.db import get_db
 from inventory.models import (
@@ -23,6 +23,7 @@ from inventory.models import (
 )
 from inventory.services import items as items_service
 from inventory.services import reports, search, stock
+from inventory.services.items_bulk import BulkSkuConflictError, insert_items
 
 router = APIRouter()
 
@@ -43,6 +44,19 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
         return items_service.create_item(conn, payload)
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=409, detail=f"sku {payload.sku!r} already exists")
+
+
+@router.post("/items/bulk", response_model=list[Item], status_code=201)
+def create_items_bulk(
+    payload: list[ItemCreate] = Body(..., min_length=1),
+    conn: sqlite3.Connection = Depends(get_db),
+) -> list[Item]:
+    try:
+        created_ids = insert_items(conn, payload)
+    except BulkSkuConflictError as exc:
+        conn.rollback()
+        raise HTTPException(status_code=409, detail=str(exc))
+    return [_fetch_item(conn, item_id) for item_id in created_ids]
 
 
 @router.get("/items", response_model=ItemPage)
