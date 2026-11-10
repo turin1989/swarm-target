@@ -21,7 +21,7 @@ class _RejectsReorderPoint(BaseModel):
 class ItemCreate(_RejectsReorderPoint):
     sku: str = Field(..., min_length=1, max_length=64)
     name: str = Field(..., min_length=1, max_length=200)
-    description: str = ""
+    description: str = Field(default="", max_length=2000)
     unit_price: float = Field(default=0.0, ge=0)
     reorder_level: int = Field(default=0, ge=0)
     barcode: Optional[str] = Field(None, min_length=1, max_length=128)
@@ -36,7 +36,7 @@ class ItemCreate(_RejectsReorderPoint):
 
 class ItemUpdate(_RejectsReorderPoint):
     name: Optional[str] = None
-    description: Optional[str] = None
+    description: Optional[str] = Field(None, max_length=2000)
     unit_price: Optional[float] = Field(None, ge=0)
     reorder_level: Optional[int] = Field(None, ge=0)
     active: Optional[bool] = None

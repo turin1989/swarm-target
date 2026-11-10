@@ -648,3 +648,25 @@ def test_update_item_zero_unit_price_accepted(client, item):
     r = client.put(f"/items/{item['id']}", json={"unit_price": 0})
     assert r.status_code == 200
     assert r.json()["unit_price"] == 0
+
+
+def test_create_item_description_at_limit_ok(client):
+    r = client.post("/items", json={"sku": "DESC-1", "name": "Desc", "description": "d" * 2000})
+    assert r.status_code == 201
+    assert r.json()["description"] == "d" * 2000
+
+
+def test_create_item_description_too_long_422(client):
+    r = client.post("/items", json={"sku": "DESC-2", "name": "Desc", "description": "d" * 2001})
+    assert r.status_code == 422
+
+
+def test_update_item_description_at_limit_ok(client, item):
+    r = client.put(f"/items/{item['id']}", json={"description": "d" * 2000})
+    assert r.status_code == 200
+    assert r.json()["description"] == "d" * 2000
+
+
+def test_update_item_description_too_long_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"description": "d" * 2001})
+    assert r.status_code == 422
