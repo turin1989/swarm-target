@@ -40,7 +40,13 @@ CREATE TABLE IF NOT EXISTS movements (
     to_location_id INTEGER REFERENCES locations(id),
     note TEXT NOT NULL DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS schema_version (
+    version INTEGER NOT NULL
+);
 """
+
+SCHEMA_VERSION = 1
 
 
 def utc_now_iso() -> str:
@@ -59,7 +65,21 @@ def init_db(path: str) -> None:
     conn = connect(path)
     try:
         conn.executescript(SCHEMA)
+        row = conn.execute("SELECT version FROM schema_version").fetchone()
+        if row is None:
+            conn.execute(
+                "INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,)
+            )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def get_schema_version(path: str) -> int:
+    conn = connect(path)
+    try:
+        row = conn.execute("SELECT version FROM schema_version").fetchone()
+        return int(row["version"])
     finally:
         conn.close()
 
