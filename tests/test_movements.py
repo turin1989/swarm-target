@@ -77,6 +77,63 @@ def test_transfer_is_recorded(client, item, loc_a, loc_b):
     assert movements[1]["kind"] == "transfer"
 
 
+def test_transfer_moves_stock_between_locations(client, item, loc_a, loc_b):
+    """T003: a transfer debits the source and credits the destination."""
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=2,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    assert r.status_code == 201
+
+    s = client.get(f"/items/{item['id']}/stock").json()
+    # source decreases by 2, destination increases by 2
+    assert s["levels"] == [
+        {"item_id": item["id"], "location_id": loc_a["id"], "qty": 3},
+        {"item_id": item["id"], "location_id": loc_b["id"], "qty": 2},
+    ]
+    # total stock is unchanged by the transfer
+    assert s["total"] == 5
+
+
+def test_transfer_does_not_change_total_stock(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=9, to_location_id=loc_a["id"])
+    before = client.get(f"/items/{item['id']}/stock").json()["total"]
+    _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=4,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    after = client.get(f"/items/{item['id']}/stock").json()["total"]
+    assert before == after == 9
+
+
+def test_transfer_to_existing_destination_accumulates(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=6, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_b["id"])
+    _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=2,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 7
+    assert s["levels"] == [
+        {"item_id": item["id"], "location_id": loc_a["id"], "qty": 4},
+        {"item_id": item["id"], "location_id": loc_b["id"], "qty": 3},
+    ]
+
+
 def test_adjust_sets_absolute_stock(client, item, loc_a):
     _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])
     r = _move(client, item_id=item["id"], kind="adjust", qty=3, to_location_id=loc_a["id"])
