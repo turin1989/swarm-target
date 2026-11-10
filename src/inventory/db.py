@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS items (
 CREATE TABLE IF NOT EXISTS locations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     code TEXT NOT NULL UNIQUE,
-    name TEXT NOT NULL
+    name TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS stock_levels (
@@ -88,6 +89,14 @@ def init_db(path: str) -> None:
         # Migrate databases created before the items.barcode column existed.
         if "barcode" not in item_columns:
             conn.execute("ALTER TABLE items ADD COLUMN barcode TEXT")
+        # Migrate databases created before the locations.active column existed.
+        location_columns = {
+            r["name"] for r in conn.execute("PRAGMA table_info(locations)").fetchall()
+        }
+        if "active" not in location_columns:
+            conn.execute(
+                "ALTER TABLE locations ADD COLUMN active INTEGER NOT NULL DEFAULT 1"
+            )
         # Enforce uniqueness of barcode only when it is set (NULLs are allowed
         # to repeat). Created after the migrations so old databases have the
         # column by the time the index is built.

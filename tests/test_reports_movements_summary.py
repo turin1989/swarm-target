@@ -18,17 +18,17 @@ def test_empty_db_returns_all_kinds_with_zeros(client):
 
 
 def test_summary_counts_and_quantities(client, item, loc_a, loc_b):
-    _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])
-    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", quantity=10, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", quantity=5, to_location_id=loc_a["id"])
     _move(
         client,
         item_id=item["id"],
         kind="transfer",
-        qty=4,
+        quantity=4,
         from_location_id=loc_a["id"],
         to_location_id=loc_b["id"],
     )
-    _move(client, item_id=item["id"], kind="ship", qty=3, from_location_id=loc_b["id"])
+    _move(client, item_id=item["id"], kind="ship", quantity=3, from_location_id=loc_b["id"])
 
     r = client.get("/reports/movements-summary")
     assert r.status_code == 200
@@ -40,7 +40,7 @@ def test_summary_counts_and_quantities(client, item, loc_a, loc_b):
 
 
 def test_kinds_without_movements_stay_zero(client, item, loc_a):
-    _move(client, item_id=item["id"], kind="receive", qty=7, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", quantity=7, to_location_id=loc_a["id"])
 
     body = client.get("/reports/movements-summary").json()
     assert body["receive"] == {"count": 1, "qty": 7}

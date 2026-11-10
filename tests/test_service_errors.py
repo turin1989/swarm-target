@@ -2,7 +2,6 @@
 
 import pytest
 
-
 # --- the exception hierarchy -----------------------------------------------------
 
 
@@ -25,7 +24,7 @@ def test_errors_module_defines_typed_hierarchy():
 def test_status_code_can_be_overridden_per_instance():
     from inventory.services.errors import InventoryError, ValidationError
 
-    exc = ValidationError("qty must be a positive integer", status_code=422)
+    exc = ValidationError("quantity must be a positive integer", status_code=422)
     assert exc.status_code == 422
     assert InventoryError("generic").status_code == 400
 
@@ -63,7 +62,7 @@ def test_missing_item_raises_not_found(conn):
     from inventory.services.errors import NotFoundError
     from inventory.services.stock import apply_movement
 
-    m = MovementCreate(item_id=999, kind="receive", qty=1, to_location_id=1)
+    m = MovementCreate(item_id=999, kind="receive", quantity=1, to_location_id=1)
     with pytest.raises(NotFoundError) as exc:
         apply_movement(conn, m)
     assert exc.value.status_code == 404
@@ -92,7 +91,7 @@ def test_inactive_item_raises_conflict(conn):
     from inventory.services.errors import ConflictError
     from inventory.services.stock import apply_movement
 
-    m = MovementCreate(item_id=2, kind="receive", qty=1, to_location_id=1)
+    m = MovementCreate(item_id=2, kind="receive", quantity=1, to_location_id=1)
     with pytest.raises(ConflictError) as exc:
         apply_movement(conn, m)
     assert exc.value.status_code == 409
@@ -103,7 +102,7 @@ def test_insufficient_stock_raises_conflict(conn):
     from inventory.services.errors import ConflictError
     from inventory.services.stock import apply_movement
 
-    m = MovementCreate(item_id=1, kind="ship", qty=5, from_location_id=1)
+    m = MovementCreate(item_id=1, kind="ship", quantity=5, from_location_id=1)
     with pytest.raises(ConflictError) as exc:
         apply_movement(conn, m)
     assert exc.value.status_code == 409
@@ -115,7 +114,7 @@ def test_same_location_transfer_raises_validation_error(conn):
     from inventory.services.stock import apply_movement
 
     m = MovementCreate(
-        item_id=1, kind="transfer", qty=1, from_location_id=1, to_location_id=1
+        item_id=1, kind="transfer", quantity=1, from_location_id=1, to_location_id=1
     )
     with pytest.raises(ValidationError) as exc:
         apply_movement(conn, m)
@@ -128,7 +127,7 @@ def test_missing_required_location_raises_validation_error(conn):
     from inventory.services.stock import apply_movement
 
     m = MovementCreate.model_construct(
-        item_id=1, kind="receive", qty=1, from_location_id=None, to_location_id=None, note=""
+        item_id=1, kind="receive", quantity=1, from_location_id=None, to_location_id=None, note=""
     )
     with pytest.raises(ValidationError) as exc:
         apply_movement(conn, m)
@@ -175,7 +174,7 @@ def test_movement_errors_map_to_expected_statuses(client, item, loc_a):
     # ConflictError -> 409
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "ship", "qty": 1, "from_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "ship", "quantity": 1, "from_location_id": loc_a["id"]},
     )
     assert r.status_code == 409
     assert r.json()["error"]["code"] == "conflict"
@@ -186,7 +185,7 @@ def test_movement_errors_map_to_expected_statuses(client, item, loc_a):
         json={
             "item_id": item["id"],
             "kind": "transfer",
-            "qty": 1,
+            "quantity": 1,
             "from_location_id": loc_a["id"],
             "to_location_id": loc_a["id"],
         },
@@ -197,7 +196,7 @@ def test_movement_errors_map_to_expected_statuses(client, item, loc_a):
     # NotFoundError -> 404
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 1, "to_location_id": 999},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 1, "to_location_id": 999},
     )
     assert r.status_code == 404
     assert r.json()["error"]["code"] == "not_found"

@@ -44,7 +44,7 @@ def test_409_stock_error_shape(client, item, loc_a):
         json={
             "item_id": item["id"],
             "kind": "ship",
-            "qty": 1,
+            "quantity": 1,
             "from_location_id": loc_a["id"],
         },
     )
@@ -76,7 +76,7 @@ def test_400_bad_request_shape(client, item, loc_a):
         json={
             "item_id": item["id"],
             "kind": "transfer",
-            "qty": 1,
+            "quantity": 1,
             "from_location_id": loc_a["id"],
             "to_location_id": loc_a["id"],
         },

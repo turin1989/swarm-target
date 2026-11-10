@@ -63,18 +63,20 @@ class LocationUpdate(BaseModel):
         None, min_length=1, max_length=32, pattern=r"^[A-Z0-9][A-Z0-9-]{0,31}$"
     )
     name: Optional[str] = Field(None, min_length=1, max_length=200)
+    active: Optional[bool] = None
 
 
 class Location(BaseModel):
     id: int
     code: str
     name: str
+    active: bool = True
 
 
 class MovementCreate(BaseModel):
     item_id: int
     kind: MovementKind
-    qty: int = Field(..., gt=0)
+    quantity: int = Field(..., gt=0)
     from_location_id: Optional[int] = None
     to_location_id: Optional[int] = None
     note: str = Field("", max_length=500)
@@ -85,7 +87,7 @@ class Movement(BaseModel):
     id: int
     item_id: int
     kind: MovementKind
-    qty: int
+    quantity: int
     from_location_id: Optional[int]
     to_location_id: Optional[int]
     note: str
@@ -96,7 +98,7 @@ class Movement(BaseModel):
 class StockLevel(BaseModel):
     item_id: int
     location_id: int
-    qty: int
+    quantity: int
 
 
 class ItemStock(BaseModel):

@@ -7,6 +7,20 @@ from inventory.services.errors import ConflictError, NotFoundError, ValidationEr
 from inventory.services.items import utc_now_iso
 
 
+def _row_to_stock_level(row: sqlite3.Row) -> StockLevel:
+    """Map a stock_levels row (DB column ``qty``) to the StockLevel model."""
+    data = dict(row)
+    data["quantity"] = data.pop("qty")
+    return StockLevel(**data)
+
+
+def _row_to_movement(row: sqlite3.Row) -> Movement:
+    """Map a movements row (DB column ``qty``) to the Movement model."""
+    data = dict(row)
+    data["quantity"] = data.pop("qty")
+    return Movement(**data)
+
+
 def get_stock_level(conn: sqlite3.Connection, item_id: int, location_id: int) -> int:
     row = conn.execute(
         "SELECT qty FROM stock_levels WHERE item_id = ? AND location_id = ?",
@@ -20,7 +34,7 @@ def get_item_levels(conn: sqlite3.Connection, item_id: int) -> list[StockLevel]:
         "SELECT item_id, location_id, qty FROM stock_levels WHERE item_id = ? ORDER BY location_id",
         (item_id,),
     ).fetchall()
-    return [StockLevel(**dict(r)) for r in rows]
+    return [_row_to_stock_level(r) for r in rows]
 
 
 def get_location_levels(conn: sqlite3.Connection, location_id: int) -> list[StockLevel]:
@@ -39,7 +53,7 @@ def get_location_levels(conn: sqlite3.Connection, location_id: int) -> list[Stoc
         """,
         (location_id,),
     ).fetchall()
-    return [StockLevel(**dict(r)) for r in rows]
+    return [_row_to_stock_level(r) for r in rows]
 
 
 def total_stock(conn: sqlite3.Connection, item_id: int) -> int:
@@ -92,8 +106,8 @@ def _require_location(conn: sqlite3.Connection, location_id: int | None, field: 
 
 def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
     """Validate and apply a stock movement, returning the persisted record."""
-    if m.qty <= 0:
-        raise ValidationError("qty must be a positive integer", status_code=422)
+    if m.quantity <= 0:
+        raise ValidationError("quantity must be a positive integer", status_code=422)
 
     item = conn.execute("SELECT id, active FROM items WHERE id = ?", (m.item_id,)).fetchone()
     if item is None:
@@ -103,24 +117,24 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
 
     if m.kind == "receive":
         to_id = _require_location(conn, m.to_location_id, "to_location_id")
-        _adjust(conn, m.item_id, to_id, m.qty)
+        _adjust(conn, m.item_id, to_id, m.quantity)
     elif m.kind == "ship":
         from_id = _require_location(conn, m.from_location_id, "from_location_id")
-        _require_sufficient_stock(conn, m.item_id, from_id, m.qty)
-        _adjust(conn, m.item_id, from_id, -m.qty)
+        _require_sufficient_stock(conn, m.item_id, from_id, m.quantity)
+        _adjust(conn, m.item_id, from_id, -m.quantity)
     elif m.kind == "transfer":
         from_id = _require_location(conn, m.from_location_id, "from_location_id")
         to_id = _require_location(conn, m.to_location_id, "to_location_id")
         if from_id == to_id:
             raise ValidationError("cannot transfer to the same location")
-        _require_sufficient_stock(conn, m.item_id, from_id, m.qty)
-        _adjust(conn, m.item_id, from_id, -m.qty)
-        _adjust(conn, m.item_id, to_id, m.qty)
+        _require_sufficient_stock(conn, m.item_id, from_id, m.quantity)
+        _adjust(conn, m.item_id, from_id, -m.quantity)
+        _adjust(conn, m.item_id, to_id, m.quantity)
     elif m.kind == "adjust":
         if m.from_location_id is not None:
             raise ValidationError("from_location_id must be null for adjust movements")
         to_id = _require_location(conn, m.to_location_id, "to_location_id")
-        _set_level(conn, m.item_id, to_id, m.qty)
+        _set_level(conn, m.item_id, to_id, m.quantity)
     else:  # pragma: no cover - guarded by the Literal type
         raise ValidationError(f"unknown movement kind {m.kind!r}")
 
@@ -133,7 +147,7 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
         (
             m.item_id,
             m.kind,
-            m.qty,
+            m.quantity,
             m.from_location_id,
             m.to_location_id,
             m.note,
@@ -148,7 +162,48 @@ def get_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
     row = conn.execute("SELECT * FROM movements WHERE id = ?", (movement_id,)).fetchone()
     if row is None:
         raise NotFoundError(f"movement {movement_id} not found")
-    return Movement(**dict(row))
+    return _row_to_movement(row)
+
+
+def reverse_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
+    """Create and apply a movement that undoes the given movement.
+
+    receive -> ship, ship -> receive, transfer -> transfer with the
+    locations swapped. Raises NotFoundError (404) if the movement does not
+    exist, and ConflictError (409) for kinds that cannot be reversed.
+    """
+    original = get_movement(conn, movement_id)
+    note = f"reversal of {movement_id}"
+    if original.kind == "receive":
+        reversal = MovementCreate(
+            item_id=original.item_id,
+            kind="ship",
+            quantity=original.quantity,
+            from_location_id=original.to_location_id,
+            note=note,
+        )
+    elif original.kind == "ship":
+        reversal = MovementCreate(
+            item_id=original.item_id,
+            kind="receive",
+            quantity=original.quantity,
+            to_location_id=original.from_location_id,
+            note=note,
+        )
+    elif original.kind == "transfer":
+        reversal = MovementCreate(
+            item_id=original.item_id,
+            kind="transfer",
+            quantity=original.quantity,
+            from_location_id=original.to_location_id,
+            to_location_id=original.from_location_id,
+            note=note,
+        )
+    else:
+        raise ConflictError(
+            f"movement {movement_id} of kind {original.kind!r} cannot be reversed"
+        )
+    return apply_movement(conn, reversal)
 
 
 def list_movements(
@@ -172,4 +227,4 @@ def list_movements(
     sql += " ORDER BY id LIMIT ? OFFSET ?"
     params += [limit, offset]
     rows = conn.execute(sql, params).fetchall()
-    return [Movement(**dict(r)) for r in rows]
+    return [_row_to_movement(r) for r in rows]
