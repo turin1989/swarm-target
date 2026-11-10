@@ -56,3 +56,24 @@ def inventory_value(conn: sqlite3.Connection, location_id: int | None = None) ->
         params = (location_id,)
     row = conn.execute(sql, params).fetchone()
     return float(row["value"])
+
+
+def stats(conn: sqlite3.Connection) -> dict:
+    """Entity counts plus the total number of stock units on hand."""
+    row = conn.execute(
+        """
+        SELECT
+            (SELECT COUNT(*) FROM items) AS items,
+            (SELECT COUNT(*) FROM items WHERE active = 1) AS active_items,
+            (SELECT COUNT(*) FROM locations) AS locations,
+            (SELECT COUNT(*) FROM movements) AS movements,
+            (SELECT COALESCE(SUM(qty), 0) FROM stock_levels) AS total_units
+        """
+    ).fetchone()
+    return {
+        "items": row["items"],
+        "active_items": row["active_items"],
+        "locations": row["locations"],
+        "movements": row["movements"],
+        "total_units": row["total_units"],
+    }
