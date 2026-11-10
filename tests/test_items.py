@@ -30,6 +30,25 @@ def test_create_item_requires_sku_and_name(client):
     assert client.post("/items", json={"sku": "", "name": "x"}).status_code == 422
 
 
+def test_create_item_normalises_sku_trim_and_uppercase(client):
+    r = client.post("/items", json={"sku": "  abc-1 ", "name": "Alpha"})
+    assert r.status_code == 201
+    assert r.json()["sku"] == "ABC-1"
+    # stored value is normalised too
+    assert client.get(f"/items/{r.json()['id']}").json()["sku"] == "ABC-1"
+
+
+def test_create_item_duplicate_sku_conflicts_after_normalisation(client):
+    assert client.post("/items", json={"sku": "  abc-1 ", "name": "Alpha"}).status_code == 201
+    assert client.post("/items", json={"sku": "ABC-1", "name": "Dup"}).status_code == 409
+    assert client.post("/items", json={"sku": "abc-1", "name": "Dup"}).status_code == 409
+
+
+def test_create_item_whitespace_only_sku_is_422(client):
+    assert client.post("/items", json={"sku": "   ", "name": "x"}).status_code == 422
+    assert client.post("/items", json={"sku": "\t \n", "name": "x"}).status_code == 422
+
+
 def test_get_item(client, item):
     r = client.get(f"/items/{item['id']}")
     assert r.status_code == 200
