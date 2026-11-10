@@ -36,7 +36,9 @@ def test_get_item_returns_created_at(client, item):
 def test_list_items_returns_created_at(client, item):
     r = client.get("/items")
     assert r.status_code == 200
-    rows = r.json()
+    body = r.json()
+    # GET /items returns a paginated envelope {"items": [...], ...}
+    rows = body["items"] if isinstance(body, dict) else body
     assert rows, "expected at least one item"
     for row in rows:
         _assert_valid_created_at(row["created_at"])
