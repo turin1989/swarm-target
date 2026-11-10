@@ -127,7 +127,7 @@ def test_transfer_same_location_rejected(client, item, loc_a):
         to_location_id=loc_a["id"],
     )
     assert r.status_code == 400
-    assert "same location" in r.json()["detail"]
+    assert "same location" in r.json()["error"]["message"]
 
 
 def test_transfer_same_location_writes_no_movement(client, item, loc_a):
