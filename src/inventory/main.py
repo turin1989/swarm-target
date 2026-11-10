@@ -11,7 +11,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from inventory import __version__
 from inventory.api import router
-from inventory.db import init_db
+from inventory.db import connect, init_db
 
 DEFAULT_DB_PATH = "inventory.db"
 
@@ -73,8 +73,21 @@ def create_app(db_path: str | None = None) -> FastAPI:
         return response
 
     @app.get("/health")
-    def health() -> dict:
-        return {"status": "ok", "version": __version__}
+    def health() -> JSONResponse:
+        try:
+            conn = connect(app.state.db_path)
+            try:
+                conn.execute("SELECT 1")
+            finally:
+                conn.close()
+        except Exception:
+            return JSONResponse(
+                status_code=503,
+                content={"status": "error", "version": __version__, "db": "error"},
+            )
+        return JSONResponse(
+            content={"status": "ok", "version": __version__, "db": "ok"}
+        )
 
     return app
 
