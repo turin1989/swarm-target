@@ -3,9 +3,11 @@
 import sqlite3
 from typing import Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import JSONResponse
 
 from inventory.db import get_db
+from inventory.services.errors import InventoryError
 from inventory.models import (
     Item,
     ItemCreate,
@@ -26,6 +28,17 @@ from inventory.services import reports, search, stock
 from inventory.services.items_bulk import BulkSkuConflictError, insert_items
 
 router = APIRouter()
+
+
+async def inventory_error_handler(request: Request, exc: InventoryError) -> JSONResponse:
+    """Map service-layer InventoryError subclasses to HTTP error responses.
+
+    Registered as an app-level exception handler in :mod:`inventory.main`, so
+    routes never need per-route try/except blocks for service errors.
+    """
+    from inventory.main import _error_response
+
+    return _error_response(exc.status_code, str(exc))
 
 
 def _fetch_item(conn: sqlite3.Connection, item_id: int) -> Item:
@@ -272,20 +285,14 @@ def location_stock(location_id: int, conn: sqlite3.Connection = Depends(get_db))
 def create_movement(
     payload: MovementCreate, conn: sqlite3.Connection = Depends(get_db)
 ) -> Movement:
-    try:
-        return stock.apply_movement(conn, payload)
-    except stock.StockError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    return stock.apply_movement(conn, payload)
 
 
 @router.post("/movements/{movement_id}/reverse", response_model=Movement, status_code=201)
 def reverse_movement(
     movement_id: int, conn: sqlite3.Connection = Depends(get_db)
 ) -> Movement:
-    try:
-        return stock.reverse_movement(conn, movement_id)
-    except stock.StockError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    return stock.reverse_movement(conn, movement_id)
 
 
 @router.get("/movements", response_model=list[Movement])
@@ -301,10 +308,7 @@ def list_movements(
 
 @router.get("/movements/{movement_id}", response_model=Movement)
 def get_movement(movement_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Movement:
-    try:
-        return stock.get_movement(conn, movement_id)
-    except stock.StockError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    return stock.get_movement(conn, movement_id)
 
 
 # --- reports & search --------------------------------------------------------
