@@ -124,7 +124,9 @@ def update_item(
 
 @router.delete("/items/{item_id}", status_code=204)
 def delete_item(item_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Response:
-    items_service.delete_item(conn, item_id)
+    deleted = items_service.delete_item(conn, item_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"item {item_id} not found")
     return Response(status_code=204)
 
 

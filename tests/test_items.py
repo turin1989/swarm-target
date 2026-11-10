@@ -265,6 +265,20 @@ def test_delete_item(client, item):
     assert client.get(f"/items/{item['id']}").status_code == 404
 
 
+def test_delete_missing_item_404(client):
+    r = client.delete("/items/4242")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "item 4242 not found"
+
+
+def test_delete_item_twice_second_404(client, item):
+    item_id = item["id"]
+    assert client.delete(f"/items/{item_id}").status_code == 204
+    r = client.delete(f"/items/{item_id}")
+    assert r.status_code == 404
+    assert r.json()["detail"] == f"item {item_id} not found"
+
+
 def test_delete_item_cascades_stock(client, item, loc_a):
     client.post(
         "/movements",
