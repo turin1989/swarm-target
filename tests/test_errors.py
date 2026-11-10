@@ -51,7 +51,7 @@ def test_apply_movement_missing_item_raises_not_found(client):
         with pytest.raises(NotFoundError) as exc_info:
             stock.apply_movement(
                 conn,
-                MovementCreate(item_id=999, kind="receive", qty=1, to_location_id=1),
+                MovementCreate(item_id=999, kind="receive", quantity=1, to_location_id=1),
             )
     finally:
         conn.close()
@@ -82,7 +82,7 @@ def test_apply_movement_inactive_item_raises_conflict(client, item, loc_a):
             stock.apply_movement(
                 conn,
                 MovementCreate(
-                    item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"]
+                    item_id=item["id"], kind="receive", quantity=1, to_location_id=loc_a["id"]
                 ),
             )
     finally:
@@ -100,7 +100,7 @@ def test_apply_movement_missing_location_field_raises_validation(client, item):
         with pytest.raises(ValidationError) as exc_info:
             stock.apply_movement(
                 conn,
-                MovementCreate(item_id=item["id"], kind="receive", qty=1),
+                MovementCreate(item_id=item["id"], kind="receive", quantity=1),
             )
     finally:
         conn.close()
@@ -150,31 +150,50 @@ def test_handler_maps_each_subclass_status():
         assert bytes(str(exc), "utf-8") in response.body
 
 
+def test_handler_emits_uniform_error_shape():
+    """The typed-exception handler uses the shared {"error": {code, message}} body."""
+    import json
+
+    from fastapi import Request
+
+    from inventory.api import inventory_error_handler
+
+    scope = {"type": "http", "method": "GET", "path": "/", "headers": []}
+    request = Request(scope)
+    for exc, code in [
+        (NotFoundError("missing"), "not_found"),
+        (ConflictError("clash"), "conflict"),
+        (ValidationError("bad"), "bad_request"),
+    ]:
+        body = json.loads(inventory_error_handler(request, exc).body)
+        assert body == {"error": {"code": code, "message": str(exc)}}
+
+
 # --- end-to-end: HTTP responses still carry the right codes ---------------------
 
 
 def test_movement_for_missing_item_returns_404(client, loc_a):
     r = client.post(
         "/movements",
-        json={"item_id": 999, "kind": "receive", "qty": 1, "to_location_id": loc_a["id"]},
+        json={"item_id": 999, "kind": "receive", "quantity": 1, "to_location_id": loc_a["id"]},
     )
     assert r.status_code == 404
-    assert "not found" in r.json()["detail"]
+    assert "not found" in r.json()["error"]["message"]
 
 
 def test_movement_missing_required_location_returns_400(client, item):
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 1},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 1},
     )
     assert r.status_code == 400
-    assert "to_location_id" in r.json()["detail"]
+    assert "to_location_id" in r.json()["error"]["message"]
 
 
 def test_get_missing_movement_returns_404(client):
     r = client.get("/movements/999")
     assert r.status_code == 404
-    assert "not found" in r.json()["detail"]
+    assert "not found" in r.json()["error"]["message"]
 
 
 # --- merged m5-opt services use the typed exceptions too -------------------------
@@ -198,7 +217,7 @@ def test_reverse_adjust_movement_raises_validation_error(client, item, loc_a):
 
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "adjust", "qty": 5, "to_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "adjust", "quantity": 5, "to_location_id": loc_a["id"]},
     )
     assert r.status_code == 201, r.text
     movement_id = r.json()["id"]
@@ -216,16 +235,16 @@ def test_reverse_adjust_movement_raises_validation_error(client, item, loc_a):
 def test_location_stock_missing_location_returns_404_via_handler(client):
     r = client.get("/locations/98765/stock")
     assert r.status_code == 404
-    assert "not found" in r.json()["detail"]
+    assert "not found" in r.json()["error"]["message"]
 
 
 def test_reverse_adjust_movement_returns_400_via_handler(client, item, loc_a):
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "adjust", "qty": 5, "to_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "adjust", "quantity": 5, "to_location_id": loc_a["id"]},
     )
     assert r.status_code == 201, r.text
 
     r2 = client.post(f"/movements/{r.json()['id']}/reverse")
     assert r2.status_code == 400
-    assert "cannot be reversed" in r2.json()["detail"]
+    assert "cannot be reversed" in r2.json()["error"]["message"]
