@@ -50,7 +50,7 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
     try:
         cur = conn.execute(
             """
-            INSERT INTO items (sku, name, description, unit_price, reorder_point, barcode, created_at)
+            INSERT INTO items (sku, name, description, unit_price, reorder_level, barcode, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
@@ -58,7 +58,7 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
                 payload.name,
                 payload.description,
                 payload.unit_price,
-                payload.reorder_point,
+                payload.reorder_level,
                 payload.barcode,
                 _utc_now_iso(),
             ),
@@ -76,6 +76,7 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
 def list_items(
     response: Response,
     active: Optional[bool] = None,
+    sku: Optional[str] = None,
     barcode: Optional[str] = None,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -86,6 +87,9 @@ def list_items(
     if active is not None:
         clauses.append("active = ?")
         params.append(int(active))
+    if sku is not None:
+        clauses.append("sku = ?")
+        params.append(sku)
     if barcode is not None:
         clauses.append("barcode = ?")
         params.append(barcode)
@@ -288,6 +292,11 @@ def low_stock_report(
         if row is None:
             raise HTTPException(status_code=404, detail=f"location {location_id} not found")
     return reports.low_stock(conn, location_id=location_id)
+
+
+@router.get("/reports/movements-summary")
+def movements_summary_report(conn: sqlite3.Connection = Depends(get_db)) -> dict:
+    return reports.movements_summary(conn)
 
 
 @router.get("/reports/value")
