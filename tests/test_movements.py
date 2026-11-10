@@ -214,7 +214,8 @@ def test_apply_movement_rejects_non_positive_qty_directly():
     """The service layer guards against qty <= 0 even if validation is bypassed."""
     from inventory.db import SCHEMA, connect
     from inventory.models import MovementCreate
-    from inventory.services.stock import StockError, apply_movement
+    from inventory.services.errors import ValidationError
+    from inventory.services.stock import apply_movement
 
     conn = connect(":memory:")
     conn.executescript(SCHEMA)
@@ -227,7 +228,7 @@ def test_apply_movement_rejects_non_positive_qty_directly():
     m = MovementCreate.model_construct(
         item_id=1, kind="receive", qty=0, from_location_id=None, to_location_id=1, note=""
     )
-    with pytest.raises(StockError) as exc:
+    with pytest.raises(ValidationError) as exc:
         apply_movement(conn, m)
     assert exc.value.status_code == 422
     assert conn.execute("SELECT COUNT(*) AS n FROM movements").fetchone()["n"] == 0
@@ -318,10 +319,11 @@ def test_transfer_exactly_source_stock_succeeds(client, item, loc_a, loc_b):
 
 
 def test_apply_movement_rejects_insufficient_stock_directly():
-    """The service layer raises StockError(409) and writes nothing."""
+    """The service layer raises ConflictError (409) and writes nothing."""
     from inventory.db import SCHEMA, connect
     from inventory.models import MovementCreate
-    from inventory.services.stock import StockError, apply_movement
+    from inventory.services.errors import ConflictError
+    from inventory.services.stock import apply_movement
 
     conn = connect(":memory:")
     conn.executescript(SCHEMA)
@@ -333,7 +335,7 @@ def test_apply_movement_rejects_insufficient_stock_directly():
     conn.execute("INSERT INTO stock_levels (item_id, location_id, qty) VALUES (1, 1, 2)")
 
     m = MovementCreate(item_id=1, kind="ship", qty=3, from_location_id=1)
-    with pytest.raises(StockError) as exc:
+    with pytest.raises(ConflictError) as exc:
         apply_movement(conn, m)
     assert exc.value.status_code == 409
     assert "insufficient" in str(exc.value)
