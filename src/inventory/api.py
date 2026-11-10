@@ -14,6 +14,7 @@ from inventory.models import (
     ItemUpdate,
     Location,
     LocationCreate,
+    LocationStock,
     LocationUpdate,
     LowStockEntry,
     Movement,
@@ -231,6 +232,17 @@ def update_location(
         )
     row = conn.execute("SELECT * FROM locations WHERE id = ?", (location_id,)).fetchone()
     return Location(**dict(row))
+
+
+@router.get("/locations/{location_id}/stock", response_model=LocationStock)
+def location_stock(
+    location_id: int, conn: sqlite3.Connection = Depends(get_db)
+) -> LocationStock:
+    try:
+        levels = stock.get_location_levels(conn, location_id)
+    except stock.StockError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    return LocationStock(location_id=location_id, levels=levels)
 
 
 @router.delete("/locations/{location_id}", status_code=204)
