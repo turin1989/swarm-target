@@ -122,7 +122,7 @@ def test_duplicate_barcode_conflicts(client):
     assert r.status_code == 201
     r = client.post("/items", json={"sku": "BC-2", "name": "Two", "barcode": "DUP-CODE"})
     assert r.status_code == 409
-    assert "barcode" in r.json()["detail"]
+    assert "barcode" in r.json()["error"]["message"]
 
 
 def test_multiple_items_without_barcode_allowed(client):
