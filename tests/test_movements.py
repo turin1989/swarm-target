@@ -603,3 +603,97 @@ def test_movement_note_exactly_500_chars_accepted(client, item, loc_a):
     )
     assert r.status_code == 201
     assert r.json()["note"] == note
+
+
+# --- per-item movement history (T032) -----------------------------------------
+
+
+def test_item_movements_lists_only_that_item_in_id_order(client, loc_a, loc_b):
+    a = client.post("/items", json={"sku": "A-1", "name": "Alpha"}).json()
+    b = client.post("/items", json={"sku": "B-1", "name": "Beta"}).json()
+    _move(client, item_id=a["id"], kind="receive", quantity=1, to_location_id=loc_a["id"])
+    _move(client, item_id=b["id"], kind="receive", quantity=2, to_location_id=loc_a["id"])
+    _move(client, item_id=a["id"], kind="receive", quantity=3, to_location_id=loc_b["id"])
+    _move(
+        client,
+        item_id=a["id"],
+        kind="transfer",
+        quantity=1,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+
+    r = client.get(f"/items/{a['id']}/movements")
+    assert r.status_code == 200
+    movements = r.json()
+    assert [m["id"] for m in movements] == [1, 3, 4]
+    assert all(m["item_id"] == a["id"] for m in movements)
+    assert [m["kind"] for m in movements] == ["receive", "receive", "transfer"]
+
+    r = client.get(f"/items/{b['id']}/movements")
+    assert [m["id"] for m in r.json()] == [2]
+
+
+def test_item_movements_empty_for_item_without_history(client, item):
+    r = client.get(f"/items/{item['id']}/movements")
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_item_movements_pagination(client, item, loc_a):
+    for _ in range(5):
+        _move(client, item_id=item["id"], kind="receive", quantity=1, to_location_id=loc_a["id"])
+
+    r = client.get(f"/items/{item['id']}/movements", params={"limit": 2, "offset": 1})
+    assert r.status_code == 200
+    assert [m["id"] for m in r.json()] == [2, 3]
+
+    r = client.get(f"/items/{item['id']}/movements", params={"limit": 2})
+    assert [m["id"] for m in r.json()] == [1, 2]
+
+    r = client.get(f"/items/{item['id']}/movements", params={"offset": 4})
+    assert [m["id"] for m in r.json()] == [5]
+
+
+def test_item_movements_unknown_item_404(client):
+    r = client.get("/items/999/movements")
+    assert r.status_code == 404
+    assert r.json()["error"]["code"] == "not_found"
+
+
+def test_item_movements_invalid_pagination_422(client, item):
+    assert client.get(f"/items/{item['id']}/movements", params={"limit": 0}).status_code == 422
+    assert client.get(f"/items/{item['id']}/movements", params={"offset": -1}).status_code == 422
+
+
+def test_item_movements_use_quantity_not_qty(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", quantity=7, to_location_id=loc_a["id"])
+    body = client.get(f"/items/{item['id']}/movements").json()
+    assert body[0]["quantity"] == 7
+    assert "qty" not in body[0]
+
+
+def test_service_list_movements_filters_by_item_id():
+    """stock.list_movements(conn, item_id=...) filters at the service layer."""
+    from inventory.db import SCHEMA, connect
+    from inventory.models import MovementCreate
+    from inventory.services.stock import apply_movement, list_movements
+
+    conn = connect(":memory:")
+    conn.executescript(SCHEMA)
+    conn.execute("INSERT INTO items (sku, name) VALUES ('S-1', 'One')")
+    conn.execute("INSERT INTO items (sku, name) VALUES ('S-2', 'Two')")
+    conn.execute("INSERT INTO locations (code, name) VALUES ('WH-A', 'Warehouse A')")
+    apply_movement(conn, MovementCreate(item_id=1, kind="receive", quantity=1, to_location_id=1))
+    apply_movement(conn, MovementCreate(item_id=2, kind="receive", quantity=2, to_location_id=1))
+    apply_movement(conn, MovementCreate(item_id=1, kind="receive", quantity=3, to_location_id=1))
+
+    filtered = list_movements(conn, item_id=1)
+    assert [m.id for m in filtered] == [1, 3]
+    assert all(m.item_id == 1 for m in filtered)
+
+    paged = list_movements(conn, item_id=1, limit=1, offset=1)
+    assert [m.id for m in paged] == [3]
+
+    # without item_id the behaviour is unchanged
+    assert [m.id for m in list_movements(conn)] == [1, 2, 3]
