@@ -232,6 +232,46 @@ def test_list_movements_pagination(client, item, loc_a):
     assert [m["id"] for m in r.json()] == [3, 4]
 
 
+# --- non-positive quantities rejected (T040) ------------------------------------
+
+
+@pytest.mark.parametrize("qty", [0, -1, -100])
+@pytest.mark.parametrize(
+    "kind,locations",
+    [
+        ("receive", {"to_location_id": 1}),
+        ("ship", {"from_location_id": 1}),
+        ("transfer", {"from_location_id": 1, "to_location_id": 2}),
+        ("adjust", {"to_location_id": 1}),
+    ],
+)
+def test_movement_non_positive_qty_rejected_422(client, item, loc_a, loc_b, kind, locations, qty):
+    r = _move(client, item_id=item["id"], kind=kind, qty=qty, **locations)
+    assert r.status_code == 422
+    # no movement row is written
+    assert client.get("/movements").json() == []
+    # and stock is untouched
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 0
+
+
+def test_movement_non_positive_qty_does_not_write_row_with_existing_stock(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    r = _move(client, item_id=item["id"], kind="ship", qty=0, from_location_id=loc_a["id"])
+    assert r.status_code == 422
+    movements = client.get("/movements").json()
+    assert len(movements) == 1
+    assert movements[0]["kind"] == "receive"
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 5
+    assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "qty": 5}]
+
+
+def test_movement_positive_qty_still_accepted(client, item, loc_a):
+    r = _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
+    assert r.status_code == 201
+    assert r.json()["qty"] == 1
+
+
 # --- adjust movements (T039) ---------------------------------------------------
 
 
