@@ -95,3 +95,30 @@ def test_delete_item_cascades_stock(client, item, loc_a):
     )
     client.delete(f"/items/{item['id']}")
     assert client.get("/movements").json() == []
+
+
+def test_get_item_by_sku(client, item):
+    r = client.get(f"/items/by-sku/{item['sku']}")
+    assert r.status_code == 200
+    assert r.json() == item
+
+
+def test_get_item_by_sku_matches_get_by_id_shape(client, item):
+    by_sku = client.get(f"/items/by-sku/{item['sku']}").json()
+    by_id = client.get(f"/items/{item['id']}").json()
+    assert by_sku == by_id
+
+
+def test_get_item_by_sku_unknown_404(client):
+    r = client.get("/items/by-sku/NOPE-99")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "sku NOPE-99 not found"
+
+
+def test_get_item_by_sku_does_not_shadow_get_by_id(client, item):
+    # /items/{item_id} still works for ids after adding the by-sku route
+    r = client.get(f"/items/{item['id']}")
+    assert r.status_code == 200
+    assert r.json()["id"] == item["id"]
+    # and non-integer single-segment paths still 422 against the id route
+    assert client.get("/items/not-an-int").status_code == 422
