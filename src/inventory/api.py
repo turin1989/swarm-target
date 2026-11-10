@@ -54,6 +54,29 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
     return _fetch_item(conn, cur.lastrowid)
 
 
+@router.post("/items/bulk", response_model=list[Item], status_code=201)
+def create_items_bulk(
+    payload: list[ItemCreate], conn: sqlite3.Connection = Depends(get_db)
+) -> list[Item]:
+    if not payload:
+        raise HTTPException(status_code=422, detail="item list must not be empty")
+    created_ids: list[int] = []
+    for item in payload:
+        try:
+            cur = conn.execute(
+                """
+                INSERT INTO items (sku, name, description, unit_price, reorder_level)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (item.sku, item.name, item.description, item.unit_price, item.reorder_level),
+            )
+        except sqlite3.IntegrityError:
+            conn.rollback()
+            raise HTTPException(status_code=409, detail=f"sku {item.sku!r} already exists")
+        created_ids.append(cur.lastrowid)
+    return [_fetch_item(conn, item_id) for item_id in created_ids]
+
+
 @router.get("/items", response_model=list[Item])
 def list_items(
     active: Optional[bool] = None,
@@ -69,6 +92,14 @@ def list_items(
     sql += " ORDER BY id LIMIT ? OFFSET ?"
     params += [limit, offset]
     return [_row_to_item(r) for r in conn.execute(sql, params).fetchall()]
+
+
+@router.get("/items/by-sku/{sku}", response_model=Item)
+def get_item_by_sku(sku: str, conn: sqlite3.Connection = Depends(get_db)) -> Item:
+    row = conn.execute("SELECT * FROM items WHERE sku = ?", (sku,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"sku {sku} not found")
+    return _row_to_item(row)
 
 
 @router.get("/items/{item_id}", response_model=Item)
@@ -139,6 +170,32 @@ def get_location(location_id: int, conn: sqlite3.Connection = Depends(get_db)) -
     if row is None:
         raise HTTPException(status_code=404, detail=f"location {location_id} not found")
     return Location(**dict(row))
+
+
+@router.delete("/locations/{location_id}", status_code=204)
+def delete_location(location_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Response:
+    row = conn.execute("SELECT id FROM locations WHERE id = ?", (location_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"location {location_id} not found")
+    stocked = conn.execute(
+        "SELECT 1 FROM stock_levels WHERE location_id = ? AND qty != 0 LIMIT 1",
+        (location_id,),
+    ).fetchone()
+    if stocked is not None:
+        raise HTTPException(
+            status_code=409, detail=f"location {location_id} holds stock and cannot be deleted"
+        )
+    # Detach historical movements so the FK constraint does not block deletion.
+    conn.execute(
+        "UPDATE movements SET from_location_id = NULL WHERE from_location_id = ?",
+        (location_id,),
+    )
+    conn.execute(
+        "UPDATE movements SET to_location_id = NULL WHERE to_location_id = ?",
+        (location_id,),
+    )
+    conn.execute("DELETE FROM locations WHERE id = ?", (location_id,))
+    return Response(status_code=204)
 
 
 @router.get("/locations/{location_id}/stock", response_model=LocationStock)
