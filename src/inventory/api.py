@@ -76,6 +76,7 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
 def list_items(
     response: Response,
     active: Optional[bool] = None,
+    sku: Optional[str] = None,
     barcode: Optional[str] = None,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -86,6 +87,9 @@ def list_items(
     if active is not None:
         clauses.append("active = ?")
         params.append(int(active))
+    if sku is not None:
+        clauses.append("sku = ?")
+        params.append(sku)
     if barcode is not None:
         clauses.append("barcode = ?")
         params.append(barcode)
