@@ -66,28 +66,30 @@ def test_list_items_ordered_by_id(client):
         client.post("/items", json={"sku": sku, "name": sku})
     r = client.get("/items")
     assert r.status_code == 200
-    assert [i["sku"] for i in r.json()] == ["C", "A", "B"]
+    assert [i["sku"] for i in r.json()["items"]] == ["C", "A", "B"]
 
 
 def test_list_items_limit(client):
     for n in range(5):
         client.post("/items", json={"sku": f"S{n}", "name": f"N{n}"})
     r = client.get("/items", params={"limit": 2})
-    assert [i["sku"] for i in r.json()] == ["S0", "S1"]
+    assert [i["sku"] for i in r.json()["items"]] == ["S0", "S1"]
 
 
 def test_list_items_filter_active(client, item):
     client.post("/items", json={"sku": "INACTIVE", "name": "Old"})
     client.put("/items/2", json={"active": False})
-    assert [i["sku"] for i in client.get("/items", params={"active": "true"}).json()] == ["WIDGET-1"]
-    assert [i["sku"] for i in client.get("/items", params={"active": "false"}).json()] == ["INACTIVE"]
+    active = client.get("/items", params={"active": "true"}).json()["items"]
+    inactive = client.get("/items", params={"active": "false"}).json()["items"]
+    assert [i["sku"] for i in active] == ["WIDGET-1"]
+    assert [i["sku"] for i in inactive] == ["INACTIVE"]
 
 
 def test_list_items_filter_sku_exact_match(client, item):
     client.post("/items", json={"sku": "WIDGET-2", "name": "Other Widget"})
     r = client.get("/items", params={"sku": "WIDGET-1"})
     assert r.status_code == 200
-    body = r.json()
+    body = r.json()["items"]
     assert [i["sku"] for i in body] == ["WIDGET-1"]
     assert body[0] == item
 
@@ -96,17 +98,17 @@ def test_list_items_filter_sku_is_exact_not_partial(client, item):
     client.post("/items", json={"sku": "WIDGET-10", "name": "Bigger Widget"})
     r = client.get("/items", params={"sku": "WIDGET-1"})
     assert r.status_code == 200
-    assert [i["sku"] for i in r.json()] == ["WIDGET-1"]
+    assert [i["sku"] for i in r.json()["items"]] == ["WIDGET-1"]
     # a partial sku matches nothing
     r = client.get("/items", params={"sku": "WIDGET"})
     assert r.status_code == 200
-    assert r.json() == []
+    assert r.json()["items"] == []
 
 
 def test_list_items_filter_sku_unknown_returns_empty_list(client, item):
     r = client.get("/items", params={"sku": "NO-SUCH-SKU"})
     assert r.status_code == 200
-    assert r.json() == []
+    assert r.json()["items"] == []
 
 
 def test_list_items_filter_sku_combines_with_active(client, item):
@@ -116,11 +118,11 @@ def test_list_items_filter_sku_combines_with_active(client, item):
 
     r = client.get("/items", params={"sku": "WIDGET-1", "active": "true"})
     assert r.status_code == 200
-    assert r.json() == []
+    assert r.json()["items"] == []
 
     r = client.get("/items", params={"sku": "WIDGET-1", "active": "false"})
     assert r.status_code == 200
-    assert [i["sku"] for i in r.json()] == ["WIDGET-1"]
+    assert [i["sku"] for i in r.json()["items"]] == ["WIDGET-1"]
 
 
 def test_list_items_filter_sku_combines_with_barcode(client, item):
@@ -130,12 +132,12 @@ def test_list_items_filter_sku_combines_with_barcode(client, item):
     # matching sku + barcode pair returns the item
     r = client.get("/items", params={"sku": "WIDGET-2", "barcode": "BC-2"})
     assert r.status_code == 200
-    assert [i["sku"] for i in r.json()] == ["WIDGET-2"]
+    assert [i["sku"] for i in r.json()["items"]] == ["WIDGET-2"]
 
     # mismatched sku/barcode pair returns nothing (filters are ANDed)
     r = client.get("/items", params={"sku": "WIDGET-2", "barcode": "BC-3"})
     assert r.status_code == 200
-    assert r.json() == []
+    assert r.json()["items"] == []
 
 
 def test_list_items_x_total_count_respects_sku_filter(client, item):
@@ -406,7 +408,7 @@ def test_list_items_x_total_count_ignores_limit_and_offset(client):
         client.post("/items", json={"sku": f"SKU-{i}", "name": f"Item {i}"})
     r = client.get("/items", params={"limit": 2, "offset": 1})
     assert r.status_code == 200
-    assert len(r.json()) == 2
+    assert len(r.json()["items"]) == 2
     assert r.headers["X-Total-Count"] == "5"
 
 
@@ -418,7 +420,7 @@ def test_list_items_x_total_count_respects_active_filter(client):
 
     r = client.get("/items", params={"active": "true", "limit": 1})
     assert r.status_code == 200
-    assert len(r.json()) == 1
+    assert len(r.json()["items"]) == 1
     assert r.headers["X-Total-Count"] == "3"
 
     r = client.get("/items", params={"active": "false"})
@@ -440,49 +442,49 @@ def test_list_items_default_sort_is_id(client):
     _seed_sortable_items(client)
     r = client.get("/items")
     assert r.status_code == 200
-    assert [i["id"] for i in r.json()] == [1, 2, 3]
+    assert [i["id"] for i in r.json()["items"]] == [1, 2, 3]
 
 
 def test_list_items_sort_by_id_ascending(client):
     _seed_sortable_items(client)
     r = client.get("/items", params={"sort": "id"})
     assert r.status_code == 200
-    assert [i["id"] for i in r.json()] == [1, 2, 3]
+    assert [i["id"] for i in r.json()["items"]] == [1, 2, 3]
 
 
 def test_list_items_sort_by_id_descending(client):
     _seed_sortable_items(client)
     r = client.get("/items", params={"sort": "-id"})
     assert r.status_code == 200
-    assert [i["id"] for i in r.json()] == [3, 2, 1]
+    assert [i["id"] for i in r.json()["items"]] == [3, 2, 1]
 
 
 def test_list_items_sort_by_name_ascending(client):
     _seed_sortable_items(client)
     r = client.get("/items", params={"sort": "name"})
     assert r.status_code == 200
-    assert [i["name"] for i in r.json()] == ["Alpha", "Bravo", "Charlie"]
+    assert [i["name"] for i in r.json()["items"]] == ["Alpha", "Bravo", "Charlie"]
 
 
 def test_list_items_sort_by_name_descending(client):
     _seed_sortable_items(client)
     r = client.get("/items", params={"sort": "-name"})
     assert r.status_code == 200
-    assert [i["name"] for i in r.json()] == ["Charlie", "Bravo", "Alpha"]
+    assert [i["name"] for i in r.json()["items"]] == ["Charlie", "Bravo", "Alpha"]
 
 
 def test_list_items_sort_by_sku_ascending(client):
     _seed_sortable_items(client)
     r = client.get("/items", params={"sort": "sku"})
     assert r.status_code == 200
-    assert [i["sku"] for i in r.json()] == ["SKU-A", "SKU-B", "SKU-C"]
+    assert [i["sku"] for i in r.json()["items"]] == ["SKU-A", "SKU-B", "SKU-C"]
 
 
 def test_list_items_sort_by_sku_descending(client):
     _seed_sortable_items(client)
     r = client.get("/items", params={"sort": "-sku"})
     assert r.status_code == 200
-    assert [i["sku"] for i in r.json()] == ["SKU-C", "SKU-B", "SKU-A"]
+    assert [i["sku"] for i in r.json()["items"]] == ["SKU-C", "SKU-B", "SKU-A"]
 
 
 def test_list_items_sort_invalid_value_is_422(client):
@@ -497,18 +499,94 @@ def test_list_items_sort_combines_with_filters_and_pagination(client):
     client.put("/items/2", json={"active": False})
     r = client.get("/items", params={"sort": "-name", "active": "true"})
     assert r.status_code == 200
-    assert [i["name"] for i in r.json()] == ["Charlie", "Bravo"]
+    assert [i["name"] for i in r.json()["items"]] == ["Charlie", "Bravo"]
 
     r = client.get("/items", params={"sort": "name", "limit": 2, "offset": 1})
     assert r.status_code == 200
-    assert [i["name"] for i in r.json()] == ["Bravo", "Charlie"]
+    assert [i["name"] for i in r.json()["items"]] == ["Bravo", "Charlie"]
 
 
 def test_list_items_x_total_count_zero_when_empty(client):
     r = client.get("/items")
     assert r.status_code == 200
-    assert r.json() == []
+    assert r.json()["items"] == []
     assert r.headers["X-Total-Count"] == "0"
+
+
+# --- T048: GET /items returns a paginated envelope -----------------------------
+
+
+def test_list_items_returns_paginated_envelope_shape(client):
+    for i in range(3):
+        client.post("/items", json={"sku": f"ENV-{i}", "name": f"Env {i}"})
+    r = client.get("/items")
+    assert r.status_code == 200
+    body = r.json()
+    assert set(body.keys()) == {"items", "total", "limit", "offset"}
+    assert isinstance(body["items"], list)
+    assert body["total"] == 3
+    assert body["limit"] == 100  # default limit
+    assert body["offset"] == 0  # default offset
+    assert [i["sku"] for i in body["items"]] == ["ENV-0", "ENV-1", "ENV-2"]
+
+
+def test_list_items_envelope_total_ignores_pagination(client):
+    for i in range(5):
+        client.post("/items", json={"sku": f"PG-{i}", "name": f"Page {i}"})
+    r = client.get("/items", params={"limit": 2, "offset": 1})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 5
+    assert body["limit"] == 2
+    assert body["offset"] == 1
+    assert [i["sku"] for i in body["items"]] == ["PG-1", "PG-2"]
+
+
+def test_list_items_envelope_total_respects_filters(client):
+    for i in range(4):
+        client.post("/items", json={"sku": f"FL-{i}", "name": f"Filter {i}"})
+    client.put("/items/1", json={"active": False})
+    r = client.get("/items", params={"active": "true", "limit": 1})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 3
+    assert body["limit"] == 1
+    assert body["offset"] == 0
+    assert len(body["items"]) == 1
+
+
+def test_list_items_envelope_empty(client):
+    r = client.get("/items")
+    assert r.status_code == 200
+    assert r.json() == {"items": [], "total": 0, "limit": 100, "offset": 0}
+
+
+def test_list_items_envelope_combines_with_sort(client):
+    """Merged behaviour: sort param (m5-opt) works inside the paginated envelope (T048)."""
+    _seed_sortable_items(client)
+    r = client.get("/items", params={"sort": "-name", "limit": 2, "offset": 0})
+    assert r.status_code == 200
+    body = r.json()
+    assert set(body.keys()) == {"items", "total", "limit", "offset"}
+    assert body["total"] == 3
+    assert body["limit"] == 2
+    assert body["offset"] == 0
+    assert [i["name"] for i in body["items"]] == ["Charlie", "Bravo"]
+
+
+def test_bulk_created_items_appear_in_envelope(client):
+    """Merged behaviour: POST /items/bulk (m5-opt) feeds the paginated envelope (T048)."""
+    r = client.post(
+        "/items/bulk",
+        json=[{"sku": "BK-1", "name": "One"}, {"sku": "BK-2", "name": "Two"}],
+    )
+    assert r.status_code == 201
+    listing = client.get("/items")
+    assert listing.status_code == 200
+    body = listing.json()
+    assert body["total"] == 2
+    assert [i["sku"] for i in body["items"]] == ["BK-1", "BK-2"]
+    assert listing.headers["X-Total-Count"] == "2"
 
 
 def test_update_reorder_level_persists_and_returns(client, item):
@@ -570,4 +648,3 @@ def test_update_item_zero_unit_price_accepted(client, item):
     r = client.put(f"/items/{item['id']}", json={"unit_price": 0})
     assert r.status_code == 200
     assert r.json()["unit_price"] == 0
-
