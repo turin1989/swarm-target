@@ -618,3 +618,52 @@ def test_list_items_sort_combines_with_filters_and_pagination(client):
     body = r.json()
     assert body["total"] == 2
     assert [i["name"] for i in body["items"]] == ["Bravo"]
+
+
+# --- T011: GET /items/by-sku/{sku} ------------------------------------------------
+
+
+def test_get_item_by_sku_returns_item(client, item):
+    r = client.get(f"/items/by-sku/{item['sku']}")
+    assert r.status_code == 200
+    assert r.json() == item
+
+
+def test_get_item_by_sku_same_shape_as_get_by_id(client, item):
+    by_sku = client.get(f"/items/by-sku/{item['sku']}").json()
+    by_id = client.get(f"/items/{item['id']}").json()
+    assert by_sku == by_id
+
+
+def test_get_item_by_sku_unknown_404_with_detail(client, item):
+    r = client.get("/items/by-sku/NO-SUCH-SKU")
+    assert r.status_code == 404
+    assert r.json()["error"]["message"] == "sku NO-SUCH-SKU not found"
+
+
+def test_get_item_by_sku_is_exact_match_not_prefix(client, item):
+    client.post("/items", json={"sku": "WIDGET-10", "name": "Widget Ten"})
+    r = client.get("/items/by-sku/WIDGET-1")
+    assert r.status_code == 200
+    assert r.json()["sku"] == "WIDGET-1"
+    # partial sku does not match
+    r = client.get("/items/by-sku/WIDGET")
+    assert r.status_code == 404
+    assert r.json()["error"]["message"] == "sku WIDGET not found"
+
+
+def test_get_item_by_sku_does_not_shadow_get_by_id(client, item):
+    # numeric id lookups keep working
+    r = client.get(f"/items/{item['id']}")
+    assert r.status_code == 200
+    assert r.json() == item
+    r = client.get("/items/999")
+    assert r.status_code == 404
+    assert "item 999 not found" in r.json()["error"]["message"]
+
+
+def test_get_item_by_sku_with_numeric_looking_sku(client):
+    created = client.post("/items", json={"sku": "12345", "name": "Numeric Sku"}).json()
+    r = client.get("/items/by-sku/12345")
+    assert r.status_code == 200
+    assert r.json() == created
