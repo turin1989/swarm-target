@@ -23,7 +23,8 @@ def get_stock_level(conn: sqlite3.Connection, item_id: int, location_id: int) ->
 
 def get_item_levels(conn: sqlite3.Connection, item_id: int) -> list[StockLevel]:
     rows = conn.execute(
-        "SELECT item_id, location_id, qty FROM stock_levels WHERE item_id = ? ORDER BY location_id",
+        "SELECT item_id, location_id, qty AS quantity FROM stock_levels"
+        " WHERE item_id = ? ORDER BY location_id",
         (item_id,),
     ).fetchall()
     return [StockLevel(**dict(r)) for r in rows]
@@ -32,7 +33,7 @@ def get_item_levels(conn: sqlite3.Connection, item_id: int) -> list[StockLevel]:
 def get_location_levels(conn: sqlite3.Connection, location_id: int) -> list[StockLevel]:
     rows = conn.execute(
         """
-        SELECT item_id, location_id, qty FROM stock_levels
+        SELECT item_id, location_id, qty AS quantity FROM stock_levels
         WHERE location_id = ? AND qty != 0
         ORDER BY item_id
         """,
@@ -88,19 +89,19 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
 
     if m.kind == "receive":
         to_id = _require_location(conn, m.to_location_id, "to_location_id")
-        _adjust(conn, m.item_id, to_id, m.qty)
+        _adjust(conn, m.item_id, to_id, m.quantity)
     elif m.kind == "ship":
         from_id = _require_location(conn, m.from_location_id, "from_location_id")
-        _require_available(conn, m.item_id, from_id, m.qty)
-        _adjust(conn, m.item_id, from_id, -m.qty)
+        _require_available(conn, m.item_id, from_id, m.quantity)
+        _adjust(conn, m.item_id, from_id, -m.quantity)
     elif m.kind == "transfer":
         from_id = _require_location(conn, m.from_location_id, "from_location_id")
         to_id = _require_location(conn, m.to_location_id, "to_location_id")
         if from_id == to_id:
             raise StockError("cannot transfer to the same location")
-        _require_available(conn, m.item_id, from_id, m.qty)
-        _adjust(conn, m.item_id, from_id, -m.qty)
-        _adjust(conn, m.item_id, from_id, m.qty)
+        _require_available(conn, m.item_id, from_id, m.quantity)
+        _adjust(conn, m.item_id, from_id, -m.quantity)
+        _adjust(conn, m.item_id, from_id, m.quantity)
     else:  # pragma: no cover - guarded by the Literal type
         raise StockError(f"unknown movement kind {m.kind!r}")
 
@@ -109,13 +110,20 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
         INSERT INTO movements (item_id, kind, qty, from_location_id, to_location_id, note)
         VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (m.item_id, m.kind, m.qty, m.from_location_id, m.to_location_id, m.note),
+        (m.item_id, m.kind, m.quantity, m.from_location_id, m.to_location_id, m.note),
     )
     return get_movement(conn, cur.lastrowid)
 
 
+_MOVEMENT_COLUMNS = (
+    "id, item_id, kind, qty AS quantity, from_location_id, to_location_id, note"
+)
+
+
 def get_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
-    row = conn.execute("SELECT * FROM movements WHERE id = ?", (movement_id,)).fetchone()
+    row = conn.execute(
+        f"SELECT {_MOVEMENT_COLUMNS} FROM movements WHERE id = ?", (movement_id,)
+    ).fetchone()
     if row is None:
         raise StockError(f"movement {movement_id} not found", status_code=404)
     return Movement(**dict(row))
@@ -127,7 +135,7 @@ def list_movements(
     limit: int = 100,
     offset: int = 0,
 ) -> list[Movement]:
-    sql = "SELECT * FROM movements"
+    sql = f"SELECT {_MOVEMENT_COLUMNS} FROM movements"
     params: list = []
     if item_id is not None:
         sql += " WHERE item_id = ?"
