@@ -69,6 +69,7 @@ def create_items_bulk(
 
 @router.get("/items", response_model=list[Item])
 def list_items(
+    response: Response,
     active: Optional[bool] = None,
     sku: Optional[str] = None,
     sort: str = Query("id", pattern=r"^-?(id|name|sku)$"),
@@ -85,8 +86,14 @@ def list_items(
     if sku is not None:
         conditions.append("sku = ?")
         params.append(sku)
+    where = ""
     if conditions:
-        sql += " WHERE " + " AND ".join(conditions)
+        where = " WHERE " + " AND ".join(conditions)
+        sql += where
+    total = conn.execute(
+        "SELECT COUNT(*) FROM items" + where, params
+    ).fetchone()[0]
+    response.headers["X-Total-Count"] = str(total)
     direction = "ASC"
     column = sort
     if column.startswith("-"):
