@@ -363,3 +363,102 @@ def test_item_movements_unknown_item_404(client):
 def test_item_movements_invalid_pagination_422(client, item):
     assert client.get(f"/items/{item['id']}/movements", params={"limit": 0}).status_code == 422
     assert client.get(f"/items/{item['id']}/movements", params={"offset": -1}).status_code == 422
+
+
+# --- GET /movements filters (T044) ----------------------------------------------
+
+
+@pytest.fixture
+def mixed_movements(client, item, loc_a, loc_b):
+    """Two items with a mix of movement kinds; returns both item dicts."""
+    other = client.post(
+        "/items",
+        json={"sku": "OTHER-44", "name": "Other", "unit_price": 1.0, "reorder_point": 1},
+    ).json()
+    _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])  # id 1
+    _move(client, item_id=other["id"], kind="receive", qty=5, to_location_id=loc_a["id"])  # id 2
+    _move(client, item_id=item["id"], kind="ship", qty=2, from_location_id=loc_a["id"])  # id 3
+    _move(client, item_id=other["id"], kind="ship", qty=1, from_location_id=loc_a["id"])  # id 4
+    _move(  # id 5
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=3,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    _move(client, item_id=item["id"], kind="ship", qty=1, from_location_id=loc_a["id"])  # id 6
+    return item, other
+
+
+def test_list_movements_filter_by_item_id(client, mixed_movements):
+    item, other = mixed_movements
+    r = client.get("/movements", params={"item_id": item["id"]})
+    assert r.status_code == 200
+    body = r.json()
+    assert [m["id"] for m in body] == [1, 3, 5, 6]
+    assert all(m["item_id"] == item["id"] for m in body)
+
+    r = client.get("/movements", params={"item_id": other["id"]})
+    assert [m["id"] for m in r.json()] == [2, 4]
+
+
+def test_list_movements_filter_by_item_id_unknown_item_empty(client, mixed_movements):
+    r = client.get("/movements", params={"item_id": 9999})
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_list_movements_filter_by_kind(client, mixed_movements):
+    r = client.get("/movements", params={"kind": "ship"})
+    assert r.status_code == 200
+    body = r.json()
+    assert [m["id"] for m in body] == [3, 4, 6]
+    assert all(m["kind"] == "ship" for m in body)
+
+    r = client.get("/movements", params={"kind": "transfer"})
+    assert [m["id"] for m in r.json()] == [5]
+
+    r = client.get("/movements", params={"kind": "adjust"})
+    assert r.json() == []
+
+
+def test_list_movements_invalid_kind_422(client, mixed_movements):
+    r = client.get("/movements", params={"kind": "explode"})
+    assert r.status_code == 422
+
+
+def test_list_movements_filters_combine(client, mixed_movements):
+    item, other = mixed_movements
+    r = client.get("/movements", params={"item_id": item["id"], "kind": "ship"})
+    assert r.status_code == 200
+    body = r.json()
+    assert [m["id"] for m in body] == [3, 6]
+    assert all(m["item_id"] == item["id"] and m["kind"] == "ship" for m in body)
+
+    r = client.get("/movements", params={"item_id": other["id"], "kind": "transfer"})
+    assert r.json() == []
+
+
+def test_list_movements_filters_with_pagination(client, mixed_movements):
+    item, _ = mixed_movements
+    r = client.get(
+        "/movements", params={"item_id": item["id"], "limit": 2, "offset": 1}
+    )
+    assert r.status_code == 200
+    assert [m["id"] for m in r.json()] == [3, 5]
+
+    r = client.get("/movements", params={"kind": "ship", "limit": 2, "offset": 1})
+    assert [m["id"] for m in r.json()] == [4, 6]
+
+    r = client.get(
+        "/movements",
+        params={"item_id": item["id"], "kind": "ship", "limit": 1, "offset": 1},
+    )
+    assert [m["id"] for m in r.json()] == [6]
+
+
+def test_list_movements_no_filters_returns_all(client, mixed_movements):
+    r = client.get("/movements")
+    assert r.status_code == 200
+    assert [m["id"] for m in r.json()] == [1, 2, 3, 4, 5, 6]
