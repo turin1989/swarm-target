@@ -14,6 +14,7 @@ from inventory.models import (
     Location,
     LocationCreate,
     LocationStock,
+    LocationUpdate,
     LowStockEntry,
     Movement,
     MovementCreate,
@@ -196,6 +197,33 @@ def get_location(location_id: int, conn: sqlite3.Connection = Depends(get_db)) -
     row = conn.execute("SELECT * FROM locations WHERE id = ?", (location_id,)).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail=f"location {location_id} not found")
+    return Location(**dict(row))
+
+
+@router.put("/locations/{location_id}", response_model=Location)
+def update_location(
+    location_id: int, payload: LocationUpdate, conn: sqlite3.Connection = Depends(get_db)
+) -> Location:
+    row = conn.execute("SELECT * FROM locations WHERE id = ?", (location_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"location {location_id} not found")
+    updates: dict[str, str] = {}
+    if payload.code is not None:
+        updates["code"] = payload.code
+    if payload.name is not None:
+        updates["name"] = payload.name
+    if updates:
+        assignments = ", ".join(f"{column} = ?" for column in updates)
+        try:
+            conn.execute(
+                f"UPDATE locations SET {assignments} WHERE id = ?",
+                (*updates.values(), location_id),
+            )
+        except sqlite3.IntegrityError:
+            raise HTTPException(
+                status_code=409, detail=f"location code {payload.code!r} already exists"
+            )
+    row = conn.execute("SELECT * FROM locations WHERE id = ?", (location_id,)).fetchone()
     return Location(**dict(row))
 
 
