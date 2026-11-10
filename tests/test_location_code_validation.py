@@ -1,6 +1,5 @@
 import pytest
 
-
 VALID_CODES = ["WH-A", "A", "0", "WH-B-2", "A" * 32, "A" + "-" * 31]
 INVALID_CODES = ["", "-A", "wh-a", "WH_A", "WH A", " WH-A", "A" * 33, "WHÄ"]
 
