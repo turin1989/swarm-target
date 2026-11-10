@@ -2,7 +2,7 @@
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 MovementKind = Literal["receive", "ship", "transfer", "adjust"]
 
@@ -13,6 +13,14 @@ class ItemCreate(BaseModel):
     description: str = Field("", max_length=2000)
     unit_price: float = Field(0.0, ge=0)
     reorder_point: int = Field(0, ge=0)
+
+    @field_validator("sku")
+    @classmethod
+    def _normalise_sku(cls, value: str) -> str:
+        value = value.strip().upper()
+        if not value:
+            raise ValueError("sku must not be blank")
+        return value
 
 
 class ItemUpdate(BaseModel):
