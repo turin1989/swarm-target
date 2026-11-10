@@ -8,7 +8,12 @@ def _seed(client, sku, name, reorder, quantity, loc, price=1.0):
     if quantity:
         client.post(
             "/movements",
-            json={"item_id": item["id"], "kind": "receive", "quantity": quantity, "to_location_id": loc["id"]},
+            json={
+                "item_id": item["id"],
+                "kind": "receive",
+                "quantity": quantity,
+                "to_location_id": loc["id"],
+            },
         )
     return item
 
