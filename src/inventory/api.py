@@ -21,8 +21,8 @@ from inventory.models import (
     MovementCreate,
     MovementKind,
 )
-from inventory.services import reports, search, stock
 from inventory.services import items as items_service
+from inventory.services import reports, search, stock
 from inventory.services.errors import InventoryError
 
 router = APIRouter()
