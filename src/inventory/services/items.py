@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from inventory.models import Item, ItemCreate, ItemUpdate
 
 # Columns a client is allowed to change via update_item.
-_UPDATABLE_FIELDS = {"name", "description", "unit_price", "active"}
+_UPDATABLE_FIELDS = {"name", "description", "unit_price", "reorder_point", "active"}
 
 
 def row_to_item(row: sqlite3.Row) -> Item:
