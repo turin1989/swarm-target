@@ -247,6 +247,11 @@ def inventory_value_report(
     return {"value": reports.inventory_value(conn, location_id=location_id)}
 
 
+@router.get("/stats")
+def get_stats(conn: sqlite3.Connection = Depends(get_db)) -> dict:
+    return reports.stats(conn)
+
+
 @router.get("/search", response_model=list[Item])
 def search_items(
     q: str = Query(..., min_length=1),
