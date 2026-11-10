@@ -13,7 +13,7 @@ def _move(client, **kw):
 
 
 def test_apply_movement_sets_created_at_iso_utc(client, item, loc_a):
-    r = _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    r = _move(client, item_id=item["id"], kind="receive", quantity=5, to_location_id=loc_a["id"])
     assert r.status_code == 201, r.text
     body = r.json()
     assert "created_at" in body
@@ -22,7 +22,7 @@ def test_apply_movement_sets_created_at_iso_utc(client, item, loc_a):
 
 def test_created_at_returned_by_list_movements(client, item, loc_a):
     created = _move(
-        client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"]
+        client, item_id=item["id"], kind="receive", quantity=5, to_location_id=loc_a["id"]
     ).json()
     rows = client.get("/movements").json()
     assert rows and rows[0]["created_at"] == created["created_at"]
@@ -30,14 +30,14 @@ def test_created_at_returned_by_list_movements(client, item, loc_a):
 
 def test_created_at_returned_by_item_movements(client, item, loc_a):
     created = _move(
-        client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"]
+        client, item_id=item["id"], kind="receive", quantity=5, to_location_id=loc_a["id"]
     ).json()
     rows = client.get(f"/items/{item['id']}/movements").json()
     assert rows and rows[0]["created_at"] == created["created_at"]
 
 
 def test_created_at_persisted_in_database(client, item, loc_a, tmp_path):
-    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", quantity=5, to_location_id=loc_a["id"])
     conn = db_module.connect(str(tmp_path / "test.db"))
     try:
         row = conn.execute("SELECT created_at FROM movements").fetchone()
@@ -48,18 +48,18 @@ def test_created_at_persisted_in_database(client, item, loc_a, tmp_path):
 
 
 def test_created_at_set_for_all_movement_kinds(client, item, loc_a, loc_b):
-    _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])
+    _move(client, item_id=item["id"], kind="receive", quantity=10, to_location_id=loc_a["id"])
     moves = [
-        _move(client, item_id=item["id"], kind="ship", qty=2, from_location_id=loc_a["id"]),
+        _move(client, item_id=item["id"], kind="ship", quantity=2, from_location_id=loc_a["id"]),
         _move(
             client,
             item_id=item["id"],
             kind="transfer",
-            qty=3,
+            quantity=3,
             from_location_id=loc_a["id"],
             to_location_id=loc_b["id"],
         ),
-        _move(client, item_id=item["id"], kind="adjust", qty=7, to_location_id=loc_a["id"]),
+        _move(client, item_id=item["id"], kind="adjust", quantity=7, to_location_id=loc_a["id"]),
     ]
     for r in moves:
         assert r.status_code == 201, r.text

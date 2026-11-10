@@ -10,7 +10,7 @@ def test_get_movement_returns_same_shape_as_post(client, item, loc_a):
         client,
         item_id=item["id"],
         kind="receive",
-        qty=10,
+        quantity=10,
         to_location_id=loc_a["id"],
         note="initial stock",
         reference="PO-1",
