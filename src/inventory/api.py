@@ -1,7 +1,6 @@
 """HTTP routes."""
 
 import sqlite3
-from datetime import datetime, timezone
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
@@ -23,6 +22,7 @@ from inventory.models import (
     MovementCreate,
     MovementKind,
 )
+from inventory.services import items as items_service
 from inventory.services import reports, search, stock
 from inventory.services.errors import InventoryError
 
@@ -63,22 +63,11 @@ def inventory_error_handler(request: Request, exc: InventoryError) -> JSONRespon
     return error_response(exc.status_code, str(exc))
 
 
-def _utc_now_iso() -> str:
-    """Current UTC time as ISO-8601 with a trailing Z, e.g. 2026-01-02T03:04:05Z."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _row_to_item(row: sqlite3.Row) -> Item:
-    data = dict(row)
-    data["active"] = bool(data["active"])
-    return Item(**data)
-
-
 def _fetch_item(conn: sqlite3.Connection, item_id: int) -> Item:
-    row = conn.execute("SELECT * FROM items WHERE id = ?", (item_id,)).fetchone()
-    if row is None:
+    item = items_service.get_item(conn, item_id)
+    if item is None:
         raise HTTPException(status_code=404, detail=f"item {item_id} not found")
-    return _row_to_item(row)
+    return item
 
 
 # --- items -------------------------------------------------------------------
@@ -105,28 +94,13 @@ def _parse_items_sort(sort: str) -> str:
 @router.post("/items", response_model=Item, status_code=201)
 def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db)) -> Item:
     try:
-        cur = conn.execute(
-            """
-            INSERT INTO items (sku, name, description, unit_price, reorder_level, barcode, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                payload.sku,
-                payload.name,
-                payload.description,
-                payload.unit_price,
-                payload.reorder_level,
-                payload.barcode,
-                _utc_now_iso(),
-            ),
-        )
+        return items_service.create_item(conn, payload)
     except sqlite3.IntegrityError as exc:
         if "barcode" in str(exc):
             raise HTTPException(
                 status_code=409, detail=f"barcode {payload.barcode!r} already exists"
             )
         raise HTTPException(status_code=409, detail=f"sku {payload.sku!r} already exists")
-    return _fetch_item(conn, cur.lastrowid)
 
 
 @router.post("/items/bulk", response_model=list[Item], status_code=201)
@@ -134,24 +108,10 @@ def create_items_bulk(
     payload: Annotated[list[ItemCreate], Body(min_length=1)],
     conn: sqlite3.Connection = Depends(get_db),
 ) -> list[Item]:
-    created_ids: list[int] = []
+    created: list[Item] = []
     for entry in payload:
         try:
-            cur = conn.execute(
-                """
-                INSERT INTO items (sku, name, description, unit_price, reorder_level, barcode, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    entry.sku,
-                    entry.name,
-                    entry.description,
-                    entry.unit_price,
-                    entry.reorder_level,
-                    entry.barcode,
-                    _utc_now_iso(),
-                ),
-            )
+            created.append(items_service.create_item(conn, entry))
         except sqlite3.IntegrityError as exc:
             # Atomic: discard everything inserted so far.
             conn.rollback()
@@ -160,8 +120,7 @@ def create_items_bulk(
                     status_code=409, detail=f"barcode {entry.barcode!r} already exists"
                 )
             raise HTTPException(status_code=409, detail=f"sku {entry.sku!r} already exists")
-        created_ids.append(cur.lastrowid)
-    return [_fetch_item(conn, item_id) for item_id in created_ids]
+    return created
 
 
 @router.get("/items", response_model=ItemPage)
@@ -194,7 +153,7 @@ def list_items(
     response.headers["X-Total-Count"] = str(total)
     sql = f"SELECT * FROM items{where} ORDER BY {order_by} LIMIT ? OFFSET ?"
     params += [limit, offset]
-    items = [_row_to_item(r) for r in conn.execute(sql, params).fetchall()]
+    items = [items_service.row_to_item(r) for r in conn.execute(sql, params).fetchall()]
     return ItemPage(items=items, total=total, limit=limit, offset=offset)
 
 
@@ -203,7 +162,7 @@ def get_item_by_sku(sku: str, conn: sqlite3.Connection = Depends(get_db)) -> Ite
     row = conn.execute("SELECT * FROM items WHERE sku = ?", (sku,)).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail=f"sku {sku} not found")
-    return _row_to_item(row)
+    return items_service.row_to_item(row)
 
 
 @router.get("/items/{item_id}", response_model=Item)
@@ -215,16 +174,10 @@ def get_item(item_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Item:
 def update_item(
     item_id: int, payload: ItemUpdate, conn: sqlite3.Connection = Depends(get_db)
 ) -> Item:
-    _fetch_item(conn, item_id)
-    updates = payload.model_dump(exclude_unset=True)
-    allowed = {"name", "description", "unit_price", "reorder_level", "active"}
-    updates = {k: v for k, v in updates.items() if k in allowed and v is not None}
-    if updates:
-        if "active" in updates:
-            updates["active"] = int(updates["active"])
-        assignments = ", ".join(f"{k} = ?" for k in updates)
-        conn.execute(f"UPDATE items SET {assignments} WHERE id = ?", [*updates.values(), item_id])
-    return _fetch_item(conn, item_id)
+    item = items_service.update_item(conn, item_id, payload)
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"item {item_id} not found")
+    return item
 
 
 @router.delete("/items/{item_id}", status_code=204)
@@ -236,7 +189,7 @@ def delete_item(item_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Res
             status_code=409,
             detail=f"item {item_id} still has {remaining} units in stock and cannot be deleted",
         )
-    conn.execute("DELETE FROM items WHERE id = ?", (item_id,))
+    items_service.delete_item(conn, item_id)
     return Response(status_code=204)
 
 
