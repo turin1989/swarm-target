@@ -67,7 +67,7 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
         if from_id == to_id:
             raise ValidationError("cannot transfer to the same location")
         _adjust(conn, m.item_id, from_id, -m.qty)
-        _adjust(conn, m.item_id, from_id, m.qty)
+        _adjust(conn, m.item_id, to_id, m.qty)
     else:  # pragma: no cover - guarded by the Literal type
         raise ValidationError(f"unknown movement kind {m.kind!r}")
 
