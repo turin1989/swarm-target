@@ -23,7 +23,7 @@ class ItemCreate(_RejectsReorderPoint):
     name: str = Field(..., min_length=1, max_length=200)
     description: str = ""
     unit_price: float = Field(default=0.0, ge=0)
-    reorder_level: int = 0
+    reorder_level: int = Field(default=0, ge=0)
     barcode: Optional[str] = Field(None, min_length=1, max_length=128)
 
     @field_validator("sku", mode="before")
@@ -38,7 +38,7 @@ class ItemUpdate(_RejectsReorderPoint):
     name: Optional[str] = None
     description: Optional[str] = None
     unit_price: Optional[float] = Field(None, ge=0)
-    reorder_level: Optional[int] = None
+    reorder_level: Optional[int] = Field(None, ge=0)
     active: Optional[bool] = None
 
 
@@ -52,6 +52,13 @@ class Item(BaseModel):
     active: bool
     barcode: Optional[str] = None
     created_at: str
+
+
+class ItemPage(BaseModel):
+    items: list[Item]
+    total: int
+    limit: int
+    offset: int
 
 
 class LocationCreate(BaseModel):
@@ -73,9 +80,11 @@ class Location(BaseModel):
 
 
 class MovementCreate(BaseModel):
+    model_config = {"extra": "forbid"}
+
     item_id: int
     kind: MovementKind
-    qty: int = Field(..., gt=0)
+    quantity: int = Field(..., gt=0)
     from_location_id: Optional[int] = None
     to_location_id: Optional[int] = None
     note: str = Field(default="", max_length=500)
@@ -86,17 +95,18 @@ class Movement(BaseModel):
     id: int
     item_id: int
     kind: MovementKind
-    qty: int
+    quantity: int
     from_location_id: Optional[int]
     to_location_id: Optional[int]
     note: str
     reference: Optional[str] = None
+    created_at: str
 
 
 class StockLevel(BaseModel):
     item_id: int
     location_id: int
-    qty: int
+    quantity: int
 
 
 class ItemStock(BaseModel):

@@ -57,7 +57,7 @@ def test_409_duplicate_sku_uses_conflict_code(client):
 def test_409_delete_item_with_stock_uses_conflict_code(client, item, loc_a):
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 3, "to_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 3, "to_location_id": loc_a["id"]},
     )
     _assert_error_shape(client.delete(f"/items/{item['id']}"), 409, "conflict")
 
@@ -66,7 +66,7 @@ def test_409_movement_on_inactive_item_uses_conflict_code(client, item, loc_a):
     assert client.put(f"/items/{item['id']}", json={"active": False}).status_code == 200
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 1, "to_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 1, "to_location_id": loc_a["id"]},
     )
     err = _assert_error_shape(r, 409, "conflict")
     assert "inactive" in err["message"]
@@ -97,7 +97,7 @@ def test_422_from_http_exception_uses_validation_error_code(client):
 def test_422_non_positive_qty_uses_validation_error_code(client, item, loc_a):
     r = client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 0, "to_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 0, "to_location_id": loc_a["id"]},
     )
     _assert_error_shape(r, 422, "validation_error")
 
@@ -106,7 +106,7 @@ def test_422_non_positive_qty_uses_validation_error_code(client, item, loc_a):
 
 
 def test_400_missing_movement_location_uses_bad_request_code(client, item):
-    r = client.post("/movements", json={"item_id": item["id"], "kind": "receive", "qty": 1})
+    r = client.post("/movements", json={"item_id": item["id"], "kind": "receive", "quantity": 1})
     err = _assert_error_shape(r, 400, "bad_request")
     assert "required" in err["message"]
 
@@ -117,7 +117,7 @@ def test_400_adjust_with_from_location_uses_bad_request_code(client, item, loc_a
         json={
             "item_id": item["id"],
             "kind": "adjust",
-            "qty": 1,
+            "quantity": 1,
             "from_location_id": loc_a["id"],
             "to_location_id": loc_b["id"],
         },
