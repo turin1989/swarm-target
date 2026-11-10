@@ -5,7 +5,7 @@ def _receive(client, item, loc, **extra):
     payload = {
         "item_id": item["id"],
         "kind": "receive",
-        "qty": 5,
+        "quantity": 5,
         "to_location_id": loc["id"],
     }
     payload.update(extra)
