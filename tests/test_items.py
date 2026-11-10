@@ -72,6 +72,65 @@ def test_list_items_ordered_by_id(client):
     assert [i["sku"] for i in r.json()] == ["C", "A", "B"]
 
 
+def test_list_items_sort_by_name(client):
+    for sku, name in [("S1", "Charlie"), ("S2", "Alpha"), ("S3", "Bravo")]:
+        client.post("/items", json={"sku": sku, "name": name})
+    r = client.get("/items", params={"sort": "name"})
+    assert r.status_code == 200
+    assert [i["name"] for i in r.json()] == ["Alpha", "Bravo", "Charlie"]
+
+
+def test_list_items_sort_by_sku(client):
+    for sku in ["C", "A", "B"]:
+        client.post("/items", json={"sku": sku, "name": sku})
+    r = client.get("/items", params={"sort": "sku"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["A", "B", "C"]
+
+
+def test_list_items_sort_by_id_explicit(client):
+    for sku in ["C", "A", "B"]:
+        client.post("/items", json={"sku": sku, "name": sku})
+    r = client.get("/items", params={"sort": "id"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["C", "A", "B"]
+
+
+def test_list_items_default_sort_is_id(client):
+    for sku in ["C", "A", "B"]:
+        client.post("/items", json={"sku": sku, "name": sku})
+    r = client.get("/items")
+    assert r.status_code == 200
+    assert [i["id"] for i in r.json()] == [1, 2, 3]
+
+
+def test_list_items_sort_descending(client):
+    for sku, name in [("S1", "Charlie"), ("S2", "Alpha"), ("S3", "Bravo")]:
+        client.post("/items", json={"sku": sku, "name": name})
+    r = client.get("/items", params={"sort": "-name"})
+    assert r.status_code == 200
+    assert [i["name"] for i in r.json()] == ["Charlie", "Bravo", "Alpha"]
+    r = client.get("/items", params={"sort": "-id"})
+    assert [i["id"] for i in r.json()] == [3, 2, 1]
+    r = client.get("/items", params={"sort": "-sku"})
+    assert [i["sku"] for i in r.json()] == ["S3", "S2", "S1"]
+
+
+def test_list_items_invalid_sort_422(client):
+    for bad in ["price", "unit_price", "-price", "NAME", "name,sku", "--name", ""]:
+        r = client.get("/items", params={"sort": bad})
+        assert r.status_code == 422, f"sort={bad!r} should be rejected"
+
+
+def test_list_items_sort_combined_with_filter_and_limit(client, item):
+    client.post("/items", json={"sku": "AAA", "name": "Aardvark"})
+    client.post("/items", json={"sku": "ZZZ", "name": "Zebra"})
+    client.put("/items/3", json={"active": False})
+    r = client.get("/items", params={"sort": "-name", "active": "true", "limit": 1})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["WIDGET-1"]
+
+
 def test_list_items_limit(client):
     for n in range(5):
         client.post("/items", json={"sku": f"S{n}", "name": f"N{n}"})
