@@ -199,6 +199,12 @@ def item_movements(
 # --- locations ---------------------------------------------------------------
 
 
+def _row_to_location(row: sqlite3.Row) -> Location:
+    data = dict(row)
+    data["active"] = bool(data["active"])
+    return Location(**data)
+
+
 @router.post("/locations", response_model=Location, status_code=201)
 def create_location(
     payload: LocationCreate, conn: sqlite3.Connection = Depends(get_db)
@@ -213,13 +219,20 @@ def create_location(
             status_code=409, detail=f"location code {payload.code!r} already exists"
         )
     row = conn.execute("SELECT * FROM locations WHERE id = ?", (cur.lastrowid,)).fetchone()
-    return Location(**dict(row))
+    return _row_to_location(row)
 
 
 @router.get("/locations", response_model=list[Location])
-def list_locations(conn: sqlite3.Connection = Depends(get_db)) -> list[Location]:
-    rows = conn.execute("SELECT * FROM locations ORDER BY id").fetchall()
-    return [Location(**dict(r)) for r in rows]
+def list_locations(
+    active: Optional[bool] = None, conn: sqlite3.Connection = Depends(get_db)
+) -> list[Location]:
+    where = ""
+    params: list = []
+    if active is not None:
+        where = " WHERE active = ?"
+        params.append(int(active))
+    rows = conn.execute(f"SELECT * FROM locations{where} ORDER BY id", params).fetchall()
+    return [_row_to_location(r) for r in rows]
 
 
 @router.get("/locations/{location_id}", response_model=Location)
@@ -227,7 +240,7 @@ def get_location(location_id: int, conn: sqlite3.Connection = Depends(get_db)) -
     row = conn.execute("SELECT * FROM locations WHERE id = ?", (location_id,)).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail=f"location {location_id} not found")
-    return Location(**dict(row))
+    return _row_to_location(row)
 
 
 @router.put("/locations/{location_id}", response_model=Location)
@@ -240,6 +253,8 @@ def update_location(
     if row is None:
         raise HTTPException(status_code=404, detail=f"location {location_id} not found")
     updates = payload.model_dump(exclude_unset=True, exclude_none=True)
+    if "active" in updates:
+        updates["active"] = int(updates["active"])
     if updates:
         assignments = ", ".join(f"{field} = ?" for field in updates)
         try:
@@ -253,7 +268,7 @@ def update_location(
                 detail=f"location code {updates.get('code')!r} already exists",
             )
     row = conn.execute("SELECT * FROM locations WHERE id = ?", (location_id,)).fetchone()
-    return Location(**dict(row))
+    return _row_to_location(row)
 
 
 @router.delete("/locations/{location_id}", status_code=204)
