@@ -254,8 +254,11 @@ def get_stats(conn: sqlite3.Connection = Depends(get_db)) -> dict:
 
 @router.get("/search", response_model=list[Item])
 def search_items(
-    q: str = Query(..., min_length=1),
+    q: str = Query(..., min_length=1, max_length=100),
     limit: int = Query(50, ge=1, le=500),
     conn: sqlite3.Connection = Depends(get_db),
 ) -> list[Item]:
+    q = q.strip()
+    if not q:
+        raise HTTPException(status_code=422, detail="q must not be blank")
     return search.search_items(conn, q, limit=limit)
