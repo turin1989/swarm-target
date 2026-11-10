@@ -7,7 +7,6 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Res
 from fastapi.responses import JSONResponse
 
 from inventory.db import get_db
-from inventory.services.errors import InventoryError
 from inventory.models import (
     Item,
     ItemCreate,
@@ -25,6 +24,7 @@ from inventory.models import (
 )
 from inventory.services import items as items_service
 from inventory.services import reports, search, stock
+from inventory.services.errors import InventoryError
 from inventory.services.items_bulk import BulkSkuConflictError, insert_items
 
 router = APIRouter()

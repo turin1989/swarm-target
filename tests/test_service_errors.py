@@ -1,11 +1,10 @@
 """T051: typed service-layer exceptions in inventory.services.errors."""
 
 import inspect
-import sqlite3
 
 import pytest
 
-from inventory.db import init_db, connect
+from inventory.db import connect, init_db
 from inventory.models import MovementCreate
 from inventory.services import stock
 from inventory.services.errors import (
@@ -14,7 +13,6 @@ from inventory.services.errors import (
     NotFoundError,
     ValidationError,
 )
-
 
 # --- exception hierarchy -------------------------------------------------------
 
