@@ -15,6 +15,7 @@ class ItemCreate(BaseModel):
     description: str = Field(default="", max_length=2000)
     unit_price: float = Field(default=0.0, ge=0)
     reorder_level: int = Field(default=0, ge=0)
+    barcode: Optional[str] = Field(default=None, min_length=1, max_length=64)
 
     @field_validator("sku")
     @classmethod
@@ -44,6 +45,7 @@ class Item(BaseModel):
     unit_price: float
     reorder_level: int
     active: bool
+    barcode: Optional[str] = None
 
 
 class ItemPage(BaseModel):
