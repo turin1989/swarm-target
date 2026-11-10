@@ -262,3 +262,32 @@ def test_list_movements_pagination(client, item, loc_a):
         _move(client, item_id=item["id"], kind="receive", quantity=1, to_location_id=loc_a["id"])
     r = client.get("/movements", params={"limit": 2, "offset": 2})
     assert [m["id"] for m in r.json()] == [3, 4]
+
+
+def test_movement_note_longer_than_500_chars_rejected_422(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        quantity=1,
+        to_location_id=loc_a["id"],
+        note="x" * 501,
+    )
+    assert r.status_code == 422
+    # nothing was recorded
+    assert client.get("/movements").json() == []
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 0
+
+
+def test_movement_note_exactly_500_chars_accepted(client, item, loc_a):
+    note = "x" * 500
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        quantity=1,
+        to_location_id=loc_a["id"],
+        note=note,
+    )
+    assert r.status_code == 201
+    assert r.json()["note"] == note
