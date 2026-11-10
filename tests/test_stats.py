@@ -20,11 +20,11 @@ def test_stats_counts_entities_and_sums_units(client, loc_a, loc_b):
 
     client.post(
         "/movements",
-        json={"item_id": i1["id"], "kind": "receive", "qty": 7, "to_location_id": loc_a["id"]},
+        json={"item_id": i1["id"], "kind": "receive", "quantity": 7, "to_location_id": loc_a["id"]},
     )
     client.post(
         "/movements",
-        json={"item_id": i2["id"], "kind": "receive", "qty": 5, "to_location_id": loc_b["id"]},
+        json={"item_id": i2["id"], "kind": "receive", "quantity": 5, "to_location_id": loc_b["id"]},
     )
 
     r = client.get("/stats")
@@ -52,11 +52,11 @@ def test_stats_total_units_sums_stock_levels_after_ship(client, loc_a):
     item = client.post("/items", json={"sku": "S1", "name": "Ship"}).json()
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "receive", "qty": 10, "to_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "receive", "quantity": 10, "to_location_id": loc_a["id"]},
     )
     client.post(
         "/movements",
-        json={"item_id": item["id"], "kind": "ship", "qty": 4, "from_location_id": loc_a["id"]},
+        json={"item_id": item["id"], "kind": "ship", "quantity": 4, "from_location_id": loc_a["id"]},
     )
 
     body = client.get("/stats").json()
