@@ -2,7 +2,7 @@
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 MovementKind = Literal["receive", "ship", "transfer", "adjust"]
 
@@ -15,9 +15,18 @@ class ItemCreate(BaseModel):
     sku: str = Field(..., min_length=1, max_length=64)
     name: str = Field(..., min_length=1, max_length=200)
     description: str = Field(default="", max_length=2000)
-    unit_price: float = 0.0
+    unit_price: float = Field(default=0.0, ge=0)
     reorder_level: int = Field(default=0, ge=0)
     barcode: Optional[str] = None
+
+    @field_validator("sku")
+    @classmethod
+    def normalise_sku(cls, value: str) -> str:
+        """Trim surrounding whitespace and upper-case the sku."""
+        value = value.strip().upper()
+        if not value:
+            raise ValueError("sku must not be blank")
+        return value
 
 
 class ItemUpdate(BaseModel):
@@ -25,9 +34,11 @@ class ItemUpdate(BaseModel):
 
     name: Optional[str] = None
     description: Optional[str] = Field(default=None, max_length=2000)
-    unit_price: Optional[float] = None
+    unit_price: Optional[float] = Field(default=None, ge=0)
     reorder_level: Optional[int] = Field(default=None, ge=0)
     active: Optional[bool] = None
+    # Accepted for convenience but ignored: created_at is server-managed.
+    created_at: Optional[str] = None
 
 
 class Item(BaseModel):
@@ -39,6 +50,7 @@ class Item(BaseModel):
     reorder_level: int
     active: bool
     barcode: Optional[str] = None
+    created_at: str
 
 
 class ItemPage(BaseModel):
@@ -58,12 +70,14 @@ class LocationUpdate(BaseModel):
         default=None, min_length=1, max_length=32, pattern=LOCATION_CODE_PATTERN
     )
     name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    active: Optional[bool] = None
 
 
 class Location(BaseModel):
     id: int
     code: str
     name: str
+    active: bool = True
 
 
 class MovementCreate(BaseModel):

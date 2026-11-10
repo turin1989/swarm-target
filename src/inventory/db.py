@@ -14,13 +14,15 @@ CREATE TABLE IF NOT EXISTS items (
     unit_price REAL NOT NULL DEFAULT 0,
     reorder_level INTEGER NOT NULL DEFAULT 0,
     active INTEGER NOT NULL DEFAULT 1,
-    barcode TEXT UNIQUE
+    barcode TEXT UNIQUE,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
 CREATE TABLE IF NOT EXISTS locations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     code TEXT NOT NULL UNIQUE,
-    name TEXT NOT NULL
+    name TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS stock_levels (
@@ -77,6 +79,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_items_barcode ON items(barcode)"
         )
+    if "created_at" not in cols:
+        # ALTER TABLE cannot add a column with a non-constant default, so add it
+        # as nullable and backfill existing rows with the current UTC time.
+        conn.execute("ALTER TABLE items ADD COLUMN created_at TEXT")
+        conn.execute(
+            "UPDATE items SET created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') "
+            "WHERE created_at IS NULL"
+        )
     movement_cols = {row["name"] for row in conn.execute("PRAGMA table_info(movements)")}
     if "created_at" not in movement_cols:
         conn.execute(
@@ -87,6 +97,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_locations_code ON locations(code)"
     )
+    loc_cols = {row["name"] for row in conn.execute("PRAGMA table_info(locations)")}
+    if "active" not in loc_cols:
+        conn.execute(
+            "ALTER TABLE locations ADD COLUMN active INTEGER NOT NULL DEFAULT 1"
+        )
     row = conn.execute("SELECT version FROM schema_version").fetchone()
     if row is None:
         conn.execute(

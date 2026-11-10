@@ -506,6 +506,44 @@ def test_update_item_omitting_reorder_level_leaves_value_untouched(client, item)
     assert client.get(f"/items/{item['id']}").json()["reorder_level"] == 5
 
 
+# --- T017: sku normalisation on create --------------------------------------------
+
+
+def test_create_item_sku_is_trimmed_and_uppercased(client):
+    r = client.post("/items", json={"sku": "  abc-1 ", "name": "Normalised"})
+    assert r.status_code == 201
+    assert r.json()["sku"] == "ABC-1"
+    # persisted normalised, not just echoed back
+    body = client.get(f"/items/{r.json()['id']}").json()
+    assert body["sku"] == "ABC-1"
+
+
+def test_create_item_duplicate_sku_after_normalisation_conflicts(client):
+    assert client.post("/items", json={"sku": "  abc-1 ", "name": "First"}).status_code == 201
+    # exact normalised form conflicts
+    r = client.post("/items", json={"sku": "ABC-1", "name": "Dup"})
+    assert r.status_code == 409
+    # lower-case form normalises to the same sku and also conflicts
+    r = client.post("/items", json={"sku": "abc-1", "name": "Dup"})
+    assert r.status_code == 409
+    # whitespace-padded form conflicts too
+    r = client.post("/items", json={"sku": " abc-1  ", "name": "Dup"})
+    assert r.status_code == 409
+
+
+def test_create_item_whitespace_only_sku_422(client):
+    r = client.post("/items", json={"sku": "   ", "name": "Blank"})
+    assert r.status_code == 422
+    # nothing was created
+    assert client.get("/items").json()["items"] == []
+
+
+def test_normalised_sku_is_findable_by_exact_filter(client):
+    client.post("/items", json={"sku": " mix-Ed ", "name": "Mixed"})
+    r = client.get("/items", params={"sku": "MIX-ED"})
+    assert [i["sku"] for i in r.json()["items"]] == ["MIX-ED"]
+
+
 # --- T021: sort parameter for GET /items -----------------------------------------
 
 
@@ -580,3 +618,39 @@ def test_list_items_sort_combines_with_filters_and_pagination(client):
     body = r.json()
     assert body["total"] == 2
     assert [i["name"] for i in body["items"]] == ["Bravo"]
+
+
+# --- T008: unit_price must be non-negative ---------------------------------------
+
+
+def test_create_item_negative_unit_price_422(client):
+    r = client.post("/items", json={"sku": "NEGP-1", "name": "Neg Price", "unit_price": -0.01})
+    assert r.status_code == 422
+    # nothing was created
+    assert client.get("/items").json()["items"] == []
+
+
+def test_create_item_zero_unit_price_ok(client):
+    r = client.post("/items", json={"sku": "ZEROP-1", "name": "Zero Price", "unit_price": 0})
+    assert r.status_code == 201
+    assert r.json()["unit_price"] == 0
+
+
+def test_update_item_negative_unit_price_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"unit_price": -5.0})
+    assert r.status_code == 422
+    # item unchanged
+    assert client.get(f"/items/{item['id']}").json() == item
+
+
+def test_update_item_zero_unit_price_ok(client, item):
+    r = client.put(f"/items/{item['id']}", json={"unit_price": 0})
+    assert r.status_code == 200
+    assert r.json()["unit_price"] == 0
+    assert client.get(f"/items/{item['id']}").json()["unit_price"] == 0
+
+
+def test_update_item_positive_unit_price_still_ok(client, item):
+    r = client.put(f"/items/{item['id']}", json={"unit_price": 3.75})
+    assert r.status_code == 200
+    assert r.json()["unit_price"] == 3.75
