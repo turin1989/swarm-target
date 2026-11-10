@@ -223,8 +223,63 @@ def test_delete_item_cascades_stock(client, item, loc_a):
         "/movements",
         json={"item_id": item["id"], "kind": "receive", "quantity": 3, "to_location_id": loc_a["id"]},
     )
-    client.delete(f"/items/{item['id']}")
+    # drain stock to zero so the delete is allowed, then verify cascade
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "ship", "quantity": 3, "from_location_id": loc_a["id"]},
+    )
+    r = client.delete(f"/items/{item['id']}")
+    assert r.status_code == 204
     assert client.get("/movements").json() == []
+
+
+def test_delete_item_with_stock_409(client, item, loc_a):
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "quantity": 7, "to_location_id": loc_a["id"]},
+    )
+    r = client.delete(f"/items/{item['id']}")
+    assert r.status_code == 409
+    body = r.json()
+    assert body["error"]["code"] == "conflict"
+    # detail mentions the remaining quantity
+    assert "7" in body["error"]["message"]
+    # item is untouched
+    assert client.get(f"/items/{item['id']}").status_code == 200
+
+
+def test_delete_item_with_stock_409_sums_across_locations(client, item, loc_a, loc_b):
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "quantity": 2, "to_location_id": loc_a["id"]},
+    )
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "quantity": 3, "to_location_id": loc_b["id"]},
+    )
+    r = client.delete(f"/items/{item['id']}")
+    assert r.status_code == 409
+    assert "5" in r.json()["error"]["message"]
+
+
+def test_delete_item_after_stock_drained_to_zero_204(client, item, loc_a):
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "quantity": 4, "to_location_id": loc_a["id"]},
+    )
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "ship", "quantity": 4, "from_location_id": loc_a["id"]},
+    )
+    r = client.delete(f"/items/{item['id']}")
+    assert r.status_code == 204
+    assert client.get(f"/items/{item['id']}").status_code == 404
+
+
+def test_delete_item_never_stocked_still_deletes(client, item):
+    r = client.delete(f"/items/{item['id']}")
+    assert r.status_code == 204
+    assert client.get(f"/items/{item['id']}").status_code == 404
 
 
 def test_create_item_description_too_long_422(client):
