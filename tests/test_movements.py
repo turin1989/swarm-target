@@ -139,6 +139,60 @@ def test_movement_invalid_kind_422(client, item, loc_a):
     assert r.status_code == 422
 
 
+def test_movement_rejected_for_inactive_item(client, item, loc_a):
+    # seed some stock while the item is still active
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    client.put(f"/items/{item['id']}", json={"active": False})
+
+    r = _move(client, item_id=item["id"], kind="receive", qty=3, to_location_id=loc_a["id"])
+    assert r.status_code == 409
+    body = r.json()
+    assert body["error"]["code"] == "conflict"
+    # the error detail mentions the item is inactive
+    assert "inactive" in body["error"]["message"]
+    assert "inactive" in r.text
+
+    # stock levels are unchanged
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 5
+    assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "qty": 5}]
+
+    # no movement row was written for the rejected movement
+    movements = client.get("/movements").json()
+    assert len(movements) == 1
+    assert movements[0]["kind"] == "receive"
+
+
+@pytest.mark.parametrize(
+    "kind,payload",
+    [
+        ("receive", {"to_location_id": 1}),
+        ("ship", {"from_location_id": 1}),
+        ("transfer", {"from_location_id": 1, "to_location_id": 2}),
+    ],
+)
+def test_all_movement_kinds_rejected_for_inactive_item(client, item, loc_a, loc_b, kind, payload):
+    _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])
+    client.put(f"/items/{item['id']}", json={"active": False})
+
+    r = _move(client, item_id=item["id"], kind=kind, qty=2, **payload)
+    assert r.status_code == 409
+    assert "inactive" in r.json()["error"]["message"]
+    # stock is unchanged for every rejected kind
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 10
+
+
+def test_movement_allowed_again_after_reactivation(client, item, loc_a):
+    client.put(f"/items/{item['id']}", json={"active": False})
+    r = _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
+    assert r.status_code == 409
+
+    client.put(f"/items/{item['id']}", json={"active": True})
+    r = _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
+    assert r.status_code == 201
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 1
+
+
 def test_list_movements_pagination(client, item, loc_a):
     for _ in range(4):
         _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
