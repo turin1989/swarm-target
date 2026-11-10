@@ -26,7 +26,31 @@ def test_low_stock_lists_items_below_reorder_level(client, loc_a):
         "name": "Low",
         "total_qty": 2,
         "reorder_level": 5,
+        "shortfall": 3,
     }
+
+
+def test_low_stock_shortfall_is_reorder_level_minus_total_qty(client, loc_a):
+    _seed(client, "SHORT", "Short", reorder=10, qty=4, loc=loc_a)
+    entries = client.get("/reports/low-stock").json()
+    assert entries[0]["shortfall"] == 6
+
+
+def test_low_stock_shortfall_with_no_stock(client, loc_a):
+    _seed(client, "EMPTY", "Empty", reorder=7, qty=0, loc=loc_a)
+    entries = client.get("/reports/low-stock").json()
+    assert entries[0]["shortfall"] == 7
+
+
+def test_low_stock_shortfall_is_never_negative(client, loc_a):
+    # At exactly the reorder level, shortfall is zero (not negative).
+    _seed(client, "AT", "At point", reorder=5, qty=5, loc=loc_a)
+    _seed(client, "ZERO", "Zero", reorder=0, qty=0, loc=loc_a)
+    entries = client.get("/reports/low-stock").json()
+    assert [e["sku"] for e in entries] == ["AT", "ZERO"]
+    for e in entries:
+        assert e["shortfall"] == 0
+        assert e["shortfall"] >= 0
 
 
 def test_low_stock_includes_items_exactly_at_reorder_level(client, loc_a):
