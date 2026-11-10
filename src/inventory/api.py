@@ -10,6 +10,7 @@ from inventory.db import get_db
 from inventory.models import (
     Item,
     ItemCreate,
+    ItemPage,
     ItemStock,
     ItemUpdate,
     Location,
@@ -72,7 +73,7 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
     return _fetch_item(conn, cur.lastrowid)
 
 
-@router.get("/items", response_model=list[Item])
+@router.get("/items", response_model=ItemPage)
 def list_items(
     response: Response,
     active: Optional[bool] = None,
@@ -81,7 +82,7 @@ def list_items(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     conn: sqlite3.Connection = Depends(get_db),
-) -> list[Item]:
+) -> ItemPage:
     params: list = []
     clauses: list[str] = []
     if active is not None:
@@ -100,7 +101,8 @@ def list_items(
     response.headers["X-Total-Count"] = str(total)
     sql = f"SELECT * FROM items{where} ORDER BY id LIMIT ? OFFSET ?"
     params += [limit, offset]
-    return [_row_to_item(r) for r in conn.execute(sql, params).fetchall()]
+    items = [_row_to_item(r) for r in conn.execute(sql, params).fetchall()]
+    return ItemPage(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.get("/items/by-sku/{sku}", response_model=Item)
