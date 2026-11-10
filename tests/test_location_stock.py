@@ -4,7 +4,7 @@
 def _receive(client, item_id, location_id, qty):
     r = client.post(
         "/movements",
-        json={"item_id": item_id, "kind": "receive", "qty": qty, "to_location_id": location_id},
+        json={"item_id": item_id, "kind": "receive", "quantity": qty, "to_location_id": location_id},
     )
     assert r.status_code == 201, r.text
 
@@ -12,7 +12,7 @@ def _receive(client, item_id, location_id, qty):
 def _ship(client, item_id, location_id, qty):
     r = client.post(
         "/movements",
-        json={"item_id": item_id, "kind": "ship", "qty": qty, "from_location_id": location_id},
+        json={"item_id": item_id, "kind": "ship", "quantity": qty, "from_location_id": location_id},
     )
     assert r.status_code == 201, r.text
 
@@ -36,9 +36,9 @@ def test_location_stock_lists_levels_ordered_by_item_id(client, loc_a):
     assert body["location_id"] == loc_a["id"]
     assert [lvl["item_id"] for lvl in body["levels"]] == sorted(ids)
     by_item = {lvl["item_id"]: lvl for lvl in body["levels"]}
-    assert by_item[ids[0]]["qty"] == 5
-    assert by_item[ids[1]]["qty"] == 3
-    assert by_item[ids[2]]["qty"] == 7
+    assert by_item[ids[0]]["quantity"] == 5
+    assert by_item[ids[1]]["quantity"] == 3
+    assert by_item[ids[2]]["quantity"] == 7
     for lvl in body["levels"]:
         assert lvl["location_id"] == loc_a["id"]
 
@@ -56,7 +56,7 @@ def test_location_stock_omits_zero_quantity_levels(client, item, loc_a):
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["levels"] == [
-        {"item_id": item["id"], "location_id": loc_a["id"], "qty": 4}
+        {"item_id": item["id"], "location_id": loc_a["id"], "quantity": 4}
     ]
 
 
