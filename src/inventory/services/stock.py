@@ -115,6 +115,40 @@ def get_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
     return Movement(**dict(row))
 
 
+def reverse_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
+    """Create and apply a new movement that undoes an existing one."""
+    original = get_movement(conn, movement_id)
+    note = f"reversal of {movement_id}"
+    if original.kind == "receive":
+        reversal = MovementCreate(
+            item_id=original.item_id,
+            kind="ship",
+            qty=original.qty,
+            from_location_id=original.to_location_id,
+            note=note,
+        )
+    elif original.kind == "ship":
+        reversal = MovementCreate(
+            item_id=original.item_id,
+            kind="receive",
+            qty=original.qty,
+            to_location_id=original.from_location_id,
+            note=note,
+        )
+    elif original.kind == "transfer":
+        reversal = MovementCreate(
+            item_id=original.item_id,
+            kind="transfer",
+            qty=original.qty,
+            from_location_id=original.to_location_id,
+            to_location_id=original.from_location_id,
+            note=note,
+        )
+    else:
+        raise StockError(f"cannot reverse movement of kind {original.kind!r}")
+    return apply_movement(conn, reversal)
+
+
 def list_movements(conn: sqlite3.Connection, limit: int = 100, offset: int = 0) -> list[Movement]:
     rows = conn.execute(
         "SELECT * FROM movements ORDER BY id LIMIT ? OFFSET ?", (limit, offset)
