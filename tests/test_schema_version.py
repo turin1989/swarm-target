@@ -38,7 +38,16 @@ def test_init_db_migrates_existing_db_without_version(tmp_path):
     path = str(tmp_path / "legacy.db")
     conn = sqlite3.connect(path)
     try:
-        conn.execute("CREATE TABLE items (id INTEGER PRIMARY KEY, sku TEXT NOT NULL UNIQUE, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', unit_price REAL NOT NULL DEFAULT 0, reorder_point INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1)")
+        conn.execute(
+            "CREATE TABLE items ("
+            "id INTEGER PRIMARY KEY, "
+            "sku TEXT NOT NULL UNIQUE, "
+            "name TEXT NOT NULL, "
+            "description TEXT NOT NULL DEFAULT '', "
+            "unit_price REAL NOT NULL DEFAULT 0, "
+            "reorder_point INTEGER NOT NULL DEFAULT 0, "
+            "active INTEGER NOT NULL DEFAULT 1)"
+        )
         conn.commit()
     finally:
         conn.close()
