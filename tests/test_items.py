@@ -270,7 +270,12 @@ def test_delete_item_with_stock_detail_mentions_remaining_quantity(client, item,
     for loc, quantity in ((loc_a, 2), (loc_b, 3)):
         client.post(
             "/movements",
-            json={"item_id": item["id"], "kind": "receive", "quantity": quantity, "to_location_id": loc["id"]},
+            json={
+                "item_id": item["id"],
+                "kind": "receive",
+                "quantity": quantity,
+                "to_location_id": loc["id"],
+            },
         )
     r = client.delete(f"/items/{item['id']}")
     assert r.status_code == 409
