@@ -13,6 +13,7 @@ class ItemCreate(BaseModel):
     description: str = ""
     unit_price: float = 0.0
     reorder_point: int = 0
+    barcode: Optional[str] = Field(None, min_length=1, max_length=128)
 
     @field_validator("sku", mode="before")
     @classmethod
@@ -38,6 +39,7 @@ class Item(BaseModel):
     unit_price: float
     reorder_point: int
     active: bool
+    barcode: Optional[str] = None
     created_at: str
 
 
@@ -64,6 +66,7 @@ class MovementCreate(BaseModel):
     from_location_id: Optional[int] = None
     to_location_id: Optional[int] = None
     note: str = Field(default="", max_length=500)
+    reference: Optional[str] = Field(default=None, max_length=64)
 
 
 class Movement(BaseModel):
@@ -74,6 +77,7 @@ class Movement(BaseModel):
     from_location_id: Optional[int]
     to_location_id: Optional[int]
     note: str
+    reference: Optional[str] = None
 
 
 class StockLevel(BaseModel):
