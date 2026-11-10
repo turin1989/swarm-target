@@ -78,10 +78,11 @@ def test_service_function_exists_and_raises_for_unknown_location(tmp_path):
 
     from inventory.db import connect, init_db
     from inventory.services import stock
+    from inventory.services.errors import NotFoundError
 
     db_path = str(tmp_path / "svc.db")
     init_db(db_path)
     conn = connect(db_path)
-    with pytest.raises(stock.StockError) as exc_info:
+    with pytest.raises(NotFoundError) as exc_info:
         stock.get_location_levels(conn, 1234)
     assert exc_info.value.status_code == 404
