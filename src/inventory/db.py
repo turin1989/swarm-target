@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS items (
     unit_price REAL NOT NULL DEFAULT 0,
     reorder_point INTEGER NOT NULL DEFAULT 0,
     active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    barcode TEXT
 );
 
 CREATE TABLE IF NOT EXISTS locations (
@@ -70,6 +71,15 @@ def init_db(path: str) -> None:
         movement_columns = {r["name"] for r in conn.execute("PRAGMA table_info(movements)")}
         if "reference" not in movement_columns:
             conn.execute("ALTER TABLE movements ADD COLUMN reference TEXT")
+        # Migration: add items.barcode to databases created before the column existed.
+        item_columns = {r["name"] for r in conn.execute("PRAGMA table_info(items)")}
+        if "barcode" not in item_columns:
+            conn.execute("ALTER TABLE items ADD COLUMN barcode TEXT")
+        # Unique only for non-null barcodes (partial index).
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_items_barcode "
+            "ON items(barcode) WHERE barcode IS NOT NULL"
+        )
         row = conn.execute("SELECT version FROM schema_version").fetchone()
         if row is None:
             conn.execute("INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,))

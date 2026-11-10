@@ -170,6 +170,73 @@ def test_list_locations_without_filter_returns_all(client, loc_a, loc_b):
     assert sorted(loc["id"] for loc in rows) == sorted([loc_a["id"], loc_b["id"]])
 
 
+# --- T012: PUT /locations/{id} renames a location --------------------------------
+
+
+def test_put_location_renames_name(client, loc_a):
+    r = client.put(f"/locations/{loc_a['id']}", json={"name": "Main Warehouse"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["id"] == loc_a["id"]
+    assert body["name"] == "Main Warehouse"
+    assert body["code"] == loc_a["code"]
+    # change persists
+    assert client.get(f"/locations/{loc_a['id']}").json()["name"] == "Main Warehouse"
+
+
+def test_put_location_updates_code(client, loc_a):
+    r = client.put(f"/locations/{loc_a['id']}", json={"code": "WH-Z"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["code"] == "WH-Z"
+    assert body["name"] == loc_a["name"]
+    assert client.get(f"/locations/{loc_a['id']}").json()["code"] == "WH-Z"
+
+
+def test_put_location_updates_name_and_code_together(client, loc_a):
+    r = client.put(
+        f"/locations/{loc_a['id']}", json={"name": "Renamed", "code": "WH-NEW"}
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["name"] == "Renamed"
+    assert body["code"] == "WH-NEW"
+    persisted = client.get(f"/locations/{loc_a['id']}").json()
+    assert persisted["name"] == "Renamed"
+    assert persisted["code"] == "WH-NEW"
+
+
+def test_put_location_with_empty_body_returns_location_unchanged(client, loc_a):
+    r = client.put(f"/locations/{loc_a['id']}", json={})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["name"] == loc_a["name"]
+    assert body["code"] == loc_a["code"]
+
+
+def test_put_location_rename_unknown_id_returns_404(client):
+    r = client.put("/locations/9999", json={"name": "Nope", "code": "NOPE"})
+    assert r.status_code == 404, r.text
+
+
+def test_put_location_duplicate_code_returns_409(client, loc_a, loc_b):
+    r = client.put(f"/locations/{loc_b['id']}", json={"code": loc_a["code"]})
+    assert r.status_code == 409, r.text
+    # original code is unchanged
+    assert client.get(f"/locations/{loc_b['id']}").json()["code"] == loc_b["code"]
+
+
+def test_location_update_model_exists_with_optional_fields():
+    from inventory.models import LocationUpdate
+
+    upd = LocationUpdate()
+    assert upd.name is None
+    assert upd.code is None
+    upd = LocationUpdate(name="X", code="C-1")
+    assert upd.name == "X"
+    assert upd.code == "C-1"
+
+
 def test_init_db_migrates_legacy_locations_table(tmp_path):
     """Databases created before the active column was added get migrated."""
     from inventory import db

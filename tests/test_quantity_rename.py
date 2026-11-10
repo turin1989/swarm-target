@@ -84,6 +84,33 @@ def test_stock_levels_use_quantity(client, item, loc_a):
     ]
 
 
+def test_bulk_created_item_movements_use_quantity(client, loc_a):
+    """T047 x T022: items created via the bulk endpoint move stock via `quantity`."""
+    created = client.post(
+        "/items/bulk",
+        json=[{"sku": "BULK-QTY-1", "name": "Bulk item"}],
+    )
+    assert created.status_code == 201, created.text
+    item_id = created.json()[0]["id"]
+
+    old_name = client.post(
+        "/movements",
+        json={"item_id": item_id, "kind": "receive", "qty": 6, "to_location_id": loc_a["id"]},
+    )
+    assert old_name.status_code == 422
+
+    r = client.post(
+        "/movements",
+        json={"item_id": item_id, "kind": "receive", "quantity": 6, "to_location_id": loc_a["id"]},
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["quantity"] == 6
+    assert "qty" not in r.json()
+
+    stock = client.get(f"/items/{item_id}/stock").json()
+    assert stock["levels"] == [{"item_id": item_id, "location_id": loc_a["id"], "quantity": 6}]
+
+
 def test_database_column_remains_qty(client, item, loc_a, tmp_path):
     import sqlite3
 
