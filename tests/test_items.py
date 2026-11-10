@@ -99,6 +99,49 @@ def test_update_item_zero_reorder_point_accepted(client, item):
     assert r.status_code == 200
 
 
+# --- reorder_point update persistence (T004) -------------------------------------
+
+
+def test_update_item_reorder_point_persists_and_returned(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": 12})
+    assert r.status_code == 200
+    assert r.json()["reorder_point"] == 12
+    # persisted
+    assert client.get(f"/items/{item['id']}").json()["reorder_point"] == 12
+
+
+def test_update_item_reorder_point_with_other_fields(client, item):
+    r = client.put(
+        f"/items/{item['id']}",
+        json={"reorder_point": 7, "name": "Renamed", "unit_price": 9.99},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["reorder_point"] == 7
+    assert body["name"] == "Renamed"
+    assert body["unit_price"] == 9.99
+    stored = client.get(f"/items/{item['id']}").json()
+    assert stored["reorder_point"] == 7
+    assert stored["name"] == "Renamed"
+    assert stored["unit_price"] == 9.99
+
+
+def test_update_item_omitting_reorder_point_leaves_it_untouched(client, item):
+    assert item["reorder_point"] == 5
+    r = client.put(f"/items/{item['id']}", json={"name": "NewName"})
+    assert r.status_code == 200
+    assert r.json()["reorder_point"] == 5
+    assert client.get(f"/items/{item['id']}").json()["reorder_point"] == 5
+
+
+def test_update_item_zero_reorder_point_persists(client, item):
+    # item starts with reorder_point=5; setting it to 0 must persist.
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": 0})
+    assert r.status_code == 200
+    assert r.json()["reorder_point"] == 0
+    assert client.get(f"/items/{item['id']}").json()["reorder_point"] == 0
+
+
 def test_update_item_description_too_long_422(client, item):
     r = client.put(f"/items/{item['id']}", json={"description": "d" * 2001})
     assert r.status_code == 422
@@ -246,7 +289,12 @@ def test_delete_item_cascades_stock(client, item, loc_a):
         "/movements",
         json={"item_id": item["id"], "kind": "receive", "quantity": 3, "to_location_id": loc_a["id"]},
     )
-    client.delete(f"/items/{item['id']}")
+    # Drain the stock back to zero so the item is deletable (T038).
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "ship", "quantity": 3, "from_location_id": loc_a["id"]},
+    )
+    assert client.delete(f"/items/{item['id']}").status_code == 204
     assert client.get("/movements").json() == []
 
 
@@ -335,10 +383,11 @@ def test_get_item_by_sku_does_not_shadow_get_item_by_id(client, item):
     assert r.status_code == 200
     assert r.json()["id"] == item["id"]
     # and a sku that collides with sub-resource names still resolves via by-sku
+    # (skus are normalised to upper-case on create, see T017)
     client.post("/items", json={"sku": "stock", "name": "Stocky"})
-    r = client.get("/items/by-sku/stock")
+    r = client.get("/items/by-sku/STOCK")
     assert r.status_code == 200
-    assert r.json()["sku"] == "stock"
+    assert r.json()["sku"] == "STOCK"
     # item sub-resources remain reachable
     assert client.get(f"/items/{item['id']}/stock").status_code == 200
     assert client.get(f"/items/{item['id']}/movements").status_code == 200
@@ -498,3 +547,52 @@ def test_list_items_envelope_offset_beyond_total(client, item):
     assert body["items"] == []
     assert body["total"] == 1
     assert body["offset"] == 10
+
+
+# --- delete refuses when stock remains (T038) ----------------------------------
+
+
+def test_delete_item_with_stock_returns_409_with_remaining_quantity(client, item, loc_a):
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "quantity": 7, "to_location_id": loc_a["id"]},
+    )
+    r = client.delete(f"/items/{item['id']}")
+    assert r.status_code == 409
+    body = r.json()
+    assert body["error"]["code"] == "conflict"
+    assert "7" in body["error"]["message"]
+    # the item must still exist
+    assert client.get(f"/items/{item['id']}").status_code == 200
+
+
+def test_delete_item_with_stock_across_locations_mentions_total(client, item, loc_a, loc_b):
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "quantity": 2, "to_location_id": loc_a["id"]},
+    )
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "quantity": 3, "to_location_id": loc_b["id"]},
+    )
+    r = client.delete(f"/items/{item['id']}")
+    assert r.status_code == 409
+    assert "5" in r.json()["error"]["message"]
+
+
+def test_delete_item_after_stock_drained_to_zero_succeeds(client, item, loc_a):
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "receive", "quantity": 4, "to_location_id": loc_a["id"]},
+    )
+    client.post(
+        "/movements",
+        json={"item_id": item["id"], "kind": "ship", "quantity": 4, "from_location_id": loc_a["id"]},
+    )
+    r = client.delete(f"/items/{item['id']}")
+    assert r.status_code == 204
+    assert client.get(f"/items/{item['id']}").status_code == 404
+
+
+def test_delete_item_with_no_movements_still_deletes(client, item):
+    assert client.delete(f"/items/{item['id']}").status_code == 204
