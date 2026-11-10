@@ -145,6 +145,46 @@ def test_list_items_filter_active(client, item):
     assert [i["sku"] for i in client.get("/items", params={"active": "false"}).json()] == ["INACTIVE"]
 
 
+def test_list_items_filter_by_sku_exact_match(client, item):
+    client.post("/items", json={"sku": "WIDGET-10", "name": "Widget Ten"})
+    client.post("/items", json={"sku": "OTHER-1", "name": "Other"})
+    r = client.get("/items", params={"sku": "WIDGET-1"})
+    assert r.status_code == 200
+    body = r.json()
+    assert [i["sku"] for i in body] == ["WIDGET-1"]
+    assert body[0] == item
+
+
+def test_list_items_filter_by_unknown_sku_returns_empty_200(client, item):
+    r = client.get("/items", params={"sku": "NOPE-99"})
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_list_items_filter_sku_is_not_substring_match(client, item):
+    # "WIDGET" is a prefix of the existing sku but not an exact match
+    r = client.get("/items", params={"sku": "WIDGET"})
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_list_items_filter_sku_combines_with_active(client, item):
+    client.post("/items", json={"sku": "GADGET-1", "name": "Gadget"})
+    client.put(f"/items/{item['id']}", json={"active": False})
+    # sku matches but item is inactive -> excluded when active=true
+    r = client.get("/items", params={"sku": "WIDGET-1", "active": "true"})
+    assert r.status_code == 200
+    assert r.json() == []
+    # sku matches and item is inactive -> included when active=false
+    r = client.get("/items", params={"sku": "WIDGET-1", "active": "false"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["WIDGET-1"]
+    # other active item is not returned for a different sku filter
+    r = client.get("/items", params={"sku": "GADGET-1", "active": "true"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["GADGET-1"]
+
+
 def test_update_item_name_and_price(client, item):
     r = client.put(f"/items/{item['id']}", json={"name": "Renamed", "unit_price": 9.99})
     assert r.status_code == 200
