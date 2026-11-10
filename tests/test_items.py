@@ -42,6 +42,41 @@ def test_get_missing_item_404(client):
     assert "not found" in r.json()["detail"]
 
 
+def test_get_item_by_sku(client, item):
+    r = client.get(f"/items/by-sku/{item['sku']}")
+    assert r.status_code == 200
+    assert r.json() == item
+
+
+def test_get_item_by_sku_same_shape_as_get_by_id(client, item):
+    by_sku = client.get(f"/items/by-sku/{item['sku']}").json()
+    by_id = client.get(f"/items/{item['id']}").json()
+    assert by_sku == by_id
+
+
+def test_get_item_by_sku_exact_match_only(client, item):
+    assert client.get("/items/by-sku/WIDGET").status_code == 404
+    assert client.get("/items/by-sku/widget-1").status_code == 404
+
+
+def test_get_item_by_sku_missing_404(client):
+    r = client.get("/items/by-sku/NOPE-99")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "sku NOPE-99 not found"
+
+
+def test_get_item_by_sku_does_not_shadow_get_by_id(client, item):
+    # numeric path still resolves to get-by-id
+    r = client.get(f"/items/{item['id']}")
+    assert r.status_code == 200
+    assert r.json()["id"] == item["id"]
+    # and the by-sku route works even for a sku that looks numeric
+    created = client.post("/items", json={"sku": "123", "name": "Numeric SKU"}).json()
+    r = client.get("/items/by-sku/123")
+    assert r.status_code == 200
+    assert r.json() == created
+
+
 def test_list_items_ordered_by_id(client):
     for sku in ["C", "A", "B"]:
         client.post("/items", json={"sku": sku, "name": sku})
