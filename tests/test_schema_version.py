@@ -20,6 +20,18 @@ def test_schema_version_table_has_single_row(tmp_path):
     assert count == 1
 
 
+def test_items_table_has_reorder_level_column(tmp_path):
+    path = str(tmp_path / "fresh.db")
+    db.init_db(path)
+    conn = sqlite3.connect(path)
+    try:
+        columns = [row[1] for row in conn.execute("PRAGMA table_info(items)").fetchall()]
+    finally:
+        conn.close()
+    assert "reorder_level" in columns
+    assert "reorder_point" not in columns
+
+
 def test_init_db_is_idempotent(tmp_path):
     path = str(tmp_path / "fresh.db")
     db.init_db(path)

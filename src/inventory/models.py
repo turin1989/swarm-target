@@ -2,24 +2,28 @@
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 MovementKind = Literal["receive", "ship", "transfer"]
 
 
 class ItemCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     sku: str = Field(..., min_length=1, max_length=64)
     name: str = Field(..., min_length=1, max_length=200)
     description: str = Field(default="", max_length=2000)
     unit_price: float = Field(default=0.0, ge=0)
-    reorder_point: int = 0
+    reorder_level: int = 0
 
 
 class ItemUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: Optional[str] = None
     description: Optional[str] = Field(default=None, max_length=2000)
     unit_price: Optional[float] = Field(default=None, ge=0)
-    reorder_point: Optional[int] = None
+    reorder_level: Optional[int] = None
     active: Optional[bool] = None
 
 
@@ -29,7 +33,7 @@ class Item(BaseModel):
     name: str
     description: str
     unit_price: float
-    reorder_point: int
+    reorder_level: int
     active: bool
 
 
@@ -87,4 +91,4 @@ class LowStockEntry(BaseModel):
     sku: str
     name: str
     total_qty: int
-    reorder_point: int
+    reorder_level: int
