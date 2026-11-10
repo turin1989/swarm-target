@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS items (
     unit_price REAL NOT NULL DEFAULT 0,
     reorder_level INTEGER NOT NULL DEFAULT 0,
     active INTEGER NOT NULL DEFAULT 1,
-    barcode TEXT
+    barcode TEXT,
+    created_at TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS locations (
@@ -86,6 +87,11 @@ def init_db(path: str) -> None:
         ]
         if "barcode" not in item_columns:
             conn.execute("ALTER TABLE items ADD COLUMN barcode TEXT")
+        # Lightweight migration: older databases lack the items.created_at column.
+        if "created_at" not in item_columns:
+            conn.execute(
+                "ALTER TABLE items ADD COLUMN created_at TEXT NOT NULL DEFAULT ''"
+            )
         # Unique when not null (SQLite unique indexes ignore NULLs). Created
         # here (after the migration) so the column is guaranteed to exist.
         conn.execute(
