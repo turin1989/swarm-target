@@ -15,7 +15,7 @@ def test_create_item_returns_201_and_fields(client):
     assert body["sku"] == "A-1"
     assert body["name"] == "Alpha"
     assert body["unit_price"] == 1.25
-    assert body["reorder_point"] == 0
+    assert body["reorder_level"] == 0
     assert body["active"] is True
 
 
@@ -169,6 +169,20 @@ def test_delete_item(client, item):
     assert client.get(f"/items/{item['id']}").status_code == 404
 
 
+def test_delete_missing_item_404(client):
+    r = client.delete("/items/42")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "item 42 not found"
+
+
+def test_delete_item_twice_second_404(client, item):
+    item_id = item["id"]
+    assert client.delete(f"/items/{item_id}").status_code == 204
+    r = client.delete(f"/items/{item_id}")
+    assert r.status_code == 404
+    assert r.json()["detail"] == f"item {item_id} not found"
+
+
 def test_delete_item_cascades_stock(client, item, loc_a):
     client.post(
         "/movements",
@@ -218,6 +232,88 @@ def test_delete_item_allowed_after_stock_returns_to_zero(client, item, loc_a):
     )
     assert client.delete(f"/items/{item['id']}").status_code == 204
     assert client.get(f"/items/{item['id']}").status_code == 404
+
+
+"""Renamed field: reorder_point -> reorder_level (T049)."""
+
+
+def test_create_item_accepts_reorder_level(client):
+    r = client.post(
+        "/items", json={"sku": "RL-1", "name": "Renamed", "reorder_level": 7}
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["reorder_level"] == 7
+    assert "reorder_point" not in body
+
+
+def test_create_item_with_reorder_point_returns_422(client):
+    r = client.post(
+        "/items", json={"sku": "RP-1", "name": "Legacy", "reorder_point": 7}
+    )
+    assert r.status_code == 422
+
+
+def test_update_item_with_reorder_point_returns_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": 9})
+    assert r.status_code == 422
+
+
+def test_update_item_accepts_reorder_level_field(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_level": 9})
+    assert r.status_code == 200
+    assert "reorder_level" in r.json()
+
+
+def test_get_item_exposes_reorder_level_not_reorder_point(client, item):
+    body = client.get(f"/items/{item['id']}").json()
+    assert body["reorder_level"] == 5
+    assert "reorder_point" not in body
+
+
+def test_create_item_with_reorder_level_and_barcode_together(client):
+    """T049 rename combined with T025 barcode: both fields work in one payload."""
+    r = client.post(
+        "/items",
+        json={
+            "sku": "RLBC-1",
+            "name": "Both",
+            "reorder_level": 3,
+            "barcode": "RLBC-0001",
+        },
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["reorder_level"] == 3
+    assert body["barcode"] == "RLBC-0001"
+    assert "reorder_point" not in body
+
+
+def test_create_item_with_barcode_and_legacy_reorder_point_returns_422(client):
+    r = client.post(
+        "/items",
+        json={
+            "sku": "RLBC-2",
+            "name": "Legacy",
+            "reorder_point": 3,
+            "barcode": "RLBC-0002",
+        },
+    )
+    assert r.status_code == 422
+
+
+def test_items_table_column_renamed_in_schema(tmp_path):
+    from inventory import db
+
+    path = str(tmp_path / "schema.db")
+    db.init_db(path)
+    conn = db.connect(path)
+    try:
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(items)").fetchall()]
+    finally:
+        conn.close()
+    assert "reorder_level" in cols
+    assert "reorder_point" not in cols
 
 
 def test_get_item_by_sku(client, item):
@@ -286,6 +382,84 @@ def test_list_items_x_total_count_respects_active_filter(client):
     assert r.headers["X-Total-Count"] == "1"
 
 
+# --- sorting -----------------------------------------------------------------
+
+
+def _seed_sortable_items(client):
+    # insertion order: ids 1..3; names/skus deliberately out of order
+    client.post("/items", json={"sku": "SKU-B", "name": "Charlie"})
+    client.post("/items", json={"sku": "SKU-C", "name": "Alpha"})
+    client.post("/items", json={"sku": "SKU-A", "name": "Bravo"})
+
+
+def test_list_items_default_sort_is_id(client):
+    _seed_sortable_items(client)
+    r = client.get("/items")
+    assert r.status_code == 200
+    assert [i["id"] for i in r.json()] == [1, 2, 3]
+
+
+def test_list_items_sort_by_id_ascending(client):
+    _seed_sortable_items(client)
+    r = client.get("/items", params={"sort": "id"})
+    assert r.status_code == 200
+    assert [i["id"] for i in r.json()] == [1, 2, 3]
+
+
+def test_list_items_sort_by_id_descending(client):
+    _seed_sortable_items(client)
+    r = client.get("/items", params={"sort": "-id"})
+    assert r.status_code == 200
+    assert [i["id"] for i in r.json()] == [3, 2, 1]
+
+
+def test_list_items_sort_by_name_ascending(client):
+    _seed_sortable_items(client)
+    r = client.get("/items", params={"sort": "name"})
+    assert r.status_code == 200
+    assert [i["name"] for i in r.json()] == ["Alpha", "Bravo", "Charlie"]
+
+
+def test_list_items_sort_by_name_descending(client):
+    _seed_sortable_items(client)
+    r = client.get("/items", params={"sort": "-name"})
+    assert r.status_code == 200
+    assert [i["name"] for i in r.json()] == ["Charlie", "Bravo", "Alpha"]
+
+
+def test_list_items_sort_by_sku_ascending(client):
+    _seed_sortable_items(client)
+    r = client.get("/items", params={"sort": "sku"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["SKU-A", "SKU-B", "SKU-C"]
+
+
+def test_list_items_sort_by_sku_descending(client):
+    _seed_sortable_items(client)
+    r = client.get("/items", params={"sort": "-sku"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["SKU-C", "SKU-B", "SKU-A"]
+
+
+def test_list_items_sort_invalid_value_is_422(client):
+    _seed_sortable_items(client)
+    for bad in ["price", "-price", "unit_price", "ID", "--name", "-", "", "name; DROP TABLE items"]:
+        r = client.get("/items", params={"sort": bad})
+        assert r.status_code == 422, f"sort={bad!r} should be rejected"
+
+
+def test_list_items_sort_combines_with_filters_and_pagination(client):
+    _seed_sortable_items(client)
+    client.put("/items/2", json={"active": False})
+    r = client.get("/items", params={"sort": "-name", "active": "true"})
+    assert r.status_code == 200
+    assert [i["name"] for i in r.json()] == ["Charlie", "Bravo"]
+
+    r = client.get("/items", params={"sort": "name", "limit": 2, "offset": 1})
+    assert r.status_code == 200
+    assert [i["name"] for i in r.json()] == ["Bravo", "Charlie"]
+
+
 def test_list_items_x_total_count_zero_when_empty(client):
     r = client.get("/items")
     assert r.status_code == 200
@@ -293,33 +467,63 @@ def test_list_items_x_total_count_zero_when_empty(client):
     assert r.headers["X-Total-Count"] == "0"
 
 
-def test_update_reorder_point_persists_and_returns(client, item):
-    r = client.put(f"/items/{item['id']}", json={"reorder_point": 12})
+def test_update_reorder_level_persists_and_returns(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_level": 12})
     assert r.status_code == 200
-    assert r.json()["reorder_point"] == 12
+    assert r.json()["reorder_level"] == 12
     # persisted
-    assert client.get(f"/items/{item['id']}").json()["reorder_point"] == 12
+    assert client.get(f"/items/{item['id']}").json()["reorder_level"] == 12
 
 
-def test_update_reorder_point_with_other_fields(client, item):
+def test_update_reorder_level_with_other_fields(client, item):
     r = client.put(
         f"/items/{item['id']}",
-        json={"reorder_point": 7, "name": "Widget v2", "unit_price": 9.99},
+        json={"reorder_level": 7, "name": "Widget v2", "unit_price": 9.99},
     )
     assert r.status_code == 200
     body = r.json()
-    assert body["reorder_point"] == 7
+    assert body["reorder_level"] == 7
     assert body["name"] == "Widget v2"
     assert body["unit_price"] == 9.99
     stored = client.get(f"/items/{item['id']}").json()
-    assert stored["reorder_point"] == 7
+    assert stored["reorder_level"] == 7
     assert stored["name"] == "Widget v2"
     assert stored["unit_price"] == 9.99
 
 
-def test_update_without_reorder_point_leaves_it_untouched(client, item):
-    assert client.put(f"/items/{item['id']}", json={"reorder_point": 12}).status_code == 200
+def test_update_without_reorder_level_leaves_it_untouched(client, item):
+    assert client.put(f"/items/{item['id']}", json={"reorder_level": 12}).status_code == 200
     r = client.put(f"/items/{item['id']}", json={"name": "Renamed"})
     assert r.status_code == 200
-    assert r.json()["reorder_point"] == 12
-    assert client.get(f"/items/{item['id']}").json()["reorder_point"] == 12
+    assert r.json()["reorder_level"] == 12
+    assert client.get(f"/items/{item['id']}").json()["reorder_level"] == 12
+
+
+def test_update_with_legacy_reorder_point_name_is_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": 12})
+    assert r.status_code == 422
+
+
+def test_create_item_negative_unit_price_422(client):
+    r = client.post("/items", json={"sku": "NEG-1", "name": "Neg", "unit_price": -0.01})
+    assert r.status_code == 422
+
+
+def test_create_item_zero_unit_price_accepted(client):
+    r = client.post("/items", json={"sku": "ZERO-1", "name": "Zero", "unit_price": 0})
+    assert r.status_code == 201
+    assert r.json()["unit_price"] == 0
+
+
+def test_update_item_negative_unit_price_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"unit_price": -1})
+    assert r.status_code == 422
+    # unchanged
+    assert client.get(f"/items/{item['id']}").json()["unit_price"] == item["unit_price"]
+
+
+def test_update_item_zero_unit_price_accepted(client, item):
+    r = client.put(f"/items/{item['id']}", json={"unit_price": 0})
+    assert r.status_code == 200
+    assert r.json()["unit_price"] == 0
+

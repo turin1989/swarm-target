@@ -2,9 +2,9 @@
 
 import sqlite3
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 
 from inventory.db import get_db
 from inventory.models import (
@@ -44,13 +44,31 @@ def _fetch_item(conn: sqlite3.Connection, item_id: int) -> Item:
 
 # --- items -------------------------------------------------------------------
 
+_SORTABLE_ITEM_COLUMNS = {"id", "name", "sku"}
+
+
+def _parse_items_sort(sort: str) -> str:
+    """Translate a sort query value into an ORDER BY clause; 422 if invalid."""
+    direction = "ASC"
+    column = sort
+    if sort.startswith("-"):
+        direction = "DESC"
+        column = sort[1:]
+    if column not in _SORTABLE_ITEM_COLUMNS:
+        allowed = ", ".join(sorted(_SORTABLE_ITEM_COLUMNS))
+        raise HTTPException(
+            status_code=422,
+            detail=f"invalid sort {sort!r}: must be one of {allowed}, optionally prefixed with '-'",
+        )
+    return f"{column} {direction}"
+
 
 @router.post("/items", response_model=Item, status_code=201)
 def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db)) -> Item:
     try:
         cur = conn.execute(
             """
-            INSERT INTO items (sku, name, description, unit_price, reorder_point, barcode, created_at)
+            INSERT INTO items (sku, name, description, unit_price, reorder_level, barcode, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
@@ -58,7 +76,7 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
                 payload.name,
                 payload.description,
                 payload.unit_price,
-                payload.reorder_point,
+                payload.reorder_level,
                 payload.barcode,
                 _utc_now_iso(),
             ),
@@ -72,16 +90,53 @@ def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db))
     return _fetch_item(conn, cur.lastrowid)
 
 
+@router.post("/items/bulk", response_model=list[Item], status_code=201)
+def create_items_bulk(
+    payload: Annotated[list[ItemCreate], Body(min_length=1)],
+    conn: sqlite3.Connection = Depends(get_db),
+) -> list[Item]:
+    created_ids: list[int] = []
+    for entry in payload:
+        try:
+            cur = conn.execute(
+                """
+                INSERT INTO items (sku, name, description, unit_price, reorder_level, barcode, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    entry.sku,
+                    entry.name,
+                    entry.description,
+                    entry.unit_price,
+                    entry.reorder_level,
+                    entry.barcode,
+                    _utc_now_iso(),
+                ),
+            )
+        except sqlite3.IntegrityError as exc:
+            # Atomic: discard everything inserted so far.
+            conn.rollback()
+            if "barcode" in str(exc):
+                raise HTTPException(
+                    status_code=409, detail=f"barcode {entry.barcode!r} already exists"
+                )
+            raise HTTPException(status_code=409, detail=f"sku {entry.sku!r} already exists")
+        created_ids.append(cur.lastrowid)
+    return [_fetch_item(conn, item_id) for item_id in created_ids]
+
+
 @router.get("/items", response_model=list[Item])
 def list_items(
     response: Response,
     active: Optional[bool] = None,
     sku: Optional[str] = None,
     barcode: Optional[str] = None,
+    sort: str = Query("id"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     conn: sqlite3.Connection = Depends(get_db),
 ) -> list[Item]:
+    order_by = _parse_items_sort(sort)
     params: list = []
     clauses: list[str] = []
     if active is not None:
@@ -98,7 +153,7 @@ def list_items(
         where = " WHERE " + " AND ".join(clauses)
     total = conn.execute(f"SELECT COUNT(*) FROM items{where}", params).fetchone()[0]
     response.headers["X-Total-Count"] = str(total)
-    sql = f"SELECT * FROM items{where} ORDER BY id LIMIT ? OFFSET ?"
+    sql = f"SELECT * FROM items{where} ORDER BY {order_by} LIMIT ? OFFSET ?"
     params += [limit, offset]
     return [_row_to_item(r) for r in conn.execute(sql, params).fetchall()]
 
@@ -122,7 +177,7 @@ def update_item(
 ) -> Item:
     _fetch_item(conn, item_id)
     updates = payload.model_dump(exclude_unset=True)
-    allowed = {"name", "description", "unit_price", "reorder_point", "active"}
+    allowed = {"name", "description", "unit_price", "reorder_level", "active"}
     updates = {k: v for k, v in updates.items() if k in allowed and v is not None}
     if updates:
         if "active" in updates:
@@ -134,6 +189,7 @@ def update_item(
 
 @router.delete("/items/{item_id}", status_code=204)
 def delete_item(item_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Response:
+    _fetch_item(conn, item_id)
     remaining = stock.total_stock(conn, item_id)
     if remaining > 0:
         raise HTTPException(
@@ -253,6 +309,14 @@ def create_movement(
         raise HTTPException(status_code=exc.status_code, detail=str(exc))
 
 
+@router.post("/movements/{movement_id}/reverse", response_model=Movement, status_code=201)
+def reverse_movement(movement_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Movement:
+    try:
+        return stock.reverse_movement(conn, movement_id)
+    except stock.StockError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+
+
 @router.get("/movements/{movement_id}", response_model=Movement)
 def get_movement(movement_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Movement:
     try:
@@ -284,6 +348,11 @@ def low_stock_report(
         if row is None:
             raise HTTPException(status_code=404, detail=f"location {location_id} not found")
     return reports.low_stock(conn, location_id=location_id)
+
+
+@router.get("/reports/movements-summary")
+def movements_summary_report(conn: sqlite3.Connection = Depends(get_db)) -> dict:
+    return reports.movements_summary(conn)
 
 
 @router.get("/reports/value")

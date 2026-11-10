@@ -85,9 +85,9 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
         _adjust(conn, m.item_id, from_id, -m.qty)
     elif m.kind == "transfer":
         from_id = _require_location(conn, m.from_location_id, "from_location_id")
-        _require_location(conn, m.to_location_id, "to_location_id")
+        to_id = _require_location(conn, m.to_location_id, "to_location_id")
         _adjust(conn, m.item_id, from_id, -m.qty)
-        _adjust(conn, m.item_id, from_id, m.qty)
+        _adjust(conn, m.item_id, to_id, m.qty)
     elif m.kind == "adjust":
         if m.from_location_id is not None:
             raise StockError("from_location_id must be null for adjust movements")
@@ -104,6 +104,42 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
         (m.item_id, m.kind, m.qty, m.from_location_id, m.to_location_id, m.note, m.reference),
     )
     return get_movement(conn, cur.lastrowid)
+
+
+def reverse_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
+    """Create and apply a new movement that undoes an existing one."""
+    original = get_movement(conn, movement_id)
+    note = f"reversal of {movement_id}"
+
+    if original.kind == "receive":
+        reversal = MovementCreate(
+            item_id=original.item_id,
+            kind="ship",
+            qty=original.qty,
+            from_location_id=original.to_location_id,
+            note=note,
+        )
+    elif original.kind == "ship":
+        reversal = MovementCreate(
+            item_id=original.item_id,
+            kind="receive",
+            qty=original.qty,
+            to_location_id=original.from_location_id,
+            note=note,
+        )
+    elif original.kind == "transfer":
+        reversal = MovementCreate(
+            item_id=original.item_id,
+            kind="transfer",
+            qty=original.qty,
+            from_location_id=original.to_location_id,
+            to_location_id=original.from_location_id,
+            note=note,
+        )
+    else:
+        raise StockError(f"{original.kind} movements cannot be reversed")
+
+    return apply_movement(conn, reversal)
 
 
 def get_movement(conn: sqlite3.Connection, movement_id: int) -> Movement:
