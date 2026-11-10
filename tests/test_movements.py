@@ -383,3 +383,29 @@ def test_list_movements_filters_with_pagination(client, item, loc_a, loc_b):
     assert [m["id"] for m in page1] == all_ids[:2]
     assert [m["id"] for m in page2] == all_ids[2:]
     assert all(m["item_id"] == item["id"] and m["kind"] == "receive" for m in page1 + page2)
+
+
+def test_movement_note_too_long_422(client, item, loc_a):
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=1,
+        to_location_id=loc_a["id"],
+        note="x" * 501,
+    )
+    assert r.status_code == 422
+
+
+def test_movement_note_at_max_length_ok(client, item, loc_a):
+    note = "x" * 500
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="receive",
+        qty=1,
+        to_location_id=loc_a["id"],
+        note=note,
+    )
+    assert r.status_code == 201
+    assert r.json()["note"] == note

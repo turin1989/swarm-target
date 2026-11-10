@@ -21,15 +21,11 @@ from inventory.models import (
     MovementCreate,
     MovementKind,
 )
+from inventory.services import items as items_service
 from inventory.services import reports, search, stock
+from inventory.services.items import row_to_item as _row_to_item
 
 router = APIRouter()
-
-
-def _row_to_item(row: sqlite3.Row) -> Item:
-    data = dict(row)
-    data["active"] = bool(data["active"])
-    return Item(**data)
 
 
 def _row_to_location(row: sqlite3.Row) -> Location:
@@ -39,10 +35,10 @@ def _row_to_location(row: sqlite3.Row) -> Location:
 
 
 def _fetch_item(conn: sqlite3.Connection, item_id: int) -> Item:
-    row = conn.execute("SELECT * FROM items WHERE id = ?", (item_id,)).fetchone()
-    if row is None:
+    item = items_service.get_item(conn, item_id)
+    if item is None:
         raise HTTPException(status_code=404, detail=f"item {item_id} not found")
-    return _row_to_item(row)
+    return item
 
 
 # --- items -------------------------------------------------------------------
@@ -51,27 +47,13 @@ def _fetch_item(conn: sqlite3.Connection, item_id: int) -> Item:
 @router.post("/items", response_model=Item, status_code=201)
 def create_item(payload: ItemCreate, conn: sqlite3.Connection = Depends(get_db)) -> Item:
     try:
-        cur = conn.execute(
-            """
-            INSERT INTO items (sku, name, description, unit_price, reorder_level, barcode)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                payload.sku,
-                payload.name,
-                payload.description,
-                payload.unit_price,
-                payload.reorder_level,
-                payload.barcode,
-            ),
-        )
+        return items_service.create_item(conn, payload)
     except sqlite3.IntegrityError as exc:
         if "barcode" in str(exc):
             raise HTTPException(
                 status_code=409, detail=f"barcode {payload.barcode!r} already exists"
             )
         raise HTTPException(status_code=409, detail=f"sku {payload.sku!r} already exists")
-    return _fetch_item(conn, cur.lastrowid)
 
 
 @router.get("/items", response_model=ItemPage)
@@ -117,16 +99,10 @@ def get_item(item_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Item:
 def update_item(
     item_id: int, payload: ItemUpdate, conn: sqlite3.Connection = Depends(get_db)
 ) -> Item:
-    _fetch_item(conn, item_id)
-    updates = payload.model_dump(exclude_unset=True)
-    allowed = {"name", "description", "unit_price", "reorder_level", "active"}
-    updates = {k: v for k, v in updates.items() if k in allowed and v is not None}
-    if updates:
-        if "active" in updates:
-            updates["active"] = int(updates["active"])
-        assignments = ", ".join(f"{k} = ?" for k in updates)
-        conn.execute(f"UPDATE items SET {assignments} WHERE id = ?", [*updates.values(), item_id])
-    return _fetch_item(conn, item_id)
+    item = items_service.update_item(conn, item_id, payload)
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"item {item_id} not found")
+    return item
 
 
 @router.delete("/items/{item_id}", status_code=204)
@@ -138,7 +114,8 @@ def delete_item(item_id: int, conn: sqlite3.Connection = Depends(get_db)) -> Res
             status_code=409,
             detail=f"item {item_id} still has {remaining} units in stock",
         )
-    conn.execute("DELETE FROM items WHERE id = ?", (item_id,))
+    if not items_service.delete_item(conn, item_id):
+        raise HTTPException(status_code=404, detail=f"item {item_id} not found")
     return Response(status_code=204)
 
 
