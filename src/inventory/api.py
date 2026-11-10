@@ -7,7 +7,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.exception_handlers import http_exception_handler
 
 from inventory.db import get_db
-from inventory.services.errors import InventoryError
 from inventory.models import (
     Item,
     ItemCreate,
@@ -21,6 +20,7 @@ from inventory.models import (
 )
 from inventory.services import items as items_service
 from inventory.services import reports, search, stock
+from inventory.services.errors import InventoryError
 
 router = APIRouter()
 
