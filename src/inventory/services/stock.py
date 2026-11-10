@@ -82,6 +82,18 @@ def _set_level(conn: sqlite3.Connection, item_id: int, location_id: int, qty: in
     )
 
 
+def _require_available(
+    conn: sqlite3.Connection, item_id: int, location_id: int, qty: int
+) -> None:
+    available = get_stock_level(conn, item_id, location_id)
+    if qty > available:
+        raise StockError(
+            f"insufficient stock for item {item_id} at location {location_id}: "
+            f"requested {qty}, available {available}",
+            status_code=409,
+        )
+
+
 def _require_location(conn: sqlite3.Connection, location_id: int | None, field: str) -> int:
     if location_id is None:
         raise StockError(f"{field} is required for this movement kind")
@@ -107,6 +119,7 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
         _adjust(conn, m.item_id, to_id, m.quantity)
     elif m.kind == "ship":
         from_id = _require_location(conn, m.from_location_id, "from_location_id")
+        _require_available(conn, m.item_id, from_id, m.quantity)
         _adjust(conn, m.item_id, from_id, -m.quantity)
     elif m.kind == "transfer":
         from_id = _require_location(conn, m.from_location_id, "from_location_id")
@@ -115,6 +128,7 @@ def apply_movement(conn: sqlite3.Connection, m: MovementCreate) -> Movement:
             raise StockError(
                 "cannot transfer to the same location", status_code=400
             )
+        _require_available(conn, m.item_id, from_id, m.quantity)
         _adjust(conn, m.item_id, from_id, -m.quantity)
         _adjust(conn, m.item_id, to_id, m.quantity)
     elif m.kind == "adjust":
