@@ -38,6 +38,11 @@ class LocationCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
 
 
+class LocationUpdate(BaseModel):
+    code: Optional[str] = Field(default=None, min_length=1, max_length=32)
+    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+
+
 class Location(BaseModel):
     id: int
     code: str
