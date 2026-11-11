@@ -30,6 +30,24 @@ def test_create_item_requires_sku_and_name(client):
     assert client.post("/items", json={"sku": "", "name": "x"}).status_code == 422
 
 
+def test_create_item_negative_reorder_point_422(client):
+    r = client.post("/items", json={"sku": "NEG", "name": "Neg", "reorder_point": -1})
+    assert r.status_code == 422
+
+
+def test_create_item_zero_reorder_point_allowed(client):
+    r = client.post("/items", json={"sku": "ZERO-RP", "name": "Zero", "reorder_point": 0})
+    assert r.status_code == 201
+    assert r.json()["reorder_point"] == 0
+
+
+def test_update_item_negative_reorder_point_422(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": -5})
+    assert r.status_code == 422
+    # stored value unchanged
+    assert client.get(f"/items/{item['id']}").json()["reorder_point"] == item["reorder_point"]
+
+
 def test_create_item_negative_unit_price_rejected(client):
     r = client.post("/items", json={"sku": "NEG", "name": "Neg", "unit_price": -0.01})
     assert r.status_code == 422
