@@ -208,3 +208,42 @@ def test_delete_item_cascades_stock(client, item, loc_a):
     )
     client.delete(f"/items/{item['id']}")
     assert client.get("/movements").json() == []
+
+
+# --- GET /items/by-sku/{sku} ---------------------------------------------------
+
+
+def test_get_item_by_sku(client, item):
+    r = client.get(f"/items/by-sku/{item['sku']}")
+    assert r.status_code == 200
+    assert r.json() == item
+
+
+def test_get_item_by_sku_same_shape_as_get_by_id(client, item):
+    by_sku = client.get(f"/items/by-sku/{item['sku']}").json()
+    by_id = client.get(f"/items/{item['id']}").json()
+    assert by_sku == by_id
+
+
+def test_get_item_by_sku_exact_match_not_partial(client, item):
+    client.post("/items", json={"sku": "WIDGET-10", "name": "Widget 10"})
+    r = client.get("/items/by-sku/WIDGET-1")
+    assert r.status_code == 200
+    assert r.json()["sku"] == "WIDGET-1"
+
+
+def test_get_item_by_sku_unknown_404_with_detail(client):
+    r = client.get("/items/by-sku/NO-SUCH-SKU")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "sku NO-SUCH-SKU not found"
+
+
+def test_get_item_by_sku_does_not_shadow_get_by_id(client, item):
+    # numeric path still resolves to the id-based route
+    r = client.get(f"/items/{item['id']}")
+    assert r.status_code == 200
+    assert r.json() == item
+    # and a missing numeric id still reports the item-id message
+    r = client.get("/items/999")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "item 999 not found"
