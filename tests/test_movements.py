@@ -140,6 +140,52 @@ def test_transfer_checks_source_not_destination(client, item, loc_a, loc_b):
     assert "insufficient" in r.json()["detail"]
 
 
+def test_transfer_moves_stock_between_locations(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=2,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    assert r.status_code == 201
+
+    s = client.get(f"/items/{item['id']}/stock").json()
+    # source decreases by N, destination increases by N
+    levels = {lvl["location_id"]: lvl["qty"] for lvl in s["levels"]}
+    assert levels[loc_a["id"]] == 3
+    assert levels[loc_b["id"]] == 2
+    # the item's total stock is unchanged by a transfer
+    assert s["total"] == 5
+
+
+def test_transfer_total_unchanged_after_multiple_transfers(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_a["id"])
+    _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=4,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=1,
+        from_location_id=loc_b["id"],
+        to_location_id=loc_a["id"],
+    )
+    s = client.get(f"/items/{item['id']}/stock").json()
+    levels = {lvl["location_id"]: lvl["qty"] for lvl in s["levels"]}
+    assert levels[loc_a["id"]] == 7
+    assert levels[loc_b["id"]] == 3
+    assert s["total"] == 10
+
+
 def test_stock_for_missing_item_404(client):
     assert client.get("/items/77/stock").status_code == 404
 
