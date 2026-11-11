@@ -49,10 +49,33 @@ def test_update_item_negative_reorder_point_422(client, item):
 
 
 def test_update_item_nonnegative_reorder_point_not_rejected(client, item):
-    # Persistence of reorder_point updates is covered by a separate task;
-    # here we only ensure non-negative values are not rejected as invalid.
+    # Persistence of reorder_point updates is covered by
+    # test_update_item_reorder_point below; here we only ensure
+    # non-negative values are not rejected as invalid.
     r = client.put(f"/items/{item['id']}", json={"reorder_point": 7})
     assert r.status_code == 200
+
+
+def test_create_item_rejects_negative_unit_price(client):
+    r = client.post("/items", json={"sku": "NEG", "name": "Neg", "unit_price": -0.01})
+    assert r.status_code == 422
+
+
+def test_create_item_accepts_zero_unit_price(client):
+    r = client.post("/items", json={"sku": "ZERO", "name": "Zero", "unit_price": 0})
+    assert r.status_code == 201
+    assert r.json()["unit_price"] == 0
+
+
+def test_update_item_rejects_negative_unit_price(client, item):
+    r = client.put(f"/items/{item['id']}", json={"unit_price": -5})
+    assert r.status_code == 422
+
+
+def test_update_item_accepts_zero_unit_price(client, item):
+    r = client.put(f"/items/{item['id']}", json={"unit_price": 0})
+    assert r.status_code == 200
+    assert r.json()["unit_price"] == 0
 
 
 def test_get_item(client, item):
@@ -101,6 +124,38 @@ def test_update_item_name_and_price(client, item):
 def test_update_item_deactivate(client, item):
     r = client.put(f"/items/{item['id']}", json={"active": False})
     assert r.json()["active"] is False
+
+
+def test_update_item_reorder_point(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": 12})
+    assert r.status_code == 200
+    assert r.json()["reorder_point"] == 12
+    # persisted, not just echoed back
+    assert client.get(f"/items/{item['id']}").json()["reorder_point"] == 12
+
+
+def test_update_item_reorder_point_with_other_fields(client, item):
+    r = client.put(
+        f"/items/{item['id']}",
+        json={"reorder_point": 7, "name": "Renamed", "unit_price": 3.5},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["reorder_point"] == 7
+    assert body["name"] == "Renamed"
+    assert body["unit_price"] == 3.5
+    stored = client.get(f"/items/{item['id']}").json()
+    assert stored["reorder_point"] == 7
+    assert stored["name"] == "Renamed"
+    assert stored["unit_price"] == 3.5
+
+
+def test_update_item_omitting_reorder_point_preserves_value(client, item):
+    client.put(f"/items/{item['id']}", json={"reorder_point": 12})
+    r = client.put(f"/items/{item['id']}", json={"name": "Other"})
+    assert r.status_code == 200
+    assert r.json()["reorder_point"] == 12
+    assert client.get(f"/items/{item['id']}").json()["reorder_point"] == 12
 
 
 def test_update_missing_item_404(client):
