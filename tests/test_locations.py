@@ -1,7 +1,5 @@
 """Tests for location endpoints (T007: duplicate location codes)."""
 
-from inventory.db import SCHEMA
-
 
 def test_create_location(client):
     r = client.post("/locations", json={"code": "WH-A", "name": "Warehouse A"})
