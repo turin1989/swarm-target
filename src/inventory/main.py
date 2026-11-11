@@ -1,12 +1,14 @@
 """Application factory and entry point."""
 
 import os
+import sqlite3
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
 from inventory import __version__
 from inventory.api import router
-from inventory.db import init_db
+from inventory.db import connect, init_db
 
 DEFAULT_DB_PATH = "inventory.db"
 
@@ -19,8 +21,19 @@ def create_app(db_path: str | None = None) -> FastAPI:
     app.include_router(router)
 
     @app.get("/health")
-    def health() -> dict:
-        return {"status": "ok", "version": __version__}
+    def health():
+        try:
+            conn = connect(app.state.db_path)
+            try:
+                conn.execute("SELECT 1")
+            finally:
+                conn.close()
+        except sqlite3.Error:
+            return JSONResponse(
+                status_code=503,
+                content={"status": "error", "version": __version__, "db": "error"},
+            )
+        return {"status": "ok", "version": __version__, "db": "ok"}
 
     return app
 
