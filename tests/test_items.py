@@ -53,6 +53,30 @@ def test_update_item_nonnegative_reorder_point_not_rejected(client, item):
     assert r.status_code == 200
 
 
+def test_create_item_negative_unit_price_rejected(client):
+    r = client.post("/items", json={"sku": "NEG", "name": "Neg", "unit_price": -0.01})
+    assert r.status_code == 422
+
+
+def test_create_item_zero_unit_price_accepted(client):
+    r = client.post("/items", json={"sku": "ZERO", "name": "Zero", "unit_price": 0})
+    assert r.status_code == 201
+    assert r.json()["unit_price"] == 0
+
+
+def test_update_item_negative_unit_price_rejected(client, item):
+    r = client.put(f"/items/{item['id']}", json={"unit_price": -5})
+    assert r.status_code == 422
+    # item unchanged
+    assert client.get(f"/items/{item['id']}").json() == item
+
+
+def test_update_item_zero_unit_price_accepted(client, item):
+    r = client.put(f"/items/{item['id']}", json={"unit_price": 0})
+    assert r.status_code == 200
+    assert r.json()["unit_price"] == 0
+
+
 def test_get_item(client, item):
     r = client.get(f"/items/{item['id']}")
     assert r.status_code == 200
@@ -96,6 +120,34 @@ def test_update_item_name_and_price(client, item):
     assert r.json()["sku"] == item["sku"]
 
 
+def test_update_item_reorder_point_persists(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": 12})
+    assert r.status_code == 200
+    assert r.json()["reorder_point"] == 12
+    # persisted, not just echoed
+    assert client.get(f"/items/{item['id']}").json()["reorder_point"] == 12
+
+
+def test_update_item_reorder_point_with_other_fields(client, item):
+    r = client.put(
+        f"/items/{item['id']}",
+        json={"reorder_point": 7, "name": "Renamed", "unit_price": 3.5},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["reorder_point"] == 7
+    assert body["name"] == "Renamed"
+    assert body["unit_price"] == 3.5
+
+
+def test_update_item_omitting_reorder_point_preserves_it(client, item):
+    client.put(f"/items/{item['id']}", json={"reorder_point": 5})
+    r = client.put(f"/items/{item['id']}", json={"name": "NoRPChange"})
+    assert r.status_code == 200
+    assert r.json()["reorder_point"] == 5
+    assert r.json()["name"] == "NoRPChange"
+
+
 def test_update_item_deactivate(client, item):
     r = client.put(f"/items/{item['id']}", json={"active": False})
     assert r.json()["active"] is False
@@ -109,6 +161,20 @@ def test_delete_item(client, item):
     r = client.delete(f"/items/{item['id']}")
     assert r.status_code == 204
     assert client.get(f"/items/{item['id']}").status_code == 404
+
+
+def test_delete_missing_item_404(client):
+    r = client.delete("/items/999")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "item 999 not found"
+
+
+def test_delete_item_twice_second_is_404(client, item):
+    r = client.delete(f"/items/{item['id']}")
+    assert r.status_code == 204
+    r = client.delete(f"/items/{item['id']}")
+    assert r.status_code == 404
+    assert r.json()["detail"] == f"item {item['id']} not found"
 
 
 def test_delete_item_cascades_stock(client, item, loc_a):
