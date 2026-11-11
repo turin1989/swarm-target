@@ -232,3 +232,29 @@ def test_delete_item_cascades_stock(client, item, loc_a):
     )
     client.delete(f"/items/{item['id']}")
     assert client.get("/movements").json() == []
+
+
+# --- GET /items/by-sku/{sku} ---------------------------------------------------
+
+
+def test_get_item_by_sku_returns_item(client, item):
+    r = client.get(f"/items/by-sku/{item['sku']}")
+    assert r.status_code == 200
+    assert r.json() == client.get(f"/items/{item['id']}").json()
+
+
+def test_get_item_by_sku_is_exact_match(client, item):
+    assert client.get(f"/items/by-sku/{item['sku'].lower()}").status_code == 404
+    assert client.get(f"/items/by-sku/{item['sku'][:-1]}").status_code == 404
+
+
+def test_get_item_by_sku_unknown_404_detail(client):
+    r = client.get("/items/by-sku/NOPE-99")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "sku NOPE-99 not found"
+
+
+def test_get_item_by_sku_does_not_shadow_get_item_by_id(client, item):
+    r = client.get(f"/items/{item['id']}")
+    assert r.status_code == 200
+    assert r.json()["id"] == item["id"]
