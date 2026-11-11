@@ -30,6 +30,28 @@ def test_create_item_requires_sku_and_name(client):
     assert client.post("/items", json={"sku": "", "name": "x"}).status_code == 422
 
 
+def test_create_item_rejects_negative_unit_price(client):
+    r = client.post("/items", json={"sku": "NEG", "name": "Neg", "unit_price": -0.01})
+    assert r.status_code == 422
+
+
+def test_create_item_accepts_zero_unit_price(client):
+    r = client.post("/items", json={"sku": "ZERO", "name": "Zero", "unit_price": 0})
+    assert r.status_code == 201
+    assert r.json()["unit_price"] == 0
+
+
+def test_update_item_rejects_negative_unit_price(client, item):
+    r = client.put(f"/items/{item['id']}", json={"unit_price": -5})
+    assert r.status_code == 422
+
+
+def test_update_item_accepts_zero_unit_price(client, item):
+    r = client.put(f"/items/{item['id']}", json={"unit_price": 0})
+    assert r.status_code == 200
+    assert r.json()["unit_price"] == 0
+
+
 def test_get_item(client, item):
     r = client.get(f"/items/{item['id']}")
     assert r.status_code == 200
