@@ -88,6 +88,54 @@ def test_list_items_filter_active(client, item):
     assert [i["sku"] for i in client.get("/items", params={"active": "false"}).json()] == ["INACTIVE"]
 
 
+def test_list_items_filter_sku_exact_match(client, item):
+    client.post("/items", json={"sku": "WIDGET-2", "name": "Widget 2"})
+    client.post("/items", json={"sku": "WIDGET", "name": "Widget plain"})
+    r = client.get("/items", params={"sku": "WIDGET-1"})
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 1
+    assert body[0]["sku"] == "WIDGET-1"
+    assert body[0] == item
+
+
+def test_list_items_filter_sku_is_exact_not_prefix(client, item):
+    # "WIDGET" is a prefix of "WIDGET-1" but must not match it
+    r = client.get("/items", params={"sku": "WIDGET"})
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_list_items_filter_sku_unknown_returns_empty_200(client, item):
+    r = client.get("/items", params={"sku": "NO-SUCH-SKU"})
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_list_items_filter_sku_combines_with_active(client):
+    client.post("/items", json={"sku": "COMBO-1", "name": "Combo active"})
+    client.post("/items", json={"sku": "COMBO-2", "name": "Combo inactive"})
+    client.put("/items/2", json={"active": False})
+
+    # sku + active=true matches the active item
+    r = client.get("/items", params={"sku": "COMBO-1", "active": "true"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["COMBO-1"]
+
+    # sku + active=false excludes the active item
+    r = client.get("/items", params={"sku": "COMBO-1", "active": "false"})
+    assert r.status_code == 200
+    assert r.json() == []
+
+    # inactive item found only with active=false
+    r = client.get("/items", params={"sku": "COMBO-2", "active": "false"})
+    assert r.status_code == 200
+    assert [i["sku"] for i in r.json()] == ["COMBO-2"]
+    r = client.get("/items", params={"sku": "COMBO-2", "active": "true"})
+    assert r.status_code == 200
+    assert r.json() == []
+
+
 def test_update_item_name_and_price(client, item):
     r = client.put(f"/items/{item['id']}", json={"name": "Renamed", "unit_price": 9.99})
     assert r.status_code == 200
