@@ -204,3 +204,30 @@ def test_list_items_sku_filter_combines_with_active(client, item):
     assert len(body) == 1
     assert body[0]["sku"] == "WIDGET-1"
     assert body[0]["active"] is False
+
+
+# --- GET /items/by-sku/{sku} (T011) ------------------------------------------
+
+
+def test_get_item_by_sku_returns_item(client, item):
+    r = client.get(f"/items/by-sku/{item['sku']}")
+    assert r.status_code == 200
+    assert r.json() == client.get(f"/items/{item['id']}").json()
+
+
+def test_get_item_by_sku_unknown_404(client):
+    r = client.get("/items/by-sku/NOPE-99")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "sku NOPE-99 not found"
+
+
+def test_get_item_by_sku_exact_match_only(client, item):
+    # a partial / prefix sku must not match
+    r = client.get(f"/items/by-sku/{item['sku'][:-1]}")
+    assert r.status_code == 404
+
+
+def test_get_item_by_sku_does_not_shadow_get_item_by_id(client, item):
+    r = client.get(f"/items/{item['id']}")
+    assert r.status_code == 200
+    assert r.json()["id"] == item["id"]
