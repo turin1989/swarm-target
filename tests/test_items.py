@@ -187,3 +187,39 @@ def test_delete_item_cascades_stock(client, item, loc_a):
     )
     client.delete(f"/items/{item['id']}")
     assert client.get("/movements").json() == []
+
+
+def test_list_items_filter_sku_exact_match(client, item):
+    client.post("/items", json={"sku": "WIDGET-2", "name": "Other"})
+    r = client.get("/items", params={"sku": "WIDGET-1"})
+    assert r.status_code == 200
+    body = r.json()
+    assert [i["sku"] for i in body] == ["WIDGET-1"]
+
+
+def test_list_items_filter_sku_is_not_a_substring_match(client, item):
+    client.post("/items", json={"sku": "WIDGET-11", "name": "Other"})
+    r = client.get("/items", params={"sku": "WIDGET-1"})
+    assert [i["sku"] for i in r.json()] == ["WIDGET-1"]
+
+
+def test_list_items_filter_sku_unknown_returns_empty_list(client, item):
+    r = client.get("/items", params={"sku": "NO-SUCH-SKU"})
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_list_items_filter_sku_combines_with_active(client, item):
+    client.post("/items", json={"sku": "GADGET-1", "name": "Gadget"})
+    # WIDGET-1 is active; filtering by sku + active=true finds it
+    r = client.get("/items", params={"sku": "WIDGET-1", "active": "true"})
+    assert [i["sku"] for i in r.json()] == ["WIDGET-1"]
+    # sku + active=false excludes it while it is active
+    r = client.get("/items", params={"sku": "WIDGET-1", "active": "false"})
+    assert r.status_code == 200
+    assert r.json() == []
+    # deactivate and the filters flip
+    client.put(f"/items/{item['id']}", json={"active": False})
+    r = client.get("/items", params={"sku": "WIDGET-1", "active": "false"})
+    assert [i["sku"] for i in r.json()] == ["WIDGET-1"]
+    assert client.get("/items", params={"sku": "WIDGET-1", "active": "true"}).json() == []
