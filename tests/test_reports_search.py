@@ -86,6 +86,39 @@ def test_search_by_sku(client):
     assert [i["sku"] for i in client.get("/search", params={"q": "BOLT"}).json()] == ["BOLT-M8"]
 
 
+def test_search_by_name_is_case_insensitive(client):
+    client.post("/items", json={"sku": "S1", "name": "Blue Widget"})
+    client.post("/items", json={"sku": "S2", "name": "Red Gadget"})
+    for q in ["widget", "WIDGET", "Widget", "wIdGeT"]:
+        r = client.get("/search", params={"q": q})
+        assert r.status_code == 200
+        assert [i["sku"] for i in r.json()] == ["S1"], q
+
+
+def test_search_by_sku_is_case_insensitive(client):
+    client.post("/items", json={"sku": "BOLT-M8", "name": "Bolt"})
+    client.post("/items", json={"sku": "NUT-M8", "name": "Nut"})
+    for q in ["bolt", "Bolt", "BOLT"]:
+        r = client.get("/search", params={"q": q})
+        assert r.status_code == 200
+        assert [i["sku"] for i in r.json()] == ["BOLT-M8"], q
+
+
+def test_search_case_insensitive_keeps_ordering_and_limit(client):
+    for n, name in enumerate(["Cable C", "Cable A", "Cable B"]):
+        client.post("/items", json={"sku": f"C{n}", "name": name})
+    names = [i["name"] for i in client.get("/search", params={"q": "cable", "limit": 2}).json()]
+    assert names == ["Cable A", "Cable B"]
+
+
+def test_search_wildcard_characters_are_literal(client):
+    client.post("/items", json={"sku": "PCT-1", "name": "100% Cotton"})
+    client.post("/items", json={"sku": "PLAIN", "name": "100 Cotton"})
+    assert [i["sku"] for i in client.get("/search", params={"q": "100%"}).json()] == ["PCT-1"]
+    client.post("/items", json={"sku": "UND_1", "name": "Under_Score"})
+    assert [i["sku"] for i in client.get("/search", params={"q": "r_s"}).json()] == ["UND_1"]
+
+
 def test_search_sorted_by_name_and_limited(client):
     for n, name in enumerate(["Cable C", "Cable A", "Cable B"]):
         client.post("/items", json={"sku": f"C{n}", "name": name})
