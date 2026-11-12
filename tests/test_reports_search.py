@@ -29,6 +29,26 @@ def test_low_stock_lists_items_below_reorder_point(client, loc_a):
     }
 
 
+def test_low_stock_includes_items_exactly_at_reorder_point(client, loc_a):
+    _seed(client, "EDGE", "Edge", reorder=5, qty=5, loc=loc_a)
+    r = client.get("/reports/low-stock")
+    assert r.status_code == 200
+    entries = r.json()
+    assert [e["sku"] for e in entries] == ["EDGE"]
+    assert entries[0]["total_qty"] == 5
+    assert entries[0]["reorder_point"] == 5
+
+
+def test_low_stock_includes_zero_reorder_point_with_zero_stock(client, loc_a):
+    _seed(client, "ZERO", "Zero", reorder=0, qty=0, loc=loc_a)
+    assert [e["sku"] for e in client.get("/reports/low-stock").json()] == ["ZERO"]
+
+
+def test_low_stock_excludes_items_strictly_above_reorder_point(client, loc_a):
+    _seed(client, "ABOVE", "Above", reorder=5, qty=6, loc=loc_a)
+    assert client.get("/reports/low-stock").json() == []
+
+
 def test_low_stock_includes_items_with_no_stock(client, loc_a):
     _seed(client, "NONE", "Nothing", reorder=1, qty=0, loc=loc_a)
     assert [e["sku"] for e in client.get("/reports/low-stock").json()] == ["NONE"]
