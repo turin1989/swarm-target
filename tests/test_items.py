@@ -141,3 +141,25 @@ def test_delete_item_cascades_stock(client, item, loc_a):
     )
     client.delete(f"/items/{item['id']}")
     assert client.get("/movements").json() == []
+
+
+def test_create_item_negative_reorder_point_rejected(client):
+    r = client.post(
+        "/items", json={"sku": "NEG-1", "name": "Neg", "reorder_point": -1}
+    )
+    assert r.status_code == 422
+
+
+def test_create_item_zero_reorder_point_allowed(client):
+    r = client.post(
+        "/items", json={"sku": "ZERO-1", "name": "Zero", "reorder_point": 0}
+    )
+    assert r.status_code == 201
+    assert r.json()["reorder_point"] == 0
+
+
+def test_update_item_negative_reorder_point_rejected(client, item):
+    r = client.put(f"/items/{item['id']}", json={"reorder_point": -5})
+    assert r.status_code == 422
+    # Item unchanged
+    assert client.get(f"/items/{item['id']}").json() == item
