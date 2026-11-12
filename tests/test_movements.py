@@ -77,6 +77,67 @@ def test_transfer_is_recorded(client, item, loc_a, loc_b):
     assert movements[1]["kind"] == "transfer"
 
 
+def test_ship_more_than_on_hand_409(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    r = _move(client, item_id=item["id"], kind="ship", qty=6, from_location_id=loc_a["id"])
+    assert r.status_code == 409
+    assert "insufficient" in r.json()["detail"]
+    # no movement row written, stock unchanged
+    assert len(client.get("/movements").json()) == 1
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 5
+    assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "qty": 5}]
+
+
+def test_ship_with_no_stock_409(client, item, loc_a):
+    r = _move(client, item_id=item["id"], kind="ship", qty=1, from_location_id=loc_a["id"])
+    assert r.status_code == 409
+    assert "insufficient" in r.json()["detail"]
+    assert client.get("/movements").json() == []
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 0
+
+
+def test_ship_exactly_on_hand_succeeds(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    r = _move(client, item_id=item["id"], kind="ship", qty=5, from_location_id=loc_a["id"])
+    assert r.status_code == 201
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 0
+
+
+def test_transfer_more_than_on_hand_409(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=3, to_location_id=loc_a["id"])
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=4,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    assert r.status_code == 409
+    assert "insufficient" in r.json()["detail"]
+    # no movement row written, stock unchanged
+    assert len(client.get("/movements").json()) == 1
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 3
+    assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "qty": 3}]
+
+
+def test_transfer_checks_source_not_destination(client, item, loc_a, loc_b):
+    # stock exists only at B; transferring out of A must be rejected
+    _move(client, item_id=item["id"], kind="receive", qty=10, to_location_id=loc_b["id"])
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=1,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    assert r.status_code == 409
+    assert "insufficient" in r.json()["detail"]
+
+
 def test_stock_for_missing_item_404(client):
     assert client.get("/items/77/stock").status_code == 404
 
