@@ -161,6 +161,71 @@ def test_movement_invalid_kind_422(client, item, loc_a):
     assert r.status_code == 422
 
 
+def test_ship_more_than_on_hand_409(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    r = _move(client, item_id=item["id"], kind="ship", qty=6, from_location_id=loc_a["id"])
+    assert r.status_code == 409
+    assert "insufficient" in r.json()["detail"]
+
+
+def test_ship_from_empty_location_409(client, item, loc_a):
+    r = _move(client, item_id=item["id"], kind="ship", qty=1, from_location_id=loc_a["id"])
+    assert r.status_code == 409
+    assert "insufficient" in r.json()["detail"]
+
+
+def test_transfer_more_than_on_hand_409(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=3, to_location_id=loc_a["id"])
+    r = _move(
+        client,
+        item_id=item["id"],
+        kind="transfer",
+        qty=4,
+        from_location_id=loc_a["id"],
+        to_location_id=loc_b["id"],
+    )
+    assert r.status_code == 409
+    assert "insufficient" in r.json()["detail"]
+
+
+def test_rejected_movement_writes_nothing(client, item, loc_a, loc_b):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+
+    assert (
+        _move(client, item_id=item["id"], kind="ship", qty=9, from_location_id=loc_a["id"])
+        .status_code
+        == 409
+    )
+    assert (
+        _move(
+            client,
+            item_id=item["id"],
+            kind="transfer",
+            qty=9,
+            from_location_id=loc_a["id"],
+            to_location_id=loc_b["id"],
+        ).status_code
+        == 409
+    )
+
+    # only the initial receive is recorded
+    movements = client.get("/movements").json()
+    assert len(movements) == 1
+    assert movements[0]["kind"] == "receive"
+
+    # stock levels are unchanged
+    s = client.get(f"/items/{item['id']}/stock").json()
+    assert s["total"] == 5
+    assert s["levels"] == [{"item_id": item["id"], "location_id": loc_a["id"], "qty": 5}]
+
+
+def test_ship_exact_stock_allowed(client, item, loc_a):
+    _move(client, item_id=item["id"], kind="receive", qty=5, to_location_id=loc_a["id"])
+    r = _move(client, item_id=item["id"], kind="ship", qty=5, from_location_id=loc_a["id"])
+    assert r.status_code == 201
+    assert client.get(f"/items/{item['id']}/stock").json()["total"] == 0
+
+
 def test_list_movements_pagination(client, item, loc_a):
     for _ in range(4):
         _move(client, item_id=item["id"], kind="receive", qty=1, to_location_id=loc_a["id"])
