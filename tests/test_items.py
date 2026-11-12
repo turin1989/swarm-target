@@ -90,6 +90,45 @@ def test_get_missing_item_404(client):
     assert "not found" in r.json()["detail"]
 
 
+def test_get_item_by_sku(client, item):
+    r = client.get(f"/items/by-sku/{item['sku']}")
+    assert r.status_code == 200
+    assert r.json() == item
+
+
+def test_get_item_by_sku_same_shape_as_get_by_id(client, item):
+    by_sku = client.get(f"/items/by-sku/{item['sku']}")
+    by_id = client.get(f"/items/{item['id']}")
+    assert by_sku.status_code == by_id.status_code == 200
+    assert by_sku.json() == by_id.json()
+
+
+def test_get_item_by_sku_exact_match_only(client, item):
+    # prefix of an existing sku must not match
+    client.post("/items", json={"sku": "WIDGET-10", "name": "Other"})
+    r = client.get("/items/by-sku/WIDGET-10")
+    assert r.status_code == 200
+    assert r.json()["sku"] == "WIDGET-10"
+    r = client.get(f"/items/by-sku/{item['sku']}")
+    assert r.json()["id"] == item["id"]
+
+
+def test_get_item_by_sku_unknown_404(client):
+    r = client.get("/items/by-sku/NOPE")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "sku NOPE not found"
+
+
+def test_get_item_by_sku_does_not_shadow_get_item(client, item):
+    # numeric path segments still resolve via /items/{item_id}
+    r = client.get(f"/items/{item['id']}")
+    assert r.status_code == 200
+    assert r.json() == item
+    r = client.get("/items/999")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "item 999 not found"
+
+
 def test_list_items_ordered_by_id(client):
     for sku in ["C", "A", "B"]:
         client.post("/items", json={"sku": sku, "name": sku})
